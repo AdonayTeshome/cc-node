@@ -1,0 +1,7 @@
+Options +FollowSymLinks
+RewriteEngine on
+RewriteRule ^setup - [L,NC] 
+RewriteRule ^AccountStore - [L,NC] 
+RewriteRule ^BlogicService - [L,NC] 
+RewriteRule ^index.html - [L,NC] 
+RewriteRule ^ index.php [L]

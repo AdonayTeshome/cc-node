@@ -1,0 +1,43 @@
+{
+  "name": "credit-commons-software-stack/cc_node",
+  "description": "Reference implementation of the Credit Commons protocol providing a mutual credit accounting node.",
+  "license": "GPL-2.0+",
+  "homepage": "https://creditcommons.net",
+  "minimum-stability": "dev",
+  "authors": [
+    {
+      "name": "Matthew Slater",
+      "email": "matslats@fastmail.com",
+      "homepage": "http://matslats.net",
+      "role": "Maintainer"
+    }
+  ],
+  "repositories": {
+    "dev": {
+      "type": "path",
+      "url": "/home/matslats/Documents/CreditCommons/credit-commons-repos/cc-php-lib",
+      "options": { "symlink": true }
+    },
+    "public": {
+      "type": "vcs",
+      "url": "git@gitlab.com:credit-commons-software-stack/cc-php-lib.git"
+    }
+  },
+  "require": {
+    "credit-commons-software-stack/cc-php-lib": "*",
+    "slim/slim": "^3"
+  },
+  "require-dev": {
+    "slim/psr7": "dev-master",
+    "phpunit/phpunit": "^9",
+    "nyholm/psr7": "^1.4",
+    "league/openapi-psr7-validator": "dev-master"
+  },
+  "autoload": {
+    "psr-4": {
+      "CCNode\\": "src",
+      "AccountStore\\": "AccountStore",
+      "BlogicService\\": "BlogicService"
+    }
+  }
+}
