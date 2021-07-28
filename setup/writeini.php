@@ -5,11 +5,9 @@ function replaceIni(array $array, string $filename): int {
   foreach($array as $key => $val) {
     if(is_array($val)) {
       foreach($val as $skey => $sval) {
-        $inifile = preg_replace(
-          "/$key\[".$skey."\] ?=.*/",
-          "$key".'['. $skey .'] = '.(is_numeric($sval) ? $sval : '"'.$sval.'"'),
-          $inifile
-        );
+        $find = "/$key\[".$skey."\] ?=.*/";
+        $replace = "$key".'['. $skey .'] = '.(is_numeric($sval) ? $sval : '"'.$sval.'"');
+        $inifile = preg_replace($find, $replace, $inifile);
       }
     }
     else {
@@ -20,6 +18,9 @@ function replaceIni(array $array, string $filename): int {
       );
     }
   }
-  return file_put_contents($filename, $inifile);
+  if ($inifile) {
+    return file_put_contents($filename, $inifile);
+  }
+  throw new \Exception('Problem with preg_replace settings on '.$filename);
 }
 

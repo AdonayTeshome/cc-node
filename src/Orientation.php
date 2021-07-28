@@ -2,7 +2,7 @@
 
 namespace CCNode;
 
-use CreditCommons\LeafAPI;
+use CreditCommons\RestAPI;
 use CCNode\Account;
 
 
@@ -27,7 +27,7 @@ class Orientation {
     global $config;
     $this->esponseMode = 0;
     $this->upstreamAccount = $account;
-    $this->trunkwardsAccountName = $config['bot']['account'];
+    $this->trunkwardsAccountName = $config['bot']['acc_id'];
     if ($this->trunkwardsAccountName and $this->upstreamAccount) {
       if ($this->trunkwardsAccountName == $this->upstreamAccount->id) {
         $this->trunkwardsAccount = $this->upstreamAccount;
@@ -52,7 +52,7 @@ class Orientation {
 
   function getDownstreamRequester() {
     if ($this->downstreamAccount) {
-      return new LeafAPI($this->downstreamAccount->url);
+      return new RestAPI($this->downstreamAccount->url);
     }
   }
 
@@ -148,19 +148,5 @@ class Orientation {
     }
     return $results;
   }
-
-
-  function absoluteAddress() : array {
-    global $config;
-    $abs_add = [$config['node_name']];
-    if ($this->trunkwardsAccount) {
-      //How do we know that that the Requester is ready with the trunkwards account?
-      $requester = new LeafAPI($this->trunkwardsAccount->url);
-      $parents = $requester->getAbsoluteAddress();
-      $abs_add = array_merge($abs_add, $parents);
-    }
-    return $abs_add;
-  }
-
 
 }

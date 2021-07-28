@@ -5,13 +5,16 @@
 namespace CCNode;
 
 use CreditCommons\NewTransaction;
-use CreditCommons\Exceptions\MiscFailure;
+use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\CCError;
 use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\PermissionViolation;
+use CreditCommons\Exceptions\OfflineFailure;
+use CreditCommons\Exceptions\NoWorkflowsFailure;
 use CreditCommons\CreditCommonsInterface;
 use CreditCommons\Workflows;
 use CreditCommons\Accounts\Remote;
+use CreditCommons\RestAPI;
 use CCnode\Accounts\BoT;
 
 use CCNode\Accounts\Account;
@@ -40,7 +43,7 @@ $config = parse_ini_file('./node.ini');
 //) use ($app) {
 //    $response = $app->getResponseFactory()->createResponse();
 //    if (!$exception instanceOf CCError) {
-//      $exception = new \CreditCommons\Exceptions\MiscFailure([
+//      $exception = new CCFailure([
 //        'message' => $exception->getMessage()
 //      ]);
 //    }
@@ -69,7 +72,7 @@ $app->options('/', function (Request $request, Response $response) {
 $app->get('/', function (Request $request, Response $response) {
   global $orientation;
   check_permission($request, 'absoluteAddress');
-  $result = $orientation->absoluteAddress();
+  $result = absolute_node_path();
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-type', 'application/json');;
 });
@@ -89,14 +92,14 @@ $app->get('/handshake', function (Request $request, Response $response) {
   return $response->withHeader('Content-Type', 'application/json');
 });
 
-$app->get('/accounts/[{fragment}]', function (Request $request, Response $response, $args) {
+$app->get('/accounts[/{fragment}]', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountNames');
   $tree = !empty($request->getQueryParams()['tree']);
   $remote_names = [];
-  if ($tree and !empty($config['bot']['account'])) {// $orientation might be cleaner
+  if ($tree and !empty($config['bot']['acc_id'])) {// $orientation might be cleaner
     //@todo pass this to the parent ledger
-    throw new MiscFailure(['message' => 'accounts/{fragment} not implemented for ledger tree.']);
-    $remote_names = (new CreditCommons\LeafAPI())->accounts(@$args['fragment'], TRUE);
+    throw new CCFailure(['message' => 'accounts/{fragment} not implemented for ledger tree.']);
+    $remote_names = (new RestAPI())->accounts(@$args['fragment'], TRUE);
   }
   $local_names = accountStore()->filter(['chars' => @$args['fragment'], 'status' => 1, 'local' => 1, 'nameonly' => 1], TRUE);
   $result = array_slice(array_merge($local_names, $remote_names), 0, 10);
@@ -310,15 +313,25 @@ function check_permission(Request $request, string $operationId) {
  *   Translated workflows, keyed by the rootwards node name they originated from
  *
  * @todo This should be cached if this system has any significant usage.
+ * @todo find a way to notify the user if the trunkward node is offline.
  */
 function getAllWorkflows() : array {
   global $config;
   $local = $tree = [];
 
   // get rootwards workflows.
-  if ($bot_acc_name = $config['bot']['account']) {
+  if ($bot_acc_name = $config['bot']['acc_id']) {
     $account = Account::create($bot_acc_name);
-    $tree = Workflows::trunkwardsWorkflows($account->url);
+    try {
+      $tree = Workflows::trunkwardsWorkflows($account->url);
+    }
+    // This is where the user needs to be notified.
+    catch (OfflineFailure $e) {
+
+    }
+    catch (NoWorkflowsFailure $e) {
+
+    }
   }
 
   // get the local workflows
@@ -339,9 +352,8 @@ function getAllWorkflows() : array {
         }
       }
     }
-    // Todo, ensure that no local wf types clash with inherited ones.
-    // Better still, all workflow names contain their absolute path to prevent clashes
-    $tree[absolute_node_path()] = $local;
+    $abs_path = '/'.implode('/', array_reverse(absolute_node_path()));
+    $tree[$abs_path] = $local;
   }
   foreach ($tree as $nPath => &$wfs) {
     foreach ($wfs as $hash => $wf) {
@@ -351,15 +363,24 @@ function getAllWorkflows() : array {
   return $all;
 }
 
-function absolute_node_path() {
+/**
+ * @todo find a way to notify the user if the trunkward node is offline.
+ */
+function absolute_node_path(): array {
   global $config;
   $ancestors = [];
-  if ($bot_name = $config['bot']['account']) {
+  if ($bot_name = $config['bot']['acc_id']) {
     $bot_account = Account::load($bot_name);
-    $ancestors = (new ClientAPI($bot_account->url))->getTrunkwardNodeNames();
+    try {
+      $ancestors = (new RestAPI($bot_account->url))->getTrunkwardNodeNames();
+    }
+    catch (OfflineFailure $e) {
+      // If the parent node is offline, then this is the top node.
+      $ancestors = ['<offline>'];
+    }
   }
   array_unshift($ancestors, $config['node_name']);
-  return '/'.implode('/', array_reverse($ancestors));
+  return $ancestors;
 }
 
 /**
@@ -372,14 +393,14 @@ function accountStore() : AccountStore {
 
 class Slim3ErrorHandler {
   public function __invoke($request, $response, $exception) {
+    global $config;
     if (!$exception instanceOf CCError) {
-      $exception = new \CreditCommons\Exceptions\MiscFailure([
+      $exception = new CCFailure([
         'message' => $exception->getMessage()
       ]);
     }
+    $exception->node = $config['node_name'];
     $response->getBody()->write(json_encode($exception, JSON_UNESCAPED_UNICODE));
     return $response->withStatus($exception->getCode());
    }
 }
-
-

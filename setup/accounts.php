@@ -1,11 +1,16 @@
 <?php
 use CCNode\AccountStore;
-const ACCCOUNTS_FILE  = '../AccountStore/store.json';
+use AccountStore\AccountManager;
+$store = '../AccountStore/'.AccountManager::FILESTORE;
+touch($store);
+ini_set('display_errors', 1);
 
 $errs = [];
+if (!is_writable($store)) {
+  $errs[] = $store . " is not writable";
+}
 if ($_POST) {
   unset($_POST['submit']);
-  $errs = [];
 
   if (!$errs) {
     require './writeini.php';
@@ -27,25 +32,27 @@ if ($_POST) {
         mod_account('node', $id, $fields);
       }
     }
-    if (@$_POST['bot']['id']) {
-      $accs = file_exists(ACCCOUNTS_FILE) ? (array)json_decode(file_get_contents(ACCCOUNTS_FILE)) : [];
-      if (isset($accs[$_POST['bot']['id']])) {
-        mod_account('node', $_POST['bot']['id'], $_POST['bot']);
-      }
-      else {
+    $node_conf = parse_ini_file(SETTINGS_INI_FILE);
+    if ($node_conf['bot']['acc_id'] or !empty($_POST['bot']['acc_id'])) {
+      $accs = load_accounts();
+      if (isset($_POST['bot']['acc_id'])) {
         add_account('node', $_POST['bot']);
       }
+      elseif (isset($accs[$node_conf['bot']['acc_id']])) {
+        mod_account('node', $node_conf['bot']['acc_id'], $_POST['bot']);
+      }
+      else{
+        $errs[] = "Balance of trade account does not exist: ". $node_conf['bot']['acc_id'];
+      }
       // populate unchecked boxes
-      $bot_settings = $_POST['bot'] + ['priv_accounts' => 0, 'priv_transactions' => 0, 'priv_stats' => '0'];
+      $bot_settings = $_POST['bot'] + ['priv_accounts' => 0, 'priv_transactions' => 0, 'priv_stats' => '0', 'metadata' => 0];
       replaceIni(['bot' => $bot_settings], SETTINGS_INI_FILE);
-      $node_conf = parse_ini_file(SETTINGS_INI_FILE);
     }
   }
 }
-$accs = file_exists(ACCCOUNTS_FILE) ? (array)json_decode(file_get_contents(ACCCOUNTS_FILE)) : [];
-if (!is_writable(ACCCOUNTS_FILE)) {
-  $errs[] = ACCCOUNTS_FILE . " is not writable";
-}
+$node_conf = parse_ini_file(SETTINGS_INI_FILE);
+$accs = load_accounts();
+
 ?><!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">
   <head>
     <title>Credit Commons setup</title>
@@ -54,114 +61,92 @@ if (!is_writable(ACCCOUNTS_FILE)) {
   <body>
     <h1>Credit Commons: Account settings</h1>
     <p>Hover for help. Account information is stored in accounts.json
-    <br />Or go to <a href = "index.php?node">general settings</a>.
+    <br />Or go to <a href = "index.php?general">general settings</a>.
     <?php if ($errs)
       print "<p><font color=red>".implode('<br />', $errs).'</font>';
     ?><form method="post">
       <h2>User accounts</h2>
-      <p>Normal accounts
+      <p>At least two are needed.
       <table cellpadding="2">
         <thead>
           <tr>
-            <th title = "Wallet id, must be unique on this node">name (created)</th>
-            <th title = "Password-like string">key</th>
-            <th title = "Account is active or blocked (override)">status</th>
-            <th title = "Minimum balance (override default @todo)">min</th>
-            <th title = "Maximum balance (override default @todo)">max</th>
-            <th title = "Checked if this account has admin privileges">admin</th>
+            <th title = "Wallet id, must be unique on this node">Name</th>
+            <th title = "Password-like string">API Key</th>
+            <th title = "Account is active or blocked (override)">Status</th>
+            <th title = "Minimum/Maximium balance (override default @todo)">Min/Max</th>
+            <th title = "Checked if this account has admin privileges">Admin</th>
           </tr>
         </thead>
         <tbody>
         <?php
       $users = array_filter($accs, function($a){return !empty($a->key);});
-      foreach ($users as $acc) : ?>
+      foreach ($users as $id => $acc) : ?>
     <tr>
-            <th title = "Wallet id, must be unique on this node"><?php print $acc->id;?> (<?php print date('d-M-Y', $acc->created); ?>)<!--<input type="hidden" name="user[<?php print $acc->id;?>][id]" value = "<?php print $acc->id;?>">--></th>
-            <td title = "Password-like string"><input name="user[<?php print $acc->id;?>][key]" value="<?php print $acc->key;?>" size = "6"></td>
-            <?php print status_cell($acc); ?>
-            <td title = "Minimum balance (override default @todo)"><input name="user[<?php print $acc->id;?>][min]" type="number" min="-999999" max="0" size="4" value="<?php print $acc->min;?>"></td>
-            <td title = "Maximum balance (override default @todo)"><input name="user[<?php print $acc->id;?>][max]" type="number" max="999999" min="0" size="4" value="<?php print $acc->max;?>"></td>
-            <td title = "Checked if this account has admin privileges"><input name="user[<?php print $acc->id;?>][admin]" type="checkbox" value = "1" <?php print $acc->admin?'checked':'';?>></td>
+            <th title = "Wallet id, must be unique on this node"><?php print $id;?><!--<input type="hidden" name="user[<?php print $id;?>][id]" value = "<?php print $id;?>">--></th>
+            <td title = "Password-like string"><input name="user[<?php print $id;?>][key]" value="<?php print $acc->key;?>" size = "6"></td>
+            <?php print status_cell('td','user['.$id.']', $acc); ?>
+            <?php print minmax_cell('td','user['.$id.']', $acc); ?>
+            <td title = "Checked if this account has admin privileges"><input name="user[<?php print $id;?>][admin]" type="checkbox" value = "1" <?php print !empty($acc->admin)?'checked':'';?>></td>
           </tr>
-      <?php endforeach;
-      for ($i=0; $i < (count($users) == 0?2:1); $i++) : ?>
+      <?php endforeach; ?>
       <tr>
-          <td title = "Wallet id, must be unique on this node"><input name="user[new][id]" size = "8" placeholder = "node_account_id"></td>
+          <td title = "Wallet id, must be unique on this node"><input name="user[new][id]" size = "8" placeholder = "new_acc_id"></td>
           <td title = "Password-like string"><input name="user[new][key]" size = "8"></td>
-          <?php print status_cell(); ?>
-          <td title = "Minimum balance (override default @todo)"><input name="user[new][min]" type="number" min="-999999" max="0" size="4" ></td>
-          <td title = "Maximum balance (override default @todo)"><input name="user[new][max]" type="number" max="999999" min="0" size="4" ></td>
+          <?php print status_cell('td', 'user[new]'); ?>
+          <?php print minmax_cell('td', 'user[new]'); ?>
           <td title = "Checked if this account has admin privileges"><input name="user[new][admin]" type="checkbox" value = "1" ></td>
         </tr>
       </table>
-      <?php endfor; ?>
 
       <h2>Leafward nodes</h2>
-      <p>One special accounts which are controlled by other, credit commons nodes.
+      <p>Special accounts which are controlled by other, credit commons nodes.
       <table>
       <thead>
         <tr>
           <th title = "Wallet id, must be unique on this node">name</th>
           <th title = "Url of the node">url</th>
           <th title = "Account is active or blocked (override)">status</th>
-          <th title = "Minimum balance (override default @todo)">min</th>
-          <th title = "Maximum balance (override default @todo)">max</th>
+          <th title = "Minimum/Maximum balance (override default @todo)">Min/Max</th>
         </tr>
       </thead>
       <tbody>
       <?php
-      $nodes = array_filter($accs, function($a) use ($node_conf){return !empty($a->url) and $a->id <> $node_conf['bot']['acc_id'];});
-      foreach ($nodes as $acc) : ?>
+      $nodes = array_filter(
+        $accs,
+        function($a, $id) use ($node_conf){return !empty($a->url) and $id <> $node_conf['bot']['acc_id'];},
+        ARRAY_FILTER_USE_BOTH
+      );
+      foreach ($nodes as $id => $acc) : ?>
       <tr>
-        <th><?php print $acc->id;?></th>
+        <th><?php print $id;?></th>
         <td title = "Url of the node">
-          <input name="node[<?php print $acc->id;?>][url]" value="<?php print $acc->url;?>" size = "8">
+          <input name="node[<?php print $id;?>][url]" value="<?php print $acc->url;?>" size = "8">
         </td>
-        <?php print status_cell($acc); ?>
-        <td title = "Minimum balance (override default @todo)">
-          <input name="node[<?php print $acc->id;?>][min]" type="number" min="-999999" max="0" size="4" value="<?php print $acc->min;?>">
-        </td>
-        <td title = "Maximum balance (override default @todo)">
-          <input name="node[<?php print $acc->id;?>][max]" type="number" max="999999" min="0" size="4" value="<?php print $acc->max;?>">
-        </td>
+        <?php print status_cell('td', 'node['.$id.']', $acc); ?>
+        <?php print minmax_cell('td', 'node['.$id.']', $acc); ?>
       </tr>
       <?php endforeach; ?>
       <tr>
         <td title = "Wallet id, must be unique on this node"><input name="node[new][id]" size = "8" placeholder = "new_account_id" value="<?php $bot_name;?>"></td>
-        <td><input name="node[new][url]" size = "8"  value="<?php $bot_url;?>"></td>
-        <?php print status_cell(); ?>
-        <td title = "Minimum balance (override default @todo)">
-          <input name="node[new][min]" type="number" min="-999999" max="0" size="4" >
-        </td>
-        <td title = "Maximum balance (override default @todo)">
-          <input name="node[new][max]" type="number" max="999999" min="0" size="4" >
-        </td>
+        <td title = "Root url of the remote node"><input name="node[new][url]" size = "8"  value="<?php $bot_url;?>"></td>
+        <?php print status_cell('td', 'node[new]'); ?>
+        <?php print minmax_cell('td', 'node[new]'); ?>
       </tr>
       </tbody>
       </table>
 
-
       <h2>Balance of Trade account</h2>
       <p>Special account used to connect to the wider Credit Commons tree.
         <?php $bot = $accs[$node_conf['bot']['acc_id']]??NULL; ?><p>
-        ID <?php if (!$bot) : ?>
-      <input name="bot[id]" size = "8" placeholder = "new_account_id" value="<?php print $bot?$bot->id:''; ?>"> (cannot be changed)
-      <br />Url <input name="bot[url]" size = "8" value="<?php print $bot?$bot->url:''; ?>">
-      <?php else : ?>
-        <?php print $bot->id;  ?>
-        <br />Url <?php print $bot->url;  ?>
-        <?php endif;  ?>
-
-      <p title = "This name is your node's identification on the Credit Commons tree. It is not needed for standalone nodes.">
-        Node name <input name ="node_name" value ="<?php print $node_conf['node_name']; ?>">
-      </p>
-      <p><span title = "Minimum balance (override default @todo)">Min <input name="bot[min]" type="number" min="-999999" max="0" size="4" value="<?php print $bot?$bot->max:''; ?>"></span>
-        <br /><span title = "Maximum balance (override default @todo)">Max <input name="bot[max]" type="number" max="999999" min="0" size="4" value="<?php print $bot?$bot->min:''; ?>"></span></p>
+        ID <input name="bot[acc_id]" size = "8" placeholder = "new_account_id" value="<?php print $node_conf['bot']['acc_id']; ?>" <?php if ($node_conf['bot']['acc_id'])print ' disabled';?>> (cannot be changed)
+        <br />Url <input name="bot[url]" size = "8" value="<?php print $bot?$bot->url:''; ?>" <?php if ($bot and $bot->url)print ' disabled';?>>
+        <p>Min/Max <?php print minmax_cell('span', 'bot', $bot); ?>
       <p><span title="The ratio of the local unit to the Branchward ledger's unit @todo clarify which way around this is">Exchange rate <input name = "bot[rate]" type = "number" min = "0.001" max = "1000" step = "0.001" size = "2" value = "<?php print $node_conf['bot']['rate']; ?>"></span>
       <p title = "Privacy settings: which aspects of the ledger are visible to the public?">
-        Expose account Ids <input name = "bot[priv_accounts]" type = "checkbox" value = "1" <?php print $node_conf['bot']['priv_accounts'] ? 'checked ': ''; ?>">
-      <br />Expose account transactions <input name = "bot[priv_transactions]" type = "checkbox" value = "1" <?php print $node_conf['bot']['priv_transactions'] ? 'checked ': ''; ?>">
-      <br />Expose anonymised stats<input name = "bot[priv_stats]" type = "checkbox" value = "1" <?php print $node_conf['bot']['priv_stats'] ? 'checked ': ''; ?>">
+        Expose account Ids <input name = "bot[priv_accounts]" type = "checkbox" value = "1" <?php print $node_conf['bot']['priv_accounts'] ? 'checked ': ''; ?>>
+      <br />Expose account transactions <input name = "bot[priv_transactions]" type = "checkbox" value = "1" <?php print $node_conf['bot']['priv_transactions'] ? 'checked ': ''; ?>>
+      <br />Expose anonymised stats<input name = "bot[priv_stats]" type = "checkbox" value = "1" <?php print $node_conf['bot']['priv_stats'] ? 'checked ': ''; ?>>
+      <br />Transaction metadata <input name = "bot[metadata]" type = "checkbox" value = "1" <?php print $node_conf['bot']['metadata'] ? 'checked' : ''; ?>></span>
       </p>
       <input type="submit">
     </form>
@@ -187,13 +172,35 @@ function mod_account($type, $id, $fields) :void {
   $accountStore->override($id, $fields);
 }
 
+/**
+ *
+ * @return stdClass[]
+ */
+function load_accounts() : array {
+  global $config;
+  $accs = [];
+  $config = parse_ini_file('../node.ini');
+  $accountStore = new AccountStore($config['account_store_url']);
+  foreach ($accountStore->filter() as $acc) {
+    $accs[$acc->id] = $accountStore->getOverride($acc->id);
+  }
+  return $accs;
+}
 
-function status_cell($acc = NULL) { ?>
-<td title = "Account is active or blocked (override)">
-              <select name="user[<?php print $acc->id??'new'; ?>][status]">
-                <option value = ""<?php print $acc && $acc->status === ''? 'selected ':''; ?>>Default</option>
-                <option value = "1"<?php print $acc && $acc->status === '1'? 'selected ':''; ?>>Active</option>
-                <option value = "0"<?php print $acc && $acc->status === '0'? 'selected ':''; ?>>Blocked</option>
+function status_cell($tag, $type, $acc = NULL) {
+  $status = $acc && isset($acc->status) ? $acc->status : NULL; ?>
+<<?php print $tag; ?> title = "Account is active or blocked (override)">
+              <select name="<?php print $type; ?>[status]">
+                <option value = ""<?php print is_null($status) ? ' selected' : ''; ?>>Default</option>
+                <option value = "1"<?php print $status === '1' ? ' selected' : ''; ?>>Active</option>
+                <option value = "0"<?php print $status === '0' ? ' selected' : ''; ?>>Blocked</option>
               </select>
-            </td>
+            </<?php print $tag; ?>>
+<?php }
+
+function minmax_cell($tag, $type, $acc = NULL) {?>
+<<?php print $tag; ?> title = "Min/max balance (override default @todo)">
+    <input name="<?php print $type; ?>[min]" type="number" min="-999999" max="0" size="4" value="<?php print $acc?$acc->min:'';?>" />
+    <input name="<?php print $type; ?>[max]" type="number" max="999999" min="0" size="4"  value="<?php print $acc?$acc->max:'';?>" />
+  </<?php print $tag; ?>>
 <?php }

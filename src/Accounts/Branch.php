@@ -1,6 +1,6 @@
 <?php
 
-namespace CCnode\Accounts;
+namespace CCNode\Accounts;
 
 /**
  * Class representing an account
@@ -13,7 +13,7 @@ abstract class Branch extends Remote {
    *   converted json from the AccountStorage Account class
    * @param string $given_path
    */
-  function __construct(stdClass $account, string $given_path = '') {
+  function __construct(\stdClass $account, string $given_path = '') {
     parent::__construct($account, $given_path);
     if ($given_path) {
       $parts = explode('/', $given_path);

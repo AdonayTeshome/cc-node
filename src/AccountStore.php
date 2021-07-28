@@ -3,6 +3,7 @@
 namespace CCNode;
 
 use CreditCommons\Exceptions\InvalidFieldsViolation;
+use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Requester;
 use GuzzleHttp\RequestOptions;
@@ -60,10 +61,7 @@ class AccountStore extends Requester {
    * @return stdClass|string
    *   The account object
    */
-  function fetch(string $name, bool $nameonly = FALSE) : Account {
-    if ($nameonly) {
-      $this->options[RequestOptions::QUERY] = ['nameonly' => 1];
-    }
+  function fetch(string $name) : Account {
     try{
       $result = $this->localRequest('fetch/'.urlencode($name));
       if (!$result){echo 'no result from fetch/'.urlencode($name);die();}
@@ -78,9 +76,7 @@ class AccountStore extends Requester {
         die($e->getCode() .' Unknown response from AccountStore fetch/'.urlencode($name));
       }
     }
-    if (!$nameonly) {
-      $result = $this->upcast($result);
-    }
+    $result = $this->upcast($result);
     return $result;
   }
 
@@ -98,7 +94,7 @@ class AccountStore extends Requester {
       $data->id,
       $data->url??'',
       isset($orientation->upstreamAccount) ? $orientation->upstreamAccount->id : '',
-      $config['bot']['account']
+      $config['bot']['acc_id']
     );
     return new $class($data);
   }
@@ -136,15 +132,28 @@ class AccountStore extends Requester {
     catch (\Exception $e) {
       switch ($e->getCode()) {
         case 400:
-          throw new \Exception('Bad characters in '.$acc_id);
-        case 409:
-          throw new \Exception('Duplicate account name: '.$acc_id);
+          throw new BadCharactersViolation($acc_id);
+        case 404:
+          throw new DoesNotExistViolation(['id' => $acc_id, 'type' => 'account']);
         default:
-          throw new \Exception('Unexpected '.$e->getCode()." result from $this->baseUrl/join: ".$e->getMessage());
+          throw new CCFailure(['message' => 'Unexpected '.$e->getCode()." result from $this->baseUrl/join: ".$e->getMessage()]);
       }
     }
   }
 
+  function getOverride(string $acc_id) : \stdClass {
+    try {
+      return $this->localRequest("override/$acc_id");
+    }
+    catch (\Exception $e) {
+      switch ($e->getCode()) {
+        case 404:
+          throw new DoesNotExistViolation(['id' => $acc_id, 'type' => 'account']);
+       default:
+          throw new CCFailure(['message' => 'Unexpected '.$e->getCode()." result from $this->baseUrl/override/$acc_id: ".$e->getMessage()]);
+      }
+    }
+  }
 
   /**
    * Override account defaults.
@@ -189,7 +198,7 @@ class AccountStore extends Requester {
     }
     catch (RequestException $e) {
       if ($e->getStatusCode() == 500) {
-        throw new MiscFailure(['message' => '500 Problem with AccountStore.']);
+        throw new CCFailure(['message' => $e->getMessage()]);
       }
       throw $e;
     }
@@ -199,3 +208,4 @@ class AccountStore extends Requester {
 
 
 }
+

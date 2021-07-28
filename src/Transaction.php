@@ -4,7 +4,8 @@ namespace CCNode;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\MaxLimitViolation;
 use CreditCommons\Exceptions\MinLimitViolation;
-use CreditCommons\Exceptions\MiscFailure;
+use CreditCommons\Exceptions\CCFailure;
+use CreditCommons\Exceptions\CCViolation;
 use CreditCommons\TransactionInterface;
 use CreditCommons\NewTransaction;
 use CreditCommons\Misc;
@@ -60,7 +61,7 @@ class Transaction extends \CreditCommons\Transaction {
   static function createEntries(array $rows) : array {
     foreach ($rows as $row) {
       if (empty($row->author)) {
-        throw new MiscFailure(['message' => 'Entry is missing author.']);
+        throw new CCViolation(['message' => 'Entry is missing author.']);
       }
       $entries[] = Entry::create($row);
     }
@@ -327,9 +328,7 @@ class Transaction extends \CreditCommons\Transaction {
     if (isset($this->entries[0]->$name)) {
       return $this->entries[0]->$name;
     }
-
-    echo $name;kjhkjh();
-    throw new MiscFailure(['message' => 'Requested unknown property of Transaction:'.$name]);
+    throw new CCFailure(['message' => 'Requested unknown property of Transaction:'.$name]);
   }
 
   /**

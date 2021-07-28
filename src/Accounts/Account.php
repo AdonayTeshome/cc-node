@@ -3,6 +3,7 @@
 namespace CCNode\Accounts;
 
 use \CreditCommons\Account as CreditCommonsAccount;
+use \CreditCommons\Exceptions\DoesNotExistViolation;
 
 /**
  * Class representing an account on the ledger
@@ -13,7 +14,7 @@ abstract class Account extends CreditCommonsAccount {
    *
    * @param string $given_path
    * @return Account
-   * @throws MiscFailure
+   * @throws CCViolation
    * @todo could do more type checking.
    */
   static function create(string $given_path, $known_to_exist = FALSE) : Account {
@@ -56,8 +57,8 @@ abstract class Account extends CreditCommonsAccount {
     catch (DoesNotExistViolation $e) {}
 
     // Now the path is either rootwards, or invalid.
-    if ($config['bot']['account']) {
-      $rootwardsAccount = static::load($config['bot']['account'], TRUE);
+    if ($config['bot']['acc_id']) {
+      $rootwardsAccount = static::load($config['bot']['acc_id'], TRUE);
       if ($existing) {
         return $rootwardsAccount;
       }
@@ -117,10 +118,10 @@ abstract class Account extends CreditCommonsAccount {
       }
     }
     else {
-      $class = 'Accounts\User';
+      $class = 'Accounts';
     }
 
-    return 'CCNode\\'. $class;
+    return 'CCNode\User\\'. $class;
   }
 
 

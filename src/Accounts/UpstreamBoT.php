@@ -1,5 +1,5 @@
 <?php
-namespace CCnode\Accounts;
+namespace CCNode\Accounts;
 
 final class UpstreamBoT extends BoT {
 

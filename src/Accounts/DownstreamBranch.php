@@ -1,6 +1,6 @@
 <?php
 
-namespace CCnode\Accounts;
+namespace CCNode\Accounts;
 
 /**
  * Class representing an account

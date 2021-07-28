@@ -1,7 +1,7 @@
-# Credit Commons Microservices
+# Credit Commons reference implementation
 
 ## Intent
-Develop a software stack that can serve a fully differentiated world economy of federated Mutual Credit networks.
+Develop network software that can serve a fully differentiated world economy of federated Mutual Credit networks.
 The inspiration for this is the [Credit Commons whitepaper](http://www.creditcommons.net/) by [Matthew Slater](https://matslats.net/) and [Tim Jenkin](https://en.wikipedia.org/wiki/Tim_Jenkin).
 
 ## Vision
@@ -10,14 +10,6 @@ The vision here serves [the overall Credit Commons vision, here](https://gitlab.
 
 This project is for the development of a robust, small microservice implementation of a trading and accounting platform for the Credit Commons that is built for federation.
 
-## Licensing
-
-At present, this project is private and not licensed for use by third parties.
-
-This is obviously a temporary condition. Discussions around appropriate licensing and open-sourcing conditions are under way in the [Commons, assets, Licenses, Governance](https://www.loomio.org/d/9fYiuUGT/commons-assets-licenses-governance) thread on the Loomio associated with the affiliated [Open Credit Network](http://opencredit.network).
-
-See also the statement in the  [Credit Commons org project](https://gitlab.com/credit-commons-software-stack/credit-commons-org/tree/master#seed-governance)
- 
 ## WHAT WE HAVE
 1. A granular specification for the core trading and accounting function
    - [technology agnostic](https://gitlab.com/credit-commons-software-stack/credit-commons-microservices/-/blob/master/docs/Accounting_TradeEngine_Fundamentals.md)
@@ -25,7 +17,6 @@ See also the statement in the  [Credit Commons org project](https://gitlab.com/c
    - [swagger definitions of microservice API endpoints](https://gitlab.com/credit-commons-software-stack/credit-commons-microservices/-/tree/master/docs/swagger)
 
 ## WHAT WE NEED
-
 
 ## Developmental / background docs
 These are superseded, but may be worth checking back on in light of controversial or difficult decisions:

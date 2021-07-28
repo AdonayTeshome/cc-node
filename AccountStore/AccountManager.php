@@ -21,12 +21,7 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
 
   function __construct($with_defaults = TRUE) {
     global $config;
-    if (file_exists(self::FILESTORE) and $data = file_get_contents(self::FILESTORE)) {
-      $accs = json_decode($data);
-    }
-    else{
-      $accs = [];
-    }
+    $accs = (array)json_decode(file_get_contents(self::FILESTORE));
     foreach ($accs as $data) {
       if ($with_defaults) {
         $this->defaults = $with_defaults;
@@ -167,3 +162,4 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
     return count($this->accounts);
   }
 }
+
