@@ -63,7 +63,6 @@ abstract class Account extends CreditCommonsAccount {
         return $rootwardsAccount;
       }
       if ($orientation->isUpstreamBranch()) {
-        Misc::message("Attempting to resolve $given_path downstream");
         return $rootwardsAccount;
       }
     }
@@ -118,10 +117,10 @@ abstract class Account extends CreditCommonsAccount {
       }
     }
     else {
-      $class = 'Accounts';
+      $class = 'User';
     }
 
-    return 'CCNode\User\\'. $class;
+    return 'CCNode\Accounts\\'. $class;
   }
 
 
@@ -129,9 +128,5 @@ abstract class Account extends CreditCommonsAccount {
     return property_exists($this, 'admin') and $this->admin;
   }
 
-  function accessOperation($operationId) : bool {
-    $permitted = \CCNode\permitted_operations();
-    return in_array($operationId, array_keys($permitted));
-  }
 
 }

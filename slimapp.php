@@ -1,6 +1,10 @@
 <?php
 /**
  * Reference implementation of a credit commons node
+ *
+ *
+ * @todo find a way to notify the user if the trunkward node is offline.
+ *
  */
 namespace CCNode;
 
@@ -9,11 +13,9 @@ use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\CCError;
 use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\PermissionViolation;
-use CreditCommons\Exceptions\OfflineFailure;
-use CreditCommons\Exceptions\NoWorkflowsFailure;
 use CreditCommons\CreditCommonsInterface;
 use CreditCommons\Workflows;
-use CreditCommons\Accounts\Remote;
+use CreditCommons\AccountRemote;
 use CreditCommons\RestAPI;
 use CCnode\Accounts\BoT;
 
@@ -61,6 +63,14 @@ $c['errorHandler'] = function ($c) {
 /**
  * Implement the Credit Commons API methods
  */
+
+$app->get('/', function (Request $request, Response $response) {
+  $response->getBody()->write('It works!');
+  return $response
+    ->withStatus(200)
+    ->withHeader('Content-Type', 'application/json');
+});
+
 $app->options('/', function (Request $request, Response $response) {
   // No access control
   check_permission($request, 'permittedEndpoints');
@@ -69,17 +79,18 @@ $app->options('/', function (Request $request, Response $response) {
   return $response->withHeader('Content-type', 'application/json');;
 });
 
-$app->get('/', function (Request $request, Response $response) {
-  global $orientation;
+$app->get('/address', function (Request $request, Response $response) {
+  global $orientation, $config;
   check_permission($request, 'absoluteAddress');
-  $result = absolute_node_path();
+  $bot_url = ($bot_name = $config['bot']['acc_id']) ? Account::load($bot_name)->url : '';
+  $result = RestAPI::absoluteNodePath(API_calls());
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-type', 'application/json');;
 });
 
 $app->get('/workflows', function (Request $request, Response $response) {
-  // No access control
-  $result = getAllWorkflows();
+  check_permission($request, 'workflows');
+  $all_workflows = get_all_workflows();
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
 });
@@ -92,17 +103,18 @@ $app->get('/handshake', function (Request $request, Response $response) {
   return $response->withHeader('Content-Type', 'application/json');
 });
 
-$app->get('/accounts[/{fragment}]', function (Request $request, Response $response, $args) {
-  check_permission($request, 'accountNames');
-  $tree = !empty($request->getQueryParams()['tree']);
+$app->get('/accountnames[/{fragment}]', function (Request $request, Response $response, $args) {
+  check_permission($request, 'accountNameAutocomplete');
+  $params = $request->getQueryParams();
   $remote_names = [];
-  if ($tree and !empty($config['bot']['acc_id'])) {// $orientation might be cleaner
+  if (!empty($config['bot']['acc_id'])) {// $orientation might be cleaner
     //@todo pass this to the parent ledger
     throw new CCFailure(['message' => 'accounts/{fragment} not implemented for ledger tree.']);
-    $remote_names = (new RestAPI())->accounts(@$args['fragment'], TRUE);
+    $remote_names = API_calls()->accounts(@$args['fragment'], TRUE);
+    // @todo Also we may want to query child ledgers.
   }
   $local_names = accountStore()->filter(['chars' => @$args['fragment'], 'status' => 1, 'local' => 1, 'nameonly' => 1], TRUE);
-  $result = array_slice(array_merge($local_names, $remote_names), 0, 10);
+  $result = array_slice(array_merge($local_names, $remote_names), 0, $params['limit']??10);
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
 });
@@ -111,13 +123,13 @@ $app->get('/account/summary[/{acc_path}]', function (Request $request, Response 
   global $orientation;
   check_permission($request, 'accountSummary');
   $params = $request->getQueryParams();
-  if ($acc_path = $args['acc_path']) {
-    $account = Account::create($acc_path, FALSE);
+  if (isset($args['acc_path'])) {
+    $account = Account::create($args['acc_path'], FALSE);
     $result = (new Wallet($account))->getTradeStats();
   }
   // The openAPI format doesn't allow acc_path to be empty, so this is undocumented and won't work here
   else {
-    foreach (accountStore()->filter([], 'nameonly') as $acc_id) {
+    foreach (accountStore()->filter(['nameonly' => 1]) as $acc_id) {
       $account = Account::create($acc_id, TRUE);
       $result[$acc_id] = (new Wallet($account))->getTradeStats();
     }
@@ -175,14 +187,15 @@ $app->get('/transaction/filter', function (Request $request, Response $response)
 $app->post('/transaction/new', function (Request $request, Response $response) {
   global $orientation;
   check_permission($request, 'newTransaction');
-  $data = json_decode($request->getBody()->read());
+  $data = json_decode($request->getBody()->getContents());
   $newTransaction = new NewTransaction($data->payee, $data->payer, $data->quantity, $data->description, $data->type);
   $transaction = Transaction::createFromClient($newTransaction);
   $transaction->buildValidate();
   $transaction->writeValidatedToTemp();
   $orientation->responseMode = TRUE;
+  $response->getBody()->write(json_encode($transaction));
   return $response
-    ->withStatus(201, json_encode($transaction))
+    ->withStatus(201)
     ->withHeader('Content-Type', 'application/json');
 });
 
@@ -270,17 +283,17 @@ function load_account(string $id) : Account {
 function permitted_operations() {
   global $user;
   $data = CreditCommonsInterface::OPERATIONS;
-  $permitted[] = 'workflows';
   $permitted[] = 'permittedEndpoints';
 
   if ($user->id) {
     $permitted[] = 'handshake';
+    $permitted[] = 'workflows';
     if (!$user instanceof BoT) {
       // All users can do all operations.
       $permitted[] = 'absoluteAddress';
       $permitted[] = 'accountHistory';
       $permitted[] = 'accountLimits';
-      $permitted[] = 'accountNames';
+      $permitted[] = 'accountNameAutocomplete';
       $permitted[] = 'accountSummary';
       $permitted[] = 'newTransaction';
       $permitted[] = 'stateChange';
@@ -296,7 +309,8 @@ function permitted_operations() {
 function check_permission(Request $request, string $operationId) {
   global $user;
   setUser($request);
-  if (!$user->accessOperation($operationId)) {
+  $permitted = \CCNode\permitted_operations();
+  if (!in_array($operationId, array_keys($permitted))) {
     throw new PermissionViolation([
       'account' => $user->id?:'<anon>',
       'method' => $request->getMethod(),
@@ -305,86 +319,38 @@ function check_permission(Request $request, string $operationId) {
   }
 }
 
-
 /**
- * Combine local and trunkwards workflows.
- *
- * @return array
- *   Translated workflows, keyed by the rootwards node name they originated from
- *
- * @todo This should be cached if this system has any significant usage.
- * @todo find a way to notify the user if the trunkward node is offline.
+ * @todo cache the results of this and check once a day.
  */
-function getAllWorkflows() : array {
-  global $config;
-  $local = $tree = [];
-
-  // get rootwards workflows.
-  if ($bot_acc_name = $config['bot']['acc_id']) {
-    $account = Account::create($bot_acc_name);
-    try {
-      $tree = Workflows::trunkwardsWorkflows($account->url);
-    }
-    // This is where the user needs to be notified.
-    catch (OfflineFailure $e) {
-
-    }
-    catch (NoWorkflowsFailure $e) {
-
-    }
-  }
-
-  // get the local workflows
-  if (file_exists('workflows.json')) {
-    $json = file_get_contents('workflows.json');
-    foreach (json_decode($json) as $id => $wf) {
-      if ($wf->active) {
-        $hash = Workflows::wfHash((array)$wf->states);
-        $local[$hash] = $wf;
-      }
-    }
-    // Now compare the hashes, and where similar, replace the rootwards one with the local translation.
-    foreach ($tree as $nName => $wfs) {
-      foreach ($wfs as $hash => $wf) {
-        if (isset($local[$hash])) {
-          $tree[$nName][$hash] = $local[$hash];
-          unset($local[$hash]);
-        }
-      }
-    }
-    $abs_path = '/'.implode('/', array_reverse(absolute_node_path()));
-    $tree[$abs_path] = $local;
-  }
-  foreach ($tree as $nPath => &$wfs) {
-    foreach ($wfs as $hash => $wf) {
-      $all[$nPath][] = $wf;
-    }
-  }
-  return $all;
+function get_all_workflows() {
+  return Workflows::getAll(
+    ($json = file_get_contents('workflows.json')) ? json_decode($json) : [],
+    API_calls()
+  );
 }
 
 /**
- * @todo find a way to notify the user if the trunkward node is offline.
+ * Get the object with all the API calls, initialised with a remote account to call.
+ *
+ * @param Remote $account
+ *   if not provided the balance of trade of account will be used
+ * @return RestAPI|NULL
  */
-function absolute_node_path(): array {
+function API_calls(AccountRemote $account = NULL) {
   global $config;
-  $ancestors = [];
-  if ($bot_name = $config['bot']['acc_id']) {
-    $bot_account = Account::load($bot_name);
-    try {
-      $ancestors = (new RestAPI($bot_account->url))->getTrunkwardNodeNames();
+  if (!$account) {
+    if ($bot = $config['bot']['acc_id']) {
+      $account = Account::load($bot);
     }
-    catch (OfflineFailure $e) {
-      // If the parent node is offline, then this is the top node.
-      $ancestors = ['<offline>'];
+    else {
+      return NULL;
     }
   }
-  array_unshift($ancestors, $config['node_name']);
-  return $ancestors;
+  return new RestAPI($account->url, $config['node_name'], $account->getLastHash);
 }
 
 /**
- * Get the library of functions for accessing ledger accounts
+ * Get the library of functions for accessing ledger accounts.
  */
 function accountStore() : AccountStore {
   global $config;

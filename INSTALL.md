@@ -5,20 +5,21 @@
 * mysql or mariadb.
 * a web browser.
 
-
 # Installation procedure 
 Assuming this package has already been downloaded from github to your server:
 
   * Composer is required. [Install Composer](https://getcomposer.org/download)
   * From the current directory, run ``composer install --no-dev``
-  * Create 3 virtualhosts in your web server configuration e.g. http://mynode with the current directory as the document root, and http://acc ounts.mynode and http://blogicService.mynode. Restart your web server.
-  * Add the following to /etc/hosts: ``127.0.0.1 mynode accounts.mynode blogic.mynode``
-  * Fill in the form at http://mynode/setup.
+  * Create virtualhosts in your web server configuration e.g. ``http://mynode`` with the current directory as the document root, and ``http://accounts.mynode`` and ``http://blogicService.mynode``. The blogic service is optional adds transaction fees. Restart your web server.
+  * Ensure your web server can write files nodes.ini, error_log, AccountStore/accountstore.ini, AccountStore/store.json
+  * Add the following line to /etc/hosts: ``127.0.0.1 mynode accounts.mynode blogic.mynode``
+  * Fill in the form at ``http://mynode/setup``.
   * On submission you will be directed to the AccountStore config to create at least 2 accounts.
-  * Modify AccountStore/.htaccess and BlogicService/.htaccess setup/.htaccess to restrict access to your IP address. @todo couldn't all this be done from one file? @todo how would this be done with nginx?
-  * Make sure that apache can write to your directory if you want to keep the server log there.
+  * If you want business logic, then configure by editing BlogicService/blogic.ini by hand.
+  * Modify AccountStore/.htaccess and BlogicService/.htaccess setup/.htaccess to restrict access to your IP address. @todo couldn't all this be done from one .htaccess file? @todo how would this be done with nginx?
+You should now be ready to start sending REST queries to the node. Consider using the [developer client](http://github.com/matslats/cc-client) for this.
 
-# For local development
+# Setup for local development
   * Run composer as above but without the ``--no-dev`` flag. This will include the packages needed for testing.
   * The openapi spec is at vendor/matslats/cc-php-lib/docs/credit-commons-openapi-3.0.yml
   * Once unittest is installed a standard battery of tests can be run the current directory, in which inputs and outputs are compared against the openapi spec. From the current directory, do ``vendor/bin/phpunit tests/APITest.php``

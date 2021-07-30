@@ -2,7 +2,6 @@
 
 namespace CCNode;
 use CreditCommons\Requester;
-use CreditCommons\Misc;
 use GuzzleHttp\RequestOptions;
 
 /**
@@ -22,9 +21,6 @@ class BlogicRequester extends Requester {
       ->setBody($transaction->entries[0])
       ->setMethod('post')
       ->request(200, 'append/'.$transaction->workflow->id);
-    if ($num = count($additional)) {
-      Misc::message("Adding $num fees to transaction". " $this->serviceUrl");
-    }
     return $additional;
   }
 

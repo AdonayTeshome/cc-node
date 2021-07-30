@@ -6,9 +6,9 @@ use CreditCommons\Exceptions\MaxLimitViolation;
 use CreditCommons\Exceptions\MinLimitViolation;
 use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\CCViolation;
+use CreditCommons\Exceptions\WorkflowViolation;
 use CreditCommons\TransactionInterface;
 use CreditCommons\NewTransaction;
-use CreditCommons\Misc;
 use CreditCommons\Workflow;
 use CCNode\Entry;
 use CCNode\Accounts\Account;
@@ -40,24 +40,10 @@ class Transaction extends \CreditCommons\Transaction {
 
 
   /**
-   * @param string $hash
-   * @param Transaction $transaction
-   * @return \static\
-   *
-   * @todo At some point we should check that the transaction scope is not larger than the workflow's scope.
+   * @param array $rows
+   * @return Entry[]
+   * @throws CCViolation
    */
-  function loadWorkflow(string $id) {
-    foreach (getAllWorkflows() as $wfs) {
-      foreach ($wfs as $wfhash => $wf) {
-        if ($wf->id == $id) {
-          return new Workflow($wf, $this);
-        }
-      }
-    }
-    throw new DoesNotExistViolation(['type' => 'workflow', 'id' => $workflow_id]);
-  }
-
-
   static function createEntries(array $rows) : array {
     foreach ($rows as $row) {
       if (empty($row->author)) {
@@ -198,7 +184,6 @@ class Transaction extends \CreditCommons\Transaction {
     $data = Db::connect()->real_escape_string(serialize($this));
     $q = "INSERT INTO temp (uuid, serialized) VALUES ('$this->uuid', '$data')";
     $result = Db::query($q);
-    Misc::message('Written validated transaction '.$this->uuid. ' to temp table');
     return (bool)$result;
   }
 
@@ -207,8 +192,8 @@ class Transaction extends \CreditCommons\Transaction {
    * Call the business logic and append entries.
    */
   function buildValidate() : void {
-    global $loadedAccounts, $user;
-    $this->workflow->canTransitionToState($user->id);
+    global $loadedAccounts, $config, $user;
+    $this->workflow->canTransitionToState($user->id, $this);
     // Add fees, etc by calling on the blogic service
     if ($config['blogic_service_url']) {
       $fees = (new BlogicRequester($config['blogic_service_url']))->appendTo($this);
@@ -236,13 +221,19 @@ class Transaction extends \CreditCommons\Transaction {
    * @throws \Exception
    */
   function changeState(string $target_state) {
-    Misc::message("Changing the state of the transaction to $target_state");
     $this->sign($target_state);
   }
 
   function sign(string $target_state) {
     global $user;
-    $this->workflow->canTransitionToState($user->id, $target_state);
+    if (!$this->workflow->canTransitionToState($user->id, $this, $target_state, $user->admin)) {
+      throw new WorkflowViolation([
+        'acc_id' => $user->id,
+        'type' => $this->type,
+        'from' => $this->state,
+        'to' => $target_state,
+      ]);
+    }
     $this->state = $target_state;
     $this->version++;
     $this->saveTransactionNewVersion();
@@ -274,7 +265,6 @@ class Transaction extends \CreditCommons\Transaction {
       }
       Db::query("DELETE FROM temp WHERE uuid = '$this->uuid'");
     }
-    Misc::message('Written transaction');
   }
 
   /**

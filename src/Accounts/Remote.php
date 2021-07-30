@@ -1,31 +1,18 @@
 <?php
 
 namespace CCNode\Accounts;
+use CreditCommons\AccountRemote;
 use CreditCommons\RestAPI;
-use CCNode\Accounts\Account;
 
 /**
- * Class representing a member
+ * Class representing a remote account, which authorises using its latest hash.
  */
-class Remote extends Account {
-
-  public $url;
-
-  function __construct(\stdClass $obj) {
-    parent::__construct($obj);
-    $this->url = $obj->url;
-  }
-
-  function getRequester() {
-    return new RestAPI($this->url);
-  }
+class Remote extends AccountRemote {
 
   /**
    * Get the last hash pertaining to this account.
    *
    * @return array
-   *
-   * @todo could save the result but I don't think it used more than once per request.
    */
   function getLastHash() : string {
     $query = "SELECT hash "
@@ -35,27 +22,31 @@ class Remote extends Account {
     if ($row = Db::query($query)->fetch_object()) {
       return (string)$row->hash;
     }
-    else { //this account has never traded to there is no hash. Security problem?
+    else { //No hash because this account has never traded to. Security problem?
       return '';
     }
   }
 
-  public function getHistory($samples = 0) : array {
-    // N.B. Branchward nodes may refuse permission
-    return $this->getRequester()->getHistory($this->transversalPath, $samples);
-
-    return parent::getHistory();
+  public function API() : RestAPI {
+    global $config;
+    return new RestAPI($this->url, $config['node_name'], $this->getLastHash);
   }
 
+  /**
+   * The below functions might work better somewhere else.
+   */
+
+  public function getHistory($samples = 0) : array {
+    // N.B. Branchward nodes may refuse permission
+    return API_calls($this)->getHistory($this->transversalPath, $samples);
+  }
 
   /**
    * {@inheritDoc}
    */
   function getTradeStats() : array {
     // N.B. Branchward nodes may refuse permission
-    return $this->getRequester()->getStats($this->givenPath);
-
-    return parent::getTradeStats();
+    return API_calls($this)->getStats($this->givenPath);
   }
 
 
@@ -64,7 +55,7 @@ class Remote extends Account {
    */
   static function getAllTradeStats(bool $details = TRUE) : array {
     $all_accounts = parent::getAllTradeStats($details);
-    $map = $this->getRequester()->accounts($details, TRUE);
+    $map = API_calls($this)->accounts($details, TRUE);
     if ($details) {
       $all_accounts[$this->id]->parents = $map;
     }

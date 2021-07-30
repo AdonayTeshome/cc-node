@@ -15,10 +15,12 @@ if ($_POST) {
   if (!$errs) {
     require './writeini.php';
     if ($_POST['user']['new']['id']) {
-      add_account('user', $_POST['user']['new']);
+      if (empty($_POST['user']['new']['key'])) $errs[] = 'New users must have an api key';
+      else add_account('user', $_POST['user']['new']);
     }
     unset($_POST['user']['new']);
     if (@$_POST['node']['new']['id']) {
+      if (empty($_POST['node']['new']['url'])) $errs[] = 'New nodes must have a url';
       add_account('node', $_POST['node']['new']);
     }
     unset($_POST['node']['new']);
@@ -66,7 +68,7 @@ $accs = load_accounts();
       print "<p><font color=red>".implode('<br />', $errs).'</font>';
     ?><form method="post">
       <h2>User accounts</h2>
-      <p>At least two are needed.
+      <p>Resubmit the form to create at least two accounts.
       <table cellpadding="2">
         <thead>
           <tr>

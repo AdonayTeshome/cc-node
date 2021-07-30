@@ -1,7 +1,6 @@
 <?php
 //namespace CCnode;
 ini_set('display_errors', 1);
-use CCNode\Db;
 const NODE_SETTINGS_FILE = '../node.ini';
 require_once '../vendor/autoload.php';
 $node_config = parse_ini_file(NODE_SETTINGS_FILE);
@@ -17,19 +16,6 @@ if ($_POST) {
   if (!$errs) {
     require './writeini.php';
     replaceIni($_POST, NODE_SETTINGS_FILE);
-    if (empty($node_config['db']['name'])) {
-      $connection = new mysqli('localhost', $_POST['db']['user'], $_POST['db']['pass']);
-      $connection->query("DROP DATABASE ".$_POST['db']['name']);
-      $connection->query("CREATE DATABASE ".$_POST['db']['name']);
-      Db::connect($_POST['db']['name'], $_POST['db']['user'], $_POST['db']['pass']);
-      foreach (explode(';', file_get_contents('install.sql')) as $q) {
-        if ($query = trim($q)) {
-          Db::query($query);
-        }
-      }
-      // TODO need to be sure this process actually worked.
-    }
-print "Check the db is created and then set up <a href=\"accounts.php\">the accounts</a>.";exit;
   }
 
 }
@@ -52,7 +38,7 @@ if (!is_writable(NODE_SETTINGS_FILE)) {
       <p><span title="This information could only be used by the end client or for formatting info to send to the client. It is not currently used">Name of unit <input name = "currency_name" value = "<?php print $node_config['currency_name']; ?>" disabled></span>
       <br /><span title="This information could only be used by the end client or for formatting info to send to the client. It is not currently used">Decimal places displayed <input name = "decimal_places" type = "number" min = "0" max = "3" size = "1" value = "<?php print $node_config['decimal_places']; ?>" disabled>
       <br /><span title="Some social currencies like to register transactions for zero amount">Allow zero payments <input name = "zero_payments" type = "checkbox" value = "<?php print $node_config['zero_payments']; ?>"></span>
-      
+
       <h2>Performance</h2>
       <p>Timeout in seconds<input name = "timeout" type = "number" min = "0" max = "60" size = "1" value = "<?php print $node_config['timeout']; ?>">
       <br />(Needs to be longer for nodes far away from the trunk)

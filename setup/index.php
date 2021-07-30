@@ -47,7 +47,16 @@ if ($_POST) {
     unset($_POST['acc']);
     replaceIni($_POST, SETTINGS_INI_FILE);
     replaceIni($acc, ACC_STORAGE_INI_FILE);
-    header('Location: index.php?accounts');
+    $connection = new mysqli('localhost', $_POST['db']['user'], $_POST['db']['pass']);
+    $connection->query("DROP DATABASE ".$_POST['db']['name']);
+    $connection->query("CREATE DATABASE ".$_POST['db']['name']);
+    CCNode\Db::connect($_POST['db']['name'], $_POST['db']['user'], $_POST['db']['pass']);
+    foreach (explode(';', file_get_contents('install.sql')) as $q) {
+      if ($query = trim($q)) {
+        CCNode\Db::query($query);
+      }
+    }
+    print "Check the db is created and then set up <a href=\"index.php?accounts\">the accounts</a>.";
     exit;
   }
   else $values = $_POST;

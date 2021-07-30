@@ -52,7 +52,7 @@ class Orientation {
 
   function getDownstreamRequester() {
     if ($this->downstreamAccount) {
-      return new RestAPI($this->downstreamAccount->url);
+      return API_calls($this->downstreamAccount);
     }
   }
 
