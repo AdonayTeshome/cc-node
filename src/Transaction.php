@@ -9,6 +9,7 @@ use CreditCommons\Exceptions\CCViolation;
 use CreditCommons\Exceptions\WorkflowViolation;
 use CreditCommons\TransactionInterface;
 use CreditCommons\NewTransaction;
+use CreditCommons\Workflows;
 use CreditCommons\Workflow;
 use CCNode\Entry;
 use CCNode\Accounts\Account;
@@ -35,7 +36,7 @@ class Transaction extends \CreditCommons\Transaction {
    */
   public function __construct(string $uuid, int $version, string $type, string $state, array $entries, $txID = NULL) {
     parent::__construct($uuid, $version, $type, $state, $entries, $txID);
-    $this->workflow = $this->loadWorkflow($type);
+    $this->workflow = Workflows::get($type, get_all_workflows());
   }
 
 
@@ -168,6 +169,7 @@ class Transaction extends \CreditCommons\Transaction {
     }
     else {
       $transaction = static::getTemp($uuid);
+      // Tell the node if these accounts imply coordination with other (downstream) ledgers
       $orientation->addAccount($transaction->entries[0]->payee);
       $orientation->addAccount($transaction->entries[0]->payer);
     }
@@ -249,8 +251,9 @@ class Transaction extends \CreditCommons\Transaction {
     global $user;
     // The datestamp is added automatically
     $q = "INSERT INTO transactions (uuid, version, type, state, scribe) "
-    . "VALUES ('$this->uuid', $this->version, '".$this->workflow->id."', '$this->state', '$user->id')";
+    . "VALUES ('$this->uuid', $this->version, '$this->type', '$this->state', '$user->id')";
     $new_id = Db::query($q);
+    print_R($this);
     $this->writeEntries($new_id);
   }
 

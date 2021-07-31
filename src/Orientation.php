@@ -1,9 +1,7 @@
 <?php
 
 namespace CCNode;
-
-use CreditCommons\RestAPI;
-use CCNode\Account;
+use CCNode\Accounts\Account;
 
 
 /**
@@ -14,73 +12,52 @@ class Orientation {
   public $downstreamAccount;
   public $upstreamAccount;
   public $localRequest;
-  private $trunkwardsAccountName;
-  private $trunkwardsAccount;
+  private $trunkwardsAccount = NULL;
 
   /**
    * FALSE for request, TRUE for response mode
    * @var Bool
    */
-  public $esponseMode;
+  public $responseMode;
 
-  function __construct(AccountRemote $account = NULL) {
-    global $config;
-    $this->esponseMode = 0;
-    $this->upstreamAccount = $account;
-    $this->trunkwardsAccountName = $config['bot']['acc_id'];
-    if ($this->trunkwardsAccountName and $this->upstreamAccount) {
-      if ($this->trunkwardsAccountName == $this->upstreamAccount->id) {
-        $this->trunkwardsAccount = $this->upstreamAccount;
-      }
+  function __construct() {
+    global $config, $user;
+    $this->responseMode = 0;
+    $this->upstreamAccount = $user;
+    if (!empty($config['bot']['acc_id'])) {
+      $this->trunkwardsAccount = load_account($config['bot']['acc_id']);
     }
   }
 
 
   /**
-   * Any remote account which isn't the upstreamAccount is marked as the downstream account
+   * Any remote account which isn't the upstreamAccount is marked as a downstream account
    */
   function addAccount(Account $acc) : void {
-    if ($acc instanceOf AccountRemote) {
-      if (!$this->upstreamAccount or $acc->id != $this->upstreamAccount->id) {
-        $this->downstreamAccount = $acc;
-        if ($this->trunkwardsAccountName and $this->trunkwardsAccountName == $acc->id) {
-          $this->trunkwardsAccount = $this->upstreamAccount;
-        }
-      }
+    if ($acc instanceOf AccountRemote and $acc->id != $this->upstreamAccount->id) {
+      // The upstream account is the current user, so any other remote account is downstream.
+      $this->downstreamAccount = $acc;
     }
   }
 
-  function getDownstreamRequester() {
+  function getRequester() {
     if ($this->downstreamAccount) {
       return API_calls($this->downstreamAccount);
     }
   }
 
 
-  function getTrunkwardsAccount() {
-    global $config;
-    if (!$this->trunkwardsAccount and $this->trunkwardsAccountName) {
-      include_transversal_classes();
-      // Load this account ensuring it is the AccountRemote class by naming it
-      $id = $this->trunkwardsAccountName . '/'.$config['node_name'];
-      $account = load_account($this->trunkwardsAccountName);
-      $this->trunkwardsAccount = new AccountBoT($account, $id);
-    }
-    return $this->trunkwardsAccount;
-  }
-
   function orientToRoot() : bool {
-    if ($this->trunkwardsAccountName) {
-      $this->trunkwardsAccount = $this->getTrunkwardsAccount();
+    if ($this->trunkwardsAccount) {
       $this->downstreamAccount = $this->trunkwardsAccount;
     }
     return isset($this->trunkwardsAccount);
   }
 
   function isUpstreamBranch() {
-    if ($this->trunkwardsAccountName) {
+    if ($this->trunkwardsAccount) {
       if ($ups = $this->upstreamAccount) {
-        if ($ups->id <> $this->trunkwardsAccountName)
+        if ($ups->id <> $this->trunkwardsAccount->id)
           return TRUE;
       }
       else {
@@ -110,7 +87,7 @@ class Orientation {
   }
 
   function upstreamIsRootwards() : bool {
-    return $this->trunkwardsAccountName == $this->upstreamAccount->id;
+    return $this->trunkwardsAccount->id == $this->upstreamAccount->id;
   }
 
 
@@ -141,7 +118,7 @@ class Orientation {
         if (!empty($account->url)) {
           //Make sure we load the remote version by giving a path longer than 1 part.
           $ledgerAccount = Account::create($config['node_name']."/$account->id");
-          list($code) = $this->getDownstreamRequester()->handshake();
+          list($code) = $this->getRequester()->handshake();
           $results[$code][] = $account->id;
         }
       }

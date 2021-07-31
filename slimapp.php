@@ -15,6 +15,7 @@ use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\PermissionViolation;
 use CreditCommons\CreditCommonsInterface;
 use CreditCommons\Workflows;
+use CreditCommons\Workflow;
 use CreditCommons\AccountRemote;
 use CreditCommons\RestAPI;
 use CCnode\Accounts\BoT;
@@ -59,6 +60,10 @@ $c = $app->getContainer();
 $c['errorHandler'] = function ($c) {
   return new Slim3ErrorHandler();
 };
+$c['phpErrorHandler'] = function ($c) {
+  return new Slim3ErrorHandler();
+  return new PhpError($c->get('settings')['displayErrorDetails']);
+};
 
 /**
  * Implement the Credit Commons API methods
@@ -91,7 +96,7 @@ $app->get('/address', function (Request $request, Response $response) {
 $app->get('/workflows', function (Request $request, Response $response) {
   check_permission($request, 'workflows');
   $all_workflows = get_all_workflows();
-  $response->getBody()->write(json_encode($result));
+  $response->getBody()->write(json_encode($all_workflows));
   return $response->withHeader('Content-Type', 'application/json');
 });
 
@@ -229,38 +234,6 @@ $app->patch('/transaction/{uuid:[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 
 return $app;
 
-function setUser(Request $request) {
-  global $orientation, $config, $user;
-  $acc_id = '';
-  $upstreamAccount = NULL;
-  if ($request->hasHeader('cc-user') and $request->hasHeader('cc-auth')) {
-
-    $acc_id = $request->getHeader('cc-user')[0];
-    $auth = $request->getHeader('cc-auth')[0];
-    // Find out where the request is coming from, check the hash if it is another
-    // node, and set up the session, which should persist accross the microservices.
-    if ($acc_id and $acc_id <> 'null') {
-      $user = Account::load($acc_id);
-      // Check the ratchet
-      if ($user instanceOf Remote) {
-        $query = "SELECT TRUE FROM hash_history WHERE acc = '$account->id' AND hash = '$hash' ORDER BY id DESC LIMIT 0, 1";
-        $result = Db::query($query)->fetch_row();
-        if ($hash && !$result or !$hash && $result) {
-          throw new HashMismatchFailure(['downStreamNode' => $config['node_name']]);
-        }
-        $upstreamAccount = $user;
-      }
-    }
-  }
-
-  if (!$user) {
-    // Load an anonymous account object
-    $user = Account::load();
-  }
-  $orientation = new Orientation(@$upstreamAccount);
-}
-
-
 /**
  *
  * @staticvar array $fetched
@@ -277,6 +250,21 @@ function load_account(string $id) : Account {
     }
   }
   return $fetched[$id];
+}
+
+function check_permission(Request $request, string $operationId) {
+  authenticate($request); // This sets $user
+  global $user, $orientation;
+  $orientation = new Orientation();
+
+  $permitted = \CCNode\permitted_operations();
+  if (!in_array($operationId, array_keys($permitted))) {
+    throw new PermissionViolation([
+      'account' => $user->id?:'<anon>',
+      'method' => $request->getMethod(),
+      'url' => $request->getRequestTarget()
+    ]);
+  }
 }
 
 
@@ -306,27 +294,49 @@ function permitted_operations() {
   return array_intersect_key(CreditCommonsInterface::OPERATIONS, array_flip($permitted));
 }
 
-function check_permission(Request $request, string $operationId) {
-  global $user;
-  setUser($request);
-  $permitted = \CCNode\permitted_operations();
-  if (!in_array($operationId, array_keys($permitted))) {
-    throw new PermissionViolation([
-      'account' => $user->id?:'<anon>',
-      'method' => $request->getMethod(),
-      'url' => $request->getRequestTarget()
-    ]);
+
+function authenticate(Request $request) : void {
+  global $config, $user;
+  $acc_id = '';
+  $user = Account::load(); // Anon
+  if ($request->hasHeader('cc-user') and $request->hasHeader('cc-auth')) {
+    $acc_id = $request->getHeader('cc-user')[0];
+    $auth = $request->getHeader('cc-auth')[0];
+    // Find out where the request is coming from, check the hash if it is another
+    // node, and set up the session, which should persist accross the microservices.
+    if ($acc_id and $acc_id <> 'null') {
+      $user = Account::load($acc_id);
+      // Check the ratchet
+      if ($user instanceOf Remote) {
+        $query = "SELECT TRUE FROM hash_history WHERE acc = '$account->id' AND hash = '$hash' ORDER BY id DESC LIMIT 0, 1";
+        $result = Db::query($query)->fetch_row();
+        if ($hash && !$result or !$hash && $result) {
+          throw new HashMismatchFailure(['downStreamNode' => $config['node_name']]);
+        }
+      }
+    }
   }
 }
 
+
 /**
- * @todo cache the results of this and check once a day.
+ * @todo: cache this and check once a day.
  */
 function get_all_workflows() {
-  return Workflows::getAll(
-    ($json = file_get_contents('workflows.json')) ? json_decode($json) : [],
-    API_calls()
-  );
+  return Workflows::getAll(load_local_workflows(), API_calls());
+}
+
+function load_local_workflows() : array {
+  $wfs = [];
+  if (file_exists('workflows.json')) {
+    $content = file_get_contents('workflows.json');
+    if ($data = json_decode($content)) {
+      foreach ($data as $wf) {
+        $wfs[] = new Workflow($wf);
+      }
+    }
+  }
+  return $wfs;
 }
 
 /**

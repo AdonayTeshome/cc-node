@@ -4,8 +4,11 @@
     "label": "Bill",
     "summary": "The author bills another account, who must confirm.",
     "active": "1",
-    "creator": ["payee"],
-    "start": "pending",
+    "creation": {
+      "by" : ["payee"],
+      "state": "pending",
+      "label": "Create"
+    },
     "states": {
       "pending": {
         "completed": {
@@ -35,8 +38,45 @@
     "label": "Credit",
     "summary": "The author credits another account, who must confirm.",
     "active": "1",
-    "creator": ["payer"],
-    "start": "pending",
+    "creation": {
+      "by" : ["payer"],
+      "state": "pending",
+      "label": "Create"
+    },
+    "states": {
+      "pending": {
+        "completed": {
+          "label": "Sign",
+          "signatories": [
+            "payee"
+          ]
+        },
+        "erased": {
+          "label": "Erase",
+          "signatories": [
+            "payer"
+          ]
+        }
+      },
+      "completed": {
+        "erased": {
+          "label": "Erase",
+          "signatories": []
+        }
+      },
+      "erased": {}
+    }
+  },
+  {
+    "id": "disabled",
+    "label": "Disabled",
+    "summary": "This workflow should never be loaded",
+    "active": "0",
+    "creation": {
+      "by" : ["payer"],
+      "state": "pending",
+      "label": "Create"
+    },
     "states": {
       "pending": {
         "completed": {
