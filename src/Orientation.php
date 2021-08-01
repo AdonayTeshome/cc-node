@@ -108,19 +108,13 @@ class Orientation {
   function handshake() : array {
     global $config;
     $results = [];
-    if ($this->upstreamAccount) {
-      //return the name of this node back upstream
-      header('Node-name: '.$config['node_name']);
-    }
-    else {
-      $active_policies = AccountStore()->filter(['status' => 1]);
-      foreach ($active_policies as $account) {
-        if (!empty($account->url)) {
-          //Make sure we load the remote version by giving a path longer than 1 part.
-          $ledgerAccount = Account::create($config['node_name']."/$account->id");
-          list($code) = $this->getRequester()->handshake();
-          $results[$code][] = $account->id;
-        }
+    $active_policies = AccountStore()->filter(['status' => 1]);
+    foreach ($active_policies as $account) {
+      if (!empty($account->url)) {
+        //Make sure we load the remote version by giving a path longer than 1 part.
+        $ledgerAccount = Account::create($config['node_name']."/$account->id");
+        list($code) = $this->getRequester()->handshake();
+        $results[$code][] = $account->id;
       }
     }
     return $results;

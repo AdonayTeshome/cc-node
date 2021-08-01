@@ -27,7 +27,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\App;
 
 $config = parse_ini_file('./node.ini');
-// Slim4
+// Slim4 (when the League\OpenAPIValidation is ready)
 //use Slim\Factory\AppFactory;
 //use Psr\Http\Message\ServerRequestInterface;
 //$app = AppFactory::create();
@@ -54,58 +54,54 @@ $config = parse_ini_file('./node.ini');
 //    return $response->withStatus($exception->getCode());
 //});
 
-$app = new App;
-
+$app = new App();
 $c = $app->getContainer();
 $c['errorHandler'] = function ($c) {
   return new Slim3ErrorHandler();
 };
 $c['phpErrorHandler'] = function ($c) {
   return new Slim3ErrorHandler();
-  return new PhpError($c->get('settings')['displayErrorDetails']);
 };
+
+/**
+ * Middleware to add the name of the current node to every response header.
+ */
+$app->add(function ($request, $response, $next) {
+  global $config;
+  $response = $next($request, $response);
+	return $response->withHeader('Node-name', $config['node_name']);
+});
+
 
 /**
  * Implement the Credit Commons API methods
  */
-
 $app->get('/', function (Request $request, Response $response) {
   $response->getBody()->write('It works!');
   return $response
-    ->withStatus(200)
-    ->withHeader('Content-Type', 'application/json');
+    ->withHeader('Content-Type', 'text/html');
 });
 
 $app->options('/', function (Request $request, Response $response) {
   // No access control
   check_permission($request, 'permittedEndpoints');
-  $result = permitted_operations();
-  $response->getBody()->write(json_encode($result));
-  return $response->withHeader('Content-type', 'application/json');;
+  return json_response($response, permitted_operations(), 200);
 });
 
 $app->get('/address', function (Request $request, Response $response) {
-  global $orientation, $config;
   check_permission($request, 'absoluteAddress');
-  $bot_url = ($bot_name = $config['bot']['acc_id']) ? Account::load($bot_name)->url : '';
-  $result = RestAPI::absoluteNodePath(API_calls());
-  $response->getBody()->write(json_encode($result));
-  return $response->withHeader('Content-type', 'application/json');;
+  return json_response(RestAPI::absoluteNodePath(API_calls()), permitted_operations(), 200);
 });
 
 $app->get('/workflows', function (Request $request, Response $response) {
   check_permission($request, 'workflows');
-  $all_workflows = get_all_workflows();
-  $response->getBody()->write(json_encode($all_workflows));
-  return $response->withHeader('Content-Type', 'application/json');
+  return json_response($response, get_all_workflows(), 200);
 });
 
 $app->get('/handshake', function (Request $request, Response $response) {
-  global $orientation;
+  global $orientation, $config;
   check_permission($request, 'handshake');
-  $result = $orientation->handshake() ?: [];
-  $response->getBody()->write(json_encode($result));
-  return $response->withHeader('Content-Type', 'application/json');
+  return json_response($response, $orientation->handshake(), 200);
 });
 
 $app->get('/accountnames[/{fragment}]', function (Request $request, Response $response, $args) {
@@ -367,16 +363,36 @@ function accountStore() : AccountStore {
   return new AccountStore($config['account_store_url']);
 }
 
+/**
+ * Convert all errors into the CC Error format, which includes a field showing
+ * which node caused the error
+ */
 class Slim3ErrorHandler {
+  /**
+   * Probably all errors and warnings should include an emergency message to the admin.
+   * CC nodes should be seamless.
+   */
   public function __invoke($request, $response, $exception) {
     global $config;
     if (!$exception instanceOf CCError) {
-      $exception = new CCFailure([
+      // isolate only the first exception because the protocol allows only one.
+      $e = new CCFailure([
         'message' => $exception->getMessage()
       ]);
+      while ($exception = $exception->getPrevious()) {
+        $e = new CCFailure([
+          'message' => $exception->getMessage()
+        ]);
+      }
+      $exception = $e;
     }
     $exception->node = $config['node_name'];
     $response->getBody()->write(json_encode($exception, JSON_UNESCAPED_UNICODE));
     return $response->withStatus($exception->getCode());
    }
+}
+
+function json_response($response, $body, $code = 200) : Response {
+  $response->getBody()->write(json_encode($body));
+  return $response->withHeader('content-type', 'application/json');
 }

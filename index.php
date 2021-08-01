@@ -15,6 +15,6 @@ if (empty($config['node_name'])) {
 require_once './vendor/autoload.php';
 
 // It helps the testing framework to have the main app in a seperate file.
-$app = require './slimapp.php';
+require './slimapp.php';
 
 $app->run();
