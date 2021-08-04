@@ -253,7 +253,6 @@ class Transaction extends \CreditCommons\Transaction {
     $q = "INSERT INTO transactions (uuid, version, type, state, scribe) "
     . "VALUES ('$this->uuid', $this->version, '$this->type', '$this->state', '$user->id')";
     $new_id = Db::query($q);
-    print_R($this);
     $this->writeEntries($new_id);
   }
 

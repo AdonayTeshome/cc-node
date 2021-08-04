@@ -4,6 +4,7 @@
  *
  *
  * @todo find a way to notify the user if the trunkward node is offline.
+ * @todo all calls to RestAPI() must be wrapped in try{}
  *
  */
 namespace CCNode;
@@ -69,7 +70,7 @@ $c['phpErrorHandler'] = function ($c) {
 $app->add(function ($request, $response, $next) {
   global $config;
   $response = $next($request, $response);
-	return $response->withHeader('Node-name', $config['node_name']);
+	return $response->withHeader('Node-path', absolute_path());
 });
 
 
@@ -85,23 +86,23 @@ $app->get('/', function (Request $request, Response $response) {
 $app->options('/', function (Request $request, Response $response) {
   // No access control
   check_permission($request, 'permittedEndpoints');
-  return json_response($response, permitted_operations(), 200);
+  return json_response($response, permitted_operations());
 });
 
-$app->get('/address', function (Request $request, Response $response) {
-  check_permission($request, 'absoluteAddress');
-  return json_response(RestAPI::absoluteNodePath(API_calls()), permitted_operations(), 200);
+$app->get('/trunkwards', function (Request $request, Response $response) {
+  check_permission($request, 'trunkwardsNodes');
+  return json_response($response, RestAPI::getTrunkwardsNodes(API_calls()), 200);
 });
 
 $app->get('/workflows', function (Request $request, Response $response) {
   check_permission($request, 'workflows');
-  return json_response($response, get_all_workflows(), 200);
+  return json_response($response, get_all_workflows());
 });
 
 $app->get('/handshake', function (Request $request, Response $response) {
   global $orientation, $config;
   check_permission($request, 'handshake');
-  return json_response($response, $orientation->handshake(), 200);
+  return json_response($response, $orientation->handshake());
 });
 
 $app->get('/accountnames[/{fragment}]', function (Request $request, Response $response, $args) {
@@ -115,10 +116,15 @@ $app->get('/accountnames[/{fragment}]', function (Request $request, Response $re
     // @todo Also we may want to query child ledgers.
   }
   $local_names = accountStore()->filter(['chars' => @$args['fragment'], 'status' => 1, 'local' => 1, 'nameonly' => 1], TRUE);
-  $result = array_slice(array_merge($local_names, $remote_names), 0, $params['limit']??10);
-  $response->getBody()->write(json_encode($result));
-  return $response->withHeader('Content-Type', 'application/json');
+  return json_response($response, array_slice(array_merge($local_names, $remote_names), 0, $params['limit']??10));
 });
+
+$app->get('/account/limits/{acc_id}', function (Request $request, Response $response, $args) {
+  check_permission($request, 'accountHistory');
+  $account = accountStore()->fetch($args['acc_id'], FALSE);
+  return json_response($response, (object)['min' => $account->min, 'max' => $account->max]);
+});
+
 
 $app->get('/account/summary[/{acc_path}]', function (Request $request, Response $response, $args) {
   global $orientation;
@@ -153,16 +159,6 @@ $app->get('/account/history/{acc_path}', function (Request $request, Response $r
   return $response->withHeader('Content-Type', 'application/json');
 });
 
-$app->get('/account/limits/{acc_path}', function (Request $request, Response $response, $args) {
-  global $orientation;
-  check_permission($request, 'accountHistory');
-  $account = accountStore()->fetch($args['acc_path'], FALSE);
-  $result = (object)['min' => $account->min, 'max' => $account->max];
-  $orientation->responseMode = TRUE;
-  $response->getBody()->write(json_encode($result));
-  return $response->withHeader('Content-Type', 'application/json');
-});
-
 
 $app->get('/transaction/filter', function (Request $request, Response $response) {
   global $orientation;
@@ -188,35 +184,41 @@ $app->get('/transaction/filter', function (Request $request, Response $response)
 $app->post('/transaction/new', function (Request $request, Response $response) {
   global $orientation;
   check_permission($request, 'newTransaction');
+  // Because the testing framework already read it.
+  $request->getBody()->rewind();
   $data = json_decode($request->getBody()->getContents());
   $newTransaction = new NewTransaction($data->payee, $data->payer, $data->quantity, $data->description, $data->type);
+
   $transaction = Transaction::createFromClient($newTransaction);
   $transaction->buildValidate();
-  $transaction->writeValidatedToTemp();
-  $orientation->responseMode = TRUE;
-  $response->getBody()->write(json_encode($transaction));
-  return $response
-    ->withStatus(201)
-    ->withHeader('Content-Type', 'application/json');
+  if ($transaction->workflow->creation->confirm) {
+    $transaction->writeValidatedToTemp();
+    $orientation->responseMode = TRUE;
+    return json_response($response, $transaction, 200);
+  }
+  else {
+    $transaction->sign($transaction->workflow->creation->state);
+    $orientation->responseMode = TRUE;
+    return json_response($response, $transaction, 201);
+  }
 });
 
-$app->post('/transaction/relay', function (Request $request, Response $response) {
+$app->post('/transaction/new/relay', function (Request $request, Response $response) {
   global $orientation;
   check_permission($request, 'relayTransaction');
+  // Because the testing framework already read it.
+  $request->getBody()->rewind();
   $data = json_decode($request->getBody()->read());
   $transaction = TransversalTransaction::createFromUpstreamNode($post);
   $transaction->buildValidate();
   $transaction->writeValidatedToTemp();
   $orientation->responseMode = TRUE;
-  return $response
-    ->withStatus(201, json_encode($transaction))
-    ->withHeader('Content-Type', 'application/json');
+  return json_response($response, $transaction, 201);
 });
 
 $app->patch('/transaction/{uuid:[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-\b[0-9a-f]{12}}/{dest_state}', function (Request $request, Response $response, $args) {
   check_permission($request, 'stateChange');
   global $orientation;
-  $dest_state = $args['dest_state'];
   $uuid = $args['uuid'];
   $transaction = Transaction::loadByUuid($uuid);
   // Ensure that transversal transactions are being manipulated only from their
@@ -224,7 +226,7 @@ $app->patch('/transaction/{uuid:[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
   if (!$orientation->upstreamAccount and !empty($transaction->payer->url) and !empty($transaction->payee->url)) {
     throw new Exceptions\IntermediateLedgerViolation();
   }
-  $transaction->changeState($dest_state);
+  $transaction->changeState($args['dest_state']);
   return $response->withStatus(201);
 });
 
@@ -273,8 +275,8 @@ function permitted_operations() {
     $permitted[] = 'handshake';
     $permitted[] = 'workflows';
     if (!$user instanceof BoT) {
-      // All users can do all operations.
-      $permitted[] = 'absoluteAddress';
+      // Default privacy setting, Leafward nodes are private to trunkward nodes
+      $permitted[] = 'trunkwardsNodes';
       $permitted[] = 'accountHistory';
       $permitted[] = 'accountLimits';
       $permitted[] = 'accountNameAutocomplete';
@@ -374,25 +376,53 @@ class Slim3ErrorHandler {
    */
   public function __invoke($request, $response, $exception) {
     global $config;
+    print_r($exception);
     if (!$exception instanceOf CCError) {
       // isolate only the first exception because the protocol allows only one.
       $e = new CCFailure([
-        'message' => $exception->getMessage()
+        'message' => $exception->getMessage()?:get_class($exception)
       ]);
       while ($exception = $exception->getPrevious()) {
         $e = new CCFailure([
-          'message' => $exception->getMessage()
+          'message' => $exception->getMessage()?:get_class($exception)
         ]);
       }
       $exception = $e;
     }
     $exception->node = $config['node_name'];
-    $response->getBody()->write(json_encode($exception, JSON_UNESCAPED_UNICODE));
-    return $response->withStatus($exception->getCode());
+    // this bypasses the middleware, so need to do this again.
+	  $response = $response->withHeader('Node-path', absolute_path());
+    return json_response($response, $exception, $exception->getCode());
    }
 }
 
-function json_response($response, $body, $code = 200) : Response {
-  $response->getBody()->write(json_encode($body));
-  return $response->withHeader('content-type', 'application/json');
+function json_response(Response $response, $body, int $code = 200) : Response {
+  if (is_scalar($body)) {
+    throw new CCFailure(['message' => 'Scalar value sent to json_encode']);
+  }
+  $response->getBody()->write(json_encode($body, JSON_UNESCAPED_UNICODE));
+  $response = $response->withHeader('Content-Type', 'application/json');
+  if ($code <> 200) {
+    $response = $response->withStatus($code);
+  }
+  return $response;
+}
+
+/**
+ * Get the path of the trunkwards node and append the current node name
+ * @global array $config
+ * @return string
+ *   The absolute path from trunkwards to leafwards
+ *
+ * @todo this MUST be cached somewhere before multilevel deployment
+ */
+function absolute_path() : string {
+  global $config;
+  // for now we'll just use the BoT account name, This will serve for a 2 level
+  // tree, but in future we'll need to cache somwehere the response header from each BOT request.
+  if (!empty($config['bot']['acc_id'])) {
+    $path[] = $config['bot']['acc_id'];
+  }
+  $path[] = $config['node_name'];
+  return implode('/', $path);
 }
