@@ -1,5 +1,7 @@
 # Credit Commons reference implementation
 
+Reference implementation of the [Credit Commons protocol](https://gitlab.com/credit-commons-software-stack/cc-php-lib/-/blob/master/docs/credit-commons-openapi-3.0.yml)
+
 ## Intent
 Develop network software that can serve a fully differentiated world economy of federated Mutual Credit networks.
 The inspiration for this is the [Credit Commons whitepaper](http://www.creditcommons.net/) by [Matthew Slater](https://matslats.net/) and [Tim Jenkin](https://en.wikipedia.org/wiki/Tim_Jenkin).
