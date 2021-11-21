@@ -69,7 +69,7 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
    *
    * @param string $string
    */
-  function filterByname(string $string = '') {
+  function filterByName(string $string = '') {
     if ($string) {
       $this->accounts = array_filter($this->accounts, function ($a) use ($string) {
         return is_int(stripos($a->id, $string));
@@ -112,6 +112,10 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
   }
 
 
+  /**
+   * @param string $id
+   * @return bool
+   */
   function availableName($id) {
     return !isset($this[$id]) ;
   }

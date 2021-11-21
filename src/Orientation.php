@@ -1,7 +1,7 @@
 <?php
 
 namespace CCNode;
-use CCNode\Accounts\Account;
+use CreditCommons\Account;
 
 
 /**
@@ -47,7 +47,7 @@ class Orientation {
   }
 
 
-  function orientToRoot() : bool {
+  function orientToTrunk() : bool {
     if ($this->trunkwardsAccount) {
       $this->downstreamAccount = $this->trunkwardsAccount;
     }
@@ -78,7 +78,7 @@ class Orientation {
   }
 
   // return TRUE, FALSE
-  function goingRootwards() {
+  function goingTrunkwards() {
     return $this->trunkwardsAccount and (
       $this->downstreamAccount == $this->trunkwardsAccount && !$this->responseMode
       or
@@ -86,7 +86,7 @@ class Orientation {
     ) && !$this->localRequest;
   }
 
-  function upstreamIsRootwards() : bool {
+  function upstreamIsTrunkwards() : bool {
     return $this->trunkwardsAccount->id == $this->upstreamAccount->id;
   }
 
@@ -112,7 +112,7 @@ class Orientation {
     foreach ($active_policies as $account) {
       if (!empty($account->url)) {
         //Make sure we load the remote version by giving a path longer than 1 part.
-        $ledgerAccount = Account::create($config['node_name']."/$account->id");
+        $ledgerAccount = accountStore()->load($config['node_name']."/$account->id");
         list($code) = $this->getRequester()->handshake();
         $results[$code][] = $account->id;
       }

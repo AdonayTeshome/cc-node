@@ -3,6 +3,7 @@
 namespace CCNode\Accounts;
 use CreditCommons\AccountRemote;
 use CreditCommons\RestAPI;
+use CCNode\Db;
 
 /**
  * Class representing a remote account, which authorises using its latest hash.

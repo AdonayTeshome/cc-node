@@ -1,22 +1,20 @@
 <?php
 
+if (!is_dir('../vendor')) {
+  die("Don't forget to run composer update...");
+}
 require_once '../vendor/autoload.php';
-
 ini_set('display_errors', 1);
 
 const SETTINGS_INI_FILE = '../node.ini';
 const ACC_STORAGE_INI_FILE  = '../AccountStore/accountstore.ini';
 $node_conf = parse_ini_file(SETTINGS_INI_FILE);
 $errs = [];
-if (empty($_SERVER['QUERY_STRING'])){
+if (!empty($_SERVER['QUERY_STRING'])){
   if ($node_conf['account_store_url']) {
-    include 'general.php';
+    include $_SERVER['QUERY_STRING'].'.php';
     exit;
   }
-}
-else {
-  include $_SERVER['QUERY_STRING'].'.php';
-  exit;
 }
 if ($_POST) {
   if (!filter_var($_POST['account_store_url'], FILTER_VALIDATE_DOMAIN)) {
@@ -31,9 +29,6 @@ if ($_POST) {
   if (empty($_POST['db']['user'])) {
     $errs[] = "Database user required";
   }
-  if (empty($_POST['node_name'])) {
-    $errs[] = 'Node name is required';
-  }
   if (empty($_POST['acc']['default_max'])) {
     $_POST['acc']['default_max'] = 0;
   }
@@ -41,16 +36,19 @@ if ($_POST) {
     $_POST['acc']['default_min'] = 0;
   }
   $_POST['acc']['default_status'] = isset($_POST['conf']['default_status']) ? 1 : 0;
+
+  $values = $_POST;
+
   if (!$errs) {
     require './writeini.php';
-    $acc = $_POST['acc'];
-    unset($_POST['acc']);
-    replaceIni($_POST, SETTINGS_INI_FILE);
+    $acc = $values['acc'];
+    unset($values['acc']);
+    replaceIni($values, SETTINGS_INI_FILE);
     replaceIni($acc, ACC_STORAGE_INI_FILE);
-    $connection = new mysqli('localhost', $_POST['db']['user'], $_POST['db']['pass']);
-    $connection->query("DROP DATABASE ".$_POST['db']['name']);
-    $connection->query("CREATE DATABASE ".$_POST['db']['name']);
-    CCNode\Db::connect($_POST['db']['name'], $_POST['db']['user'], $_POST['db']['pass']);
+    $connection = new mysqli('localhost', $values['db']['user'], $values['db']['pass']);
+    $connection->query("DROP DATABASE ".$values['db']['name']);
+    $connection->query("CREATE DATABASE ".$values['db']['name']);
+    CCNode\Db::connect($values['db']['name'], $values['db']['user'], $values['db']['pass']);
     foreach (explode(';', file_get_contents('install.sql')) as $q) {
       if ($query = trim($q)) {
         CCNode\Db::query($query);
@@ -59,7 +57,6 @@ if ($_POST) {
     print "Check the db is created and then set up <a href=\"index.php?accounts\">the accounts</a>.";
     exit;
   }
-  else $values = $_POST;
 }
 else $values = $node_conf + parse_ini_file(ACC_STORAGE_INI_FILE);
 
@@ -75,15 +72,10 @@ else $values = $node_conf + parse_ini_file(ACC_STORAGE_INI_FILE);
     }?>
     <form method="post">
 
-      <p title = "This name is your node's identification on the Credit Commons tree. It is not needed for standalone nodes.">
-        This node name <input name ="node_name" value ="<?php print $values['node_name']; ?>">
-      </p>
-
-
       <h2>Microservices</h2>
       <p title="The reference implementation uses these two microservices (with as yet undocumented apis)">
-        Account store <input name = "account_store_url" value = "<?php print $values['account_store_url']; ?>" placeholder = "https://accounts.mydomain.com">
-      <br />Business logic <input name = "blogic_service_url" value = "<?php print $values['blogic_service_url']; ?>" placeholder = "https://blogic.mydomain.com">  (optional)
+        Account store <input name = "account_store_url" value = "<?php print $values['account_store_url'] ?: 'http://accounts.'.$_SERVER['HTTP_HOST']; ?>" placeholder = "https://accounts.mydomain.com">
+      <br />Business logic <input name = "blogic_service_url" value = "<?php print $values['blogic_service_url'] ?: 'http://blogic.'.$_SERVER['HTTP_HOST']; ?>" placeholder = "https://blogic.mydomain.com">  (optional)
       </p>
 
       <h2>Database settings</h2>
@@ -96,7 +88,7 @@ else $values = $node_conf + parse_ini_file(ACC_STORAGE_INI_FILE);
       <h2>Default values for new accounts</h2>
       <p>Max account limit: <input name="acc[default_max]" type="number" min="1" max="1000000" size="3" value="<?php print $values['default_max']; ?>" />
       <br />Min account limit: <input name="acc[default_min]" type="number" max="0" min="-1000000" size="3" value="<?php print $values['default_min']; ?>" />
-      <br />Active <input name="acc[default_status]" type="checkbox" value = "1"<?php if ($values['default_status']) print ' checked'; ?> />
+      <br />Active <input name="acc[default_status]" type="checkbox" value = "1"<?php if (!empty($values['default_status'])) print ' checked'; ?> />
 
       <input type="submit">
     </form>

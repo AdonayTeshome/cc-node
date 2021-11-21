@@ -3,19 +3,21 @@
 namespace BlogicService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
-use Slim\Factory\AppFactory;
+use Slim\App;
 /**
  * Business logic service
  */
 
 $config = parse_ini_file('blogic.ini');
 require_once '../vendor/autoload.php';
-$app = AppFactory::create();
+$app = new App();
 
-
-$app->post('/append', function (Request $request, Response $response, $args) {
-  $entry  = json_decode($request->getBody()->read());
+$app->post('/append/{type}', function (Request $request, Response $response, $args) {
   global $config;
+  $type = $args['type']; // Not used here, but could be handy
+  $content = $request->getBody();
+  $entry  = json_decode($content);
+  $additional = [];
   if ($config['payee_fee']) {
     $additional[] = payee_fee($entry, $config['payer_fee']);
   }
@@ -23,10 +25,11 @@ $app->post('/append', function (Request $request, Response $response, $args) {
     $additional[] = payer_fee($entry, $config['payer_fee']);
   }
   $response->getBody()->write(json_encode($additional));
-  return $response;
+  return $response->withHeader('Content-Type', 'application/json');;
 });
 
-$app->run();exit;
+$app->run();
+exit;
 
 /**
  * Charge the payee.

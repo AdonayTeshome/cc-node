@@ -29,21 +29,28 @@ if (!is_writable(NODE_SETTINGS_FILE)) {
     <title>Credit Commons setup</title>
   </head>
   <body>
-    <h1>Credit Commons: General settings</h1>
+    <h1>Credit Commons node settings</h1>
     <p>Hover for help. To edit settings after this setup, see the ini files;
       <br />Or go to <a href = "index.php?accounts">account settings</a>.
     <?php if (!empty($errs)) print "<p><font color=red>".implode('<br />', $errs).'</font>'; ?>
     <form method="post">
       <h2>Transactions</h2>
-      <p><span title="This information could only be used by the end client or for formatting info to send to the client. It is not currently used">Name of unit <input name = "currency_name" value = "<?php print $node_config['currency_name']; ?>" disabled></span>
-      <br /><span title="This information could only be used by the end client or for formatting info to send to the client. It is not currently used">Decimal places displayed <input name = "decimal_places" type = "number" min = "0" max = "3" size = "1" value = "<?php print $node_config['decimal_places']; ?>" disabled>
-      <br /><span title="Some social currencies like to register transactions for zero amount">Allow zero payments <input name = "zero_payments" type = "checkbox" value = "<?php print $node_config['zero_payments']; ?>"></span>
+<!--
+      <p title="This information could only be used by the end client or for formatting info to send to the client.">
+        Name of unit <input name = "currency_name" value = "<?php print $node_config['currency_name']??''; ?>">
+      </p>
+      <p title="This information could only be used by the end client or for formatting info to send to the client.">
+        Decimal places displayed <input name = "decimal_places" type = "number" min = "0" max = "3" size = "1" value = "<?php print $node_config['decimal_places']; ?>">
+      </p>
+-->
+      <p title="Some social currencies like to register zero value transactions">
+        Allow zero payments <input name = "zero_payments" type = "checkbox" value = "<?php print $node_config['zero_payments']; ?>">
+      </p>
 
       <h2>Performance</h2>
       <p>Timeout in seconds<input name = "timeout" type = "number" min = "0" max = "60" size = "1" value = "<?php print $node_config['timeout']; ?>">
       <br />(Needs to be longer for nodes far away from the trunk)
       </p>
-
 
       <p><input type ="submit" value ="save"></p>
     </form>

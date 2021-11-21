@@ -8,7 +8,7 @@ use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Requester;
 use GuzzleHttp\RequestOptions;
 use GuzzleHttp\Client;
-use CCNode\Accounts\Account;
+use CreditCommons\Account;
 
 /**
  * Handle requests & responses from the ledger to the accountStore.
@@ -90,7 +90,7 @@ class AccountStore extends Requester {
    */
   private function upcast(\stdClass $data) : Account {
     global $orientation, $config;
-    $class = Account::determineAccountClass(
+    $class = self::determineAccountClass(
       $data->id,
       $data->url??'',
       isset($orientation->upstreamAccount) ? $orientation->upstreamAccount->id : '',
@@ -120,7 +120,9 @@ class AccountStore extends Requester {
       $this->addField('key', $fields['key']);
       unset($fields['key']);
     }
-    else throw new Exception('Wrong account type');
+    else {
+      throw new Exception('Wrong account type');
+    }
     foreach ($fields as $key => $val) {
       $this->addField($key, $val);
     }
@@ -141,9 +143,21 @@ class AccountStore extends Requester {
     }
   }
 
-  function getOverride(string $acc_id) : \stdClass {
+  /**
+   * Get the account including the overridden values.
+   * @param string $acc_id
+   * @return Account
+   * @throws DoesNotExistViolation
+   * @throws CCFailure
+   *
+   * @todo refactor this into fetch()
+   */
+  function getOverriden(string $acc_id) : Account {
+    $this->options[RequestOptions::QUERY] = ['view_mode' => 'override'];
     try {
-      return $this->localRequest("override/$acc_id");
+      //return $this->localRequest("override/$acc_id");
+      $result =  $this->localRequest('fetch/'.urlencode($acc_id));
+      return $this->upcast($result);
     }
     catch (\Exception $e) {
       switch ($e->getCode()) {
@@ -179,7 +193,12 @@ class AccountStore extends Requester {
     }
   }
 
-
+  /**
+   * Add a field to the request body.
+   * @param string $key
+   * @param type $value
+   * @return $this
+   */
   protected function addField(string $key, $value) {
     $this->fields[$key] = $value;
     return $this;
@@ -194,6 +213,7 @@ class AccountStore extends Requester {
       $this->options[RequestOptions::BODY] = http_build_query($this->fields);
     }
     try{
+//echo strtoupper($this->method) ." $this->baseUrl/$endpoint".print_r($this->options, 1);
       $response = $client->{$this->method}($endpoint, $this->options);
     }
     catch (RequestException $e) {
@@ -205,6 +225,109 @@ class AccountStore extends Requester {
     $contents = $response->getBody()->getContents();
     return json_decode($contents);
   }
+
+  /**
+   * @staticvar array $loadedAccounts
+   * @param string $id
+   * @return \Creditcommons\Account
+   */
+  function load(string $id = '') : \CreditCommons\Account {
+    global $loadedAccounts;
+    if (!isset($loadedAccounts[$id])) {
+      if ($id and $acc = $this->fetch($id, FALSE)) {
+        $loadedAccounts[$id] = $acc;
+      }
+      else {
+        $dummy = (object)['id' => '', 'created' => 0];// these are both required fields
+        $loadedAccounts[$id] = new Accounts\User($dummy);
+      }
+    }
+    return $loadedAccounts[$id];
+  }
+
+
+  /**
+   * Resolve to an account on the current node.
+   * @return Account
+   * @param bool $existing
+   *   TRUE if the transaction has already been written, and thus we know the
+   *   accounts exist. Unknown accounts either resolved to the BoT account or
+   *   throw an exception
+   */
+  public function resolveAddress(string $given_path, bool $existing) : Account {
+    global $orientation, $config;
+    // if its one name and it exists on this ledger then good.
+    $parts = explode('/', $given_path);
+    if (count($parts) == 1) {
+      if ($pol = $this->load($given_path)) {
+        return $pol;
+      }
+      throw new DoesNotExistViolation(['type' => 'account', 'id' => $given_path]);
+    }
+
+    // A branchwards account, including the local node name
+    $pos = array_search($config['node_name'], $parts);
+    if ($pos !== FALSE and $branch_name = $parts[$pos+1]) {
+      try {
+        return $this->load($branch_name);
+      }
+      catch (DoesNotExistViolation $e) {}
+    }
+    // A branchwards or trunkwards account, starting with the account name on the local node
+    $branch_name = reset($parts);
+    try {
+      return $this->load($branch_name);
+    }
+    catch (DoesNotExistViolation $e) {}
+
+    // Now the path is either trunkwards, or invalid.
+    if ($config['bot']['acc_id']) {
+      $trunkwardsAccount = $this->load($config['bot']['acc_id'], TRUE);
+      if ($existing) {
+        return $trunkwardsAccount;
+      }
+      if ($orientation->isUpstreamBranch()) {
+        return $trunkwardsAccount;
+      }
+    }
+    throw new DoesNotExistViolation(['type' => 'account', 'id' => $given_path]);
+  }
+
+
+  /**
+   * Determine the class of the given Account, considering this node's position
+   * in the ledger tree.
+   *
+   * @param string $acc_id
+   * @param string $account_url
+   * @param string $upstream_acc_id
+   * @param string $BoT_acc_id
+   * @return string
+   */
+  static function determineAccountClass(string $acc_id, string $account_url = '', string $upstream_acc_id = '', string $BoT_acc_id = '') : string {
+    if ($account_url) {
+      $BoT = $acc_id == $BoT_acc_id;
+      $upS = $acc_id == $upstream_acc_id;
+      if ($BoT and $upS) {
+        $class = 'UpstreamBoT';
+      }
+      elseif ($BoT and !$upS) {
+        $class = 'DownstreamBoT';
+      }
+      elseif ($upS) {
+        $class = 'UpstreamBranch';
+      }
+      else {
+        $class = 'DownstreamBranch';
+      }
+    }
+    else {
+      $class = 'User';
+    }
+    return 'CCNode\Accounts\\'. $class;
+
+  }
+
 
 
 }

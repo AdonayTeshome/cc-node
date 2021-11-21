@@ -2,7 +2,7 @@
 namespace CCnode;
 
 use CreditCommons\Entry as CreditCommonsEntry;
-use CCNode\Accounts\Account;
+use CreditCommons\Account;
 
 
 /**
@@ -27,6 +27,7 @@ class Entry extends CreditCommonsEntry {
    */
   static function create(\stdClass $row) : CreditCommonsEntry {
     $missing = [];
+    // Basic validation needs to be done all in one place.
     foreach (['payer', 'payee', 'description', 'quant'] as $field_name) {
       if (empty($row->{$field_name})) {
         $missing["entries-$key:$field_name"] = '_REQUIRED_';
@@ -35,19 +36,15 @@ class Entry extends CreditCommonsEntry {
     if ($missing) {
       throw new InvalidFieldsViolation(['fields' => $missing]);
     }
-    $payee = Account::ResolveAddress($row->metadata->{$row->payee} ?? $row->payee, FALSE);
-    $payer = Account::ResolveAddress($row->metadata->{$row->payer} ?? $row->payer, FALSE);
+    $payee = accountStore()->ResolveAddress($row->metadata->{$row->payee} ?? $row->payee, FALSE);
+    $payer = accountStore()->ResolveAddress($row->metadata->{$row->payer} ?? $row->payer, FALSE);
 
     foreach (['payee', 'payer'] as $role) {
       if ($$role instanceOf AccountRemote) {
         $row->metadata->{$$role->id} = $$role->givenPath;
       }
     }
-    //unknown accounts will show up as the balance of trade account.
-    if ($payer->id == $payee->id) {
-      throw new AccountResolutionViolation(['name' => "$row->payee, $row->payee"]);
-      // @todo If this happens with the trunkwards account then it probably means the remote address does not exist.
-    }
+    // Unknown accounts will show up as the balance of trade account.
 
     $class = static::determineClass($payee, $payer);
 
@@ -75,8 +72,8 @@ class Entry extends CreditCommonsEntry {
       $class_name = 'CCNode\TransversalEntry';
     }
     elseif ($acc1 instanceOf AccountBoT or $acc2 instanceOf AccountBoT) {
-      // One of the accounts is trunkwards (rootwards)
-      $class_name = 'CCNode\RootwardsEntry';
+      // One of the accounts is trunkwards
+      $class_name = 'CCNode\TrunkwardsEntry';
     }
     elseif ($acc1 instanceOf AccountBranch or $acc2 instanceOf AccountBranch) {
       // One account is local, one account is further leafwards.

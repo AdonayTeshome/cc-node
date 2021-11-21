@@ -1,4 +1,4 @@
-Options +FollowSymLinks
+#Options +FollowSymLinks
 RewriteEngine on
 # Allow navigation to the following
 RewriteRule ^setup - [L,NC] 

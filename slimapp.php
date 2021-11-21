@@ -19,9 +19,8 @@ use CreditCommons\Workflows;
 use CreditCommons\Workflow;
 use CreditCommons\AccountRemote;
 use CreditCommons\RestAPI;
+use CreditCommons\Account;
 use CCnode\Accounts\BoT;
-
-use CCNode\Accounts\Account;
 
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -88,7 +87,7 @@ $app->options('/', function (Request $request, Response $response) {
   check_permission($request, 'permittedEndpoints');
   return json_response($response, permitted_operations());
 });
-
+// @todo this isn't documented or implemented???
 $app->get('/trunkwards', function (Request $request, Response $response) {
   check_permission($request, 'trunkwardsNodes');
   return json_response($response, RestAPI::getTrunkwardsNodes(API_calls()), 200);
@@ -111,7 +110,7 @@ $app->get('/accountnames[/{fragment}]', function (Request $request, Response $re
   $remote_names = [];
   if (!empty($config['bot']['acc_id'])) {// $orientation might be cleaner
     //@todo pass this to the parent ledger
-    throw new CCFailure(['message' => 'accounts/{fragment} not implemented for ledger tree.']);
+    throw new CCFailure(['message' => 'accountnames/{fragment} not implemented for ledger tree.']);
     $remote_names = API_calls()->accounts(@$args['fragment'], TRUE);
     // @todo Also we may want to query child ledgers.
   }
@@ -131,13 +130,13 @@ $app->get('/account/summary[/{acc_path}]', function (Request $request, Response 
   check_permission($request, 'accountSummary');
   $params = $request->getQueryParams();
   if (isset($args['acc_path'])) {
-    $account = Account::create($args['acc_path'], FALSE);
+    $account = accountStore()->load($args['acc_path'], FALSE);
     $result = (new Wallet($account))->getTradeStats();
   }
   // The openAPI format doesn't allow acc_path to be empty, so this is undocumented and won't work here
   else {
     foreach (accountStore()->filter(['nameonly' => 1]) as $acc_id) {
-      $account = Account::create($acc_id, TRUE);
+      $account = accountStore()->load($acc_id, TRUE);
       $result[$acc_id] = (new Wallet($account))->getTradeStats();
     }
   }
@@ -151,7 +150,7 @@ $app->get('/account/history/{acc_path}', function (Request $request, Response $r
   global $orientation;
   check_permission($request, 'accountHistory');
   $params = $request->getQueryParams();
-  $account = Account::create($args['acc_path'], FALSE);
+  $account = accountStore()->load($args['acc_path'], FALSE);
   $result = (new Wallet($account))->getHistory($params['samples']??0, $account->created);
 
   $orientation->responseMode = TRUE;
@@ -190,13 +189,13 @@ $app->post('/transaction/new', function (Request $request, Response $response) {
   $newTransaction = new NewTransaction($data->payee, $data->payer, $data->quantity, $data->description, $data->type);
 
   $transaction = Transaction::createFromClient($newTransaction);
-  $transaction->buildValidate();
-  if ($transaction->workflow->creation->confirm) {
+  $transaction->buildValidate($data->state??'');
+  if ($transaction->workflow->creation->confirm or empty($data->state)) {
     $transaction->writeValidatedToTemp();
     $orientation->responseMode = TRUE;
     return json_response($response, $transaction, 200);
   }
-  else {
+  else { // Write the transaction immediately
     $transaction->sign($transaction->workflow->creation->state);
     $orientation->responseMode = TRUE;
     return json_response($response, $transaction, 201);
@@ -210,13 +209,13 @@ $app->post('/transaction/new/relay', function (Request $request, Response $respo
   $request->getBody()->rewind();
   $data = json_decode($request->getBody()->read());
   $transaction = TransversalTransaction::createFromUpstreamNode($post);
-  $transaction->buildValidate();
+  $transaction->buildValidate($post['state']??'');
   $transaction->writeValidatedToTemp();
   $orientation->responseMode = TRUE;
   return json_response($response, $transaction, 201);
 });
-
-$app->patch('/transaction/{uuid:[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-\b[0-9a-f]{12}}/{dest_state}', function (Request $request, Response $response, $args) {
+$uuid_regex = '[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-\b[0-9a-f]{12}';
+$app->patch('/transaction/{uuid:'.$uuid_regex.'}/{dest_state}', function (Request $request, Response $response, $args) {
   check_permission($request, 'stateChange');
   global $orientation;
   $uuid = $args['uuid'];
@@ -233,18 +232,23 @@ $app->patch('/transaction/{uuid:[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 return $app;
 
 /**
+ * Load an account from the accountStore.
  *
  * @staticvar array $fetched
- * @param string $name
- * @param bool $stop_on_error
- * @return CCNode\Account
+ * @param string $id
+ *   The account id or empty string to load a dummy account.
+ * @return CreditCommonms\Account
  * @throws DoesNotExistViolation
  */
 function load_account(string $id) : Account {
   static $fetched = [];
   if (!isset($fetched[$id])) {
-    if ($acc = accountStore()->fetch($id, FALSE)) {
+    if ($id and $acc = accountStore()->fetch($id, FALSE)) {
       $fetched[$id] = $acc;
+    }
+    elseif (!$id) {
+      $dummy = (object)['id'=>'dummy', 'created' => 0];
+      return new Account($dummy);
     }
   }
   return $fetched[$id];
@@ -296,14 +300,14 @@ function permitted_operations() {
 function authenticate(Request $request) : void {
   global $config, $user;
   $acc_id = '';
-  $user = Account::load(); // Anon
+  $user = load_account(''); // Anon
   if ($request->hasHeader('cc-user') and $request->hasHeader('cc-auth')) {
     $acc_id = $request->getHeader('cc-user')[0];
     $auth = $request->getHeader('cc-auth')[0];
     // Find out where the request is coming from, check the hash if it is another
     // node, and set up the session, which should persist accross the microservices.
     if ($acc_id and $acc_id <> 'null') {
-      $user = Account::load($acc_id);
+      $user = load_account($acc_id);
       // Check the ratchet
       if ($user instanceOf Remote) {
         $query = "SELECT TRUE FROM hash_history WHERE acc = '$account->id' AND hash = '$hash' ORDER BY id DESC LIMIT 0, 1";
@@ -348,13 +352,13 @@ function API_calls(AccountRemote $account = NULL) {
   global $config;
   if (!$account) {
     if ($bot = $config['bot']['acc_id']) {
-      $account = Account::load($bot);
+      $account = load_account($bot);
     }
     else {
       return NULL;
     }
   }
-  return new RestAPI($account->url, $config['node_name'], $account->getLastHash);
+  return new RestAPI($account->url, $config['node_name'], $account->getLastHash());
 }
 
 /**
@@ -376,7 +380,6 @@ class Slim3ErrorHandler {
    */
   public function __invoke($request, $response, $exception) {
     global $config;
-    print_r($exception);
     if (!$exception instanceOf CCError) {
       // isolate only the first exception because the protocol allows only one.
       $e = new CCFailure([

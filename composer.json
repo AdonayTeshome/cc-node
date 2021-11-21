@@ -1,5 +1,5 @@
 {
-  "name": "credit-commons-software-stack/cc_node",
+  "name": "credit-commons-software-stack/cc-node",
   "description": "Reference implementation of the Credit Commons protocol providing a mutual credit accounting node.",
   "license": "GPL-2.0+",
   "homepage": "https://creditcommons.net",
@@ -19,6 +19,7 @@
     }
   },
   "require": {
+    "composer/installers": "^1.7",
     "credit-commons-software-stack/cc-php-lib": "*",
     "slim/slim": "^3"
   },

@@ -11,8 +11,8 @@ use CreditCommons\TransactionInterface;
 use CreditCommons\NewTransaction;
 use CreditCommons\Workflows;
 use CreditCommons\Workflow;
+use CreditCommons\Account;
 use CCNode\Entry;
-use CCNode\Accounts\Account;
 use CCNode\BlogicRequester;
 
 /**
@@ -100,8 +100,8 @@ class Transaction extends \CreditCommons\Transaction {
   public static function createFromClient(NewTransaction $nt) : \CreditCommons\Transaction {
     global $user;
     $entry = new Entry(
-      Account::resolveAddress($nt->payee, TRUE),
-      Account::resolveAddress($nt->payer, TRUE),
+      accountStore()->resolveAddress($nt->payee, TRUE),
+      accountStore()->resolveAddress($nt->payer, TRUE),
       $nt->quantity,
       $nt->description,
       $user->id,
@@ -193,9 +193,19 @@ class Transaction extends \CreditCommons\Transaction {
   /**
    * Call the business logic and append entries.
    */
-  function buildValidate() : void {
+  function buildValidate(string $desired_state = '') : void {
     global $loadedAccounts, $config, $user;
-    $this->workflow->canTransitionToState($user->id, $this);
+    if (empty($desired_state)) {
+      $desired_state = $this->workflow->creation->state;
+    }
+    if (!$this->workflow->canTransitionToState($user->id, $this, $desired_state, $user->admin)) {
+      throw new WorkflowViolation([
+        'acc_id' => $user->id,
+        'type' => $this->type,
+        'from' => $this->state,
+        'to' => $desired_state,
+      ]);
+    }
     // Add fees, etc by calling on the blogic service
     if ($config['blogic_service_url']) {
       $fees = (new BlogicRequester($config['blogic_service_url']))->appendTo($this);
@@ -205,8 +215,8 @@ class Transaction extends \CreditCommons\Transaction {
       }
     }
     foreach ($this->sum() as $acc_id => $info) {
-
-      $ledgerAccountInfo = (new Wallet(Account::load($acc_id)))->getTradeStats();
+      $account = load_account($acc_id);
+      $ledgerAccountInfo = (new Wallet($account))->getTradeStats();
       $projected = $ledgerAccountInfo['pending']['balance'] + $info->diff;
       if ($projected > $this->payee->max) {
         throw new MaxLimitViolation(['acc_id' => $acc_id, 'limit' => $this->payee->max, 'projected' => $projected]);
@@ -226,6 +236,13 @@ class Transaction extends \CreditCommons\Transaction {
     $this->sign($target_state);
   }
 
+  /**
+   *
+   * @global Account $user
+   * @param string $target_state
+   * @return $this
+   * @throws WorkflowViolation
+   */
   function sign(string $target_state) {
     global $user;
     if (!$this->workflow->canTransitionToState($user->id, $this, $target_state, $user->admin)) {
@@ -236,6 +253,7 @@ class Transaction extends \CreditCommons\Transaction {
         'to' => $target_state,
       ]);
     }
+
     $this->state = $target_state;
     $this->version++;
     $this->saveTransactionNewVersion();

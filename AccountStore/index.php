@@ -8,7 +8,6 @@ use Slim\Exception\HttpBadRequestException;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use Slim\App;
 
-
 /**
  * AccountStore service
  *
@@ -24,7 +23,6 @@ ini_set('display_errors', 1);
 $config = parse_ini_file('accountstore.ini');
 require_once '../vendor/autoload.php';
 $app = new App();
-
 $app->get('/filter', function (Request $request, Response $response) {
   $accounts = new AccountManager(TRUE);
   $params = $request->getQueryParams();
@@ -43,9 +41,8 @@ $app->get('/filter', function (Request $request, Response $response) {
 });
 
 $app->get('/fetch[/{acc_id}]', function (Request $request, Response $response, $args) {
-
-  $accounts = new AccountManager(TRUE);
-  $params = $request->getQueryParams() + ['status' => TRUE];
+  $accounts = new AccountManager(TRUE); // defaults, not overrides
+  $params = $request->getQueryParams() + ['status' => TRUE, 'view_mode' => 'name'];
   if (isset($args['acc_id'])) {
     if (isset($accounts[$args['acc_id']])) {
       $response->getBody()->write(json_encode($accounts[$args['acc_id']]));
@@ -56,14 +53,14 @@ $app->get('/fetch[/{acc_id}]', function (Request $request, Response $response, $
     }
   }
   else {
-    $result = !empty($params['nameonly']) ? array_keys($accounts->accounts) : array_values($accounts->accounts);
+    $result = !empty($params['nameonly']) ? array_keys($accounts->accounts) : $accounts->view($params['view_mode']);
     $response->getBody()->write($result);
   }
   return $response->withHeader('Content-Type', 'application/json');
 });
 
 
-$app->get('/overrides/{acc_id}', function (Request $request, Response $response, $args) {
+$app->get('/overriden/{acc_id}', function (Request $request, Response $response, $args) {
   $accounts = new AccountManager(FALSE);
   $response->getBody()->write(json_encode($accounts[$args['acc_id']]->overridden()));
   return $response;
@@ -98,6 +95,8 @@ $app->post('/join/{type}', function (Request $request, Response $response, $args
     $record->override((array)$data);
     $accounts->addAccount($record);
     $accounts->save();
+    // Todo clarify what this should return.
+    $response->getBody()->write(json_encode($record));
     $response = $response->withStatus(201);
   }
   return $response;
@@ -109,7 +108,7 @@ $app->patch('/override/{id}', function (Request $request, Response $response, $a
   parse_str($request->getBody()->getContents(), $params);
   $accounts[$args['id']]->override($params);
   $accounts->save();
-  return $response;
+  return $response->withStatus(201);
 });
 
 $app->run();
