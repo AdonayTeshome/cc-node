@@ -256,7 +256,7 @@ class Transaction extends \CreditCommons\Transaction {
 
     $this->state = $target_state;
     $this->version++;
-    $this->saveTransactionNewVersion();
+    $this->saveNewVersion();
     return $this;
   }
 
@@ -265,7 +265,7 @@ class Transaction extends \CreditCommons\Transaction {
    *
    * @note No database errors are anticipated.
    */
-  public function saveTransactionNewVersion() {
+  public function saveNewVersion() {
     global $user;
     // The datestamp is added automatically
     $q = "INSERT INTO transactions (uuid, version, type, state, scribe) "

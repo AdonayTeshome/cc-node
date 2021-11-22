@@ -78,8 +78,7 @@ $app->add(function ($request, $response, $next) {
  */
 $app->get('/', function (Request $request, Response $response) {
   $response->getBody()->write('It works!');
-  return $response
-    ->withHeader('Content-Type', 'text/html');
+  return $response->withHeader('Content-Type', 'text/html');
 });
 
 $app->options('/', function (Request $request, Response $response) {
@@ -188,18 +187,21 @@ $app->post('/transaction/new', function (Request $request, Response $response) {
   $data = json_decode($request->getBody()->getContents());
   $newTransaction = new NewTransaction($data->payee, $data->payer, $data->quantity, $data->description, $data->type);
 
-  $transaction = Transaction::createFromClient($newTransaction);
-  $transaction->buildValidate($data->state??'');
-  if ($transaction->workflow->creation->confirm or empty($data->state)) {
+  $transaction = Transaction::createFromClient($newTransaction); // in state 'init'
+  $transaction->buildValidate($data->state??''); // in state 'validated'
+  $orientation->responseMode = TRUE;
+  if ($transaction->workflow->creation->confirm) {
+    // Send the transaction back to the user to confirm.
     $transaction->writeValidatedToTemp();
-    $orientation->responseMode = TRUE;
-    return json_response($response, $transaction, 200);
+    $status_code = 200;
   }
-  else { // Write the transaction immediately
-    $transaction->sign($transaction->workflow->creation->state);
-    $orientation->responseMode = TRUE;
-    return json_response($response, $transaction, 201);
+  else {
+    // Write the transaction immediately to its 'creation' state
+    $transaction->state = $transaction->workflow->creation->state;
+    $transaction->saveNewVersion();
+    $status_code = 201;
   }
+  return json_response($response, $transaction, $status_code);
 });
 
 $app->post('/transaction/new/relay', function (Request $request, Response $response) {
@@ -214,6 +216,7 @@ $app->post('/transaction/new/relay', function (Request $request, Response $respo
   $orientation->responseMode = TRUE;
   return json_response($response, $transaction, 201);
 });
+
 $uuid_regex = '[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-\b[0-9a-f]{12}';
 $app->patch('/transaction/{uuid:'.$uuid_regex.'}/{dest_state}', function (Request $request, Response $response, $args) {
   check_permission($request, 'stateChange');
@@ -247,7 +250,7 @@ function load_account(string $id) : Account {
       $fetched[$id] = $acc;
     }
     elseif (!$id) {
-      $dummy = (object)['id'=>'dummy', 'created' => 0];
+      $dummy = (object)['id'=>'<anon>', 'created' => 0];
       return new Account($dummy);
     }
   }
@@ -275,11 +278,11 @@ function permitted_operations() {
   $data = CreditCommonsInterface::OPERATIONS;
   $permitted[] = 'permittedEndpoints';
 
-  if ($user->id) {
+  if ($user->id <> '<anon>') {
     $permitted[] = 'handshake';
     $permitted[] = 'workflows';
     if (!$user instanceof BoT) {
-      // Default privacy setting, Leafward nodes are private to trunkward nodes
+      // This is the default privacy setting; leafward nodes are private to trunkward nodes
       $permitted[] = 'trunkwardsNodes';
       $permitted[] = 'accountHistory';
       $permitted[] = 'accountLimits';

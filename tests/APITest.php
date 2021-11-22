@@ -1,10 +1,8 @@
 <?php
 
-
 use League\OpenAPIValidation\PSR15\ValidationMiddlewareBuilder;
 use League\OpenAPIValidation\PSR15\SlimAdapter;
 use Slim\Psr7\Response;
-use Psr\Http\Message\ResponseInterface;
 
 class APITest extends \PHPUnit\Framework\TestCase {
 
@@ -19,12 +17,13 @@ class APITest extends \PHPUnit\Framework\TestCase {
 
   function testEndpoints() {
     $response = $this->sendRequest('', 'options', TRUE);
-    $this->assertEquals(200, $response->getStatusCode());
+    $this->checks($response, 200, 'application/json');
     $body = json_decode($response->getBody()->getContents());
     $this->assertObjectHasAttribute("permittedEndpoints", $body);
     $this->assertObjectNotHasAttribute("accountSummary", $body);
     $this->assertObjectNotHasAttribute("filterTransactions", $body);
     $response = $this->sendRequest('', 'options');
+    /** @var \Slim\Psr7\Response $response */
     $this->checks($response, 200, 'application/json');
     $body = json_decode($response->getBody()->getContents());
     $this->assertObjectHasAttribute("filterTransactions", $body);
@@ -33,7 +32,7 @@ class APITest extends \PHPUnit\Framework\TestCase {
 
   function testRootPath() {
     $response = $this->sendRequest('', 'get', TRUE); // default front page, visible to all.
-    $this->assertEquals(200, $response->getStatusCode());
+    $this->checks($response, 200, 'text/html');
     $message = $response->getBody()->getContents();
     $this->assertisString($message);
     $response = $this->sendRequest('');
@@ -45,17 +44,19 @@ class APITest extends \PHPUnit\Framework\TestCase {
   function testHandshake() {
     // By default this is only accessible for authenticated users.
     $response = $this->sendRequest('handshake');
-    $this->assertEquals(200, $response->getStatusCode());
-    // The body consists of all the trunkward nodes.
+    $this->checks($response, 200, 'application/json');
+    // The structure has been checked against the API
     $nodes = json_decode($response->getBody()->getContents());
-    $this->assertisArray($nodes);
+    foreach ($nodes as $status_code => $urls) {
+      $this->assertIsInteger($status_code / 100);
+    }
   }
 
   function testAccountNames() {
     global $users;
     $char = substr($users[0]->id, 0, 1);
     $response = $this->sendRequest("accountnames/$char");
-    $this->assertEquals(200, $response->getStatusCode());
+    $this->checks($response, 200, 'application/json');
     $acc_ids = json_decode($response->getBody()->getContents());
     $this->assertIsArray($acc_ids);
     // should be a list of account names including 'a'
@@ -67,7 +68,7 @@ class APITest extends \PHPUnit\Framework\TestCase {
   function testWorkflows() {
     // By default this is only accessible for authenticated users.
     $response = $this->sendRequest('workflows');
-    $this->assertEquals(200, $response->getStatusCode());
+    $this->checks($response, 200, 'application/json');
     $wfs = (array)json_decode($response->getBody()->getContents());
     $this->assertNotEmpty($wfs);
   }
@@ -82,9 +83,9 @@ class APITest extends \PHPUnit\Framework\TestCase {
       'quantity' => 1,
       'type' => '3rdparty'
     ];
-    // 3rd party transactions are created already complete.
+    // 3rdParty transactions are created already complete.
     $response = $this->sendRequest('transaction/new', 'post', FALSE, json_encode($obj));
-    $this->assertEquals(201, $response->getStatusCode());
+    $this->checks($response, 201, 'application/json');
     $obj = [
       'payee' => $users[0]->id,
       'payer' => $users[1]->id,
@@ -94,20 +95,19 @@ class APITest extends \PHPUnit\Framework\TestCase {
     ];
     // 'bill' transactions must be approved, and enter pending state.
     $response = $this->sendRequest('transaction/new', 'post', FALSE, json_encode($obj));
-    $this->assertEquals(200, $response->getStatusCode());
+    $this->checks($response, 200, 'application/json');
     $transaction = json_decode($response->getBody()->getContents());
     $response = $this->sendRequest("transaction/$transaction->uuid/" .reset($transaction->transitions), 'patch');
-    $this->assertEquals(201, $response->getStatusCode());
+    $this->checks($response, 201);
   }
 
   function testStats() {
     global $users;
     $test_user_id = end($users)->id;
-    $response = $this->sendRequest("account/$test_user_id/history");
-    $response = $this->sendRequest("account/$test_user_id/summary");
-
+    $response = $this->sendRequest("account/history/$test_user_id");
+    $response = $this->sendRequest("account/summary/$test_user_id");
     $response = $this->sendRequest("account/limits/$test_user_id");
-    $this->assertEquals(200, $response->getStatusCode());
+    $this->checks($response, 200, 'application/json');
     $limits = json_decode($response->getBody()->getContents());
     $this->assertIsObject($limits);
     $this->assertObjectHasAttribute('min', $limits);
@@ -117,7 +117,7 @@ class APITest extends \PHPUnit\Framework\TestCase {
   }
 
 
-  protected function sendRequest($path, $method = 'get', bool $anon = FALSE, string $request_body = '') {
+  protected function sendRequest($path, $method = 'get', bool $anon = FALSE, string $request_body = '') : Response {
     global $users;
     $app = $this->getApp();
     $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
@@ -156,6 +156,15 @@ class APITest extends \PHPUnit\Framework\TestCase {
       $app->add($middleware);
     }
     return $app;
+  }
+
+  private function checks(Response $response, int $status_code, string $mime_type = '') {
+    $this->assertEquals($status_code, $response->getStatusCode());
+    $this->assertEquals($mime_type, $response->getHeaderLine('Content-Type'));
+    $body = $response->getbody();
+    if ($mime_type) {
+      $this->assertGreaterThan(0, $body->getSize());
+    }
   }
 
 }
