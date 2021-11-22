@@ -35,7 +35,6 @@ if ($_POST) {
   if (empty($_POST['acc']['default_min'])) {
     $_POST['acc']['default_min'] = 0;
   }
-  $_POST['acc']['default_status'] = isset($_POST['conf']['default_status']) ? 1 : 0;
 
   $values = $_POST;
 
@@ -88,8 +87,10 @@ else $values = $node_conf + parse_ini_file(ACC_STORAGE_INI_FILE);
       <h2>Default values for new accounts</h2>
       <p>Max account limit: <input name="acc[default_max]" type="number" min="1" max="1000000" size="3" value="<?php print $values['default_max']; ?>" />
       <br />Min account limit: <input name="acc[default_min]" type="number" max="0" min="-1000000" size="3" value="<?php print $values['default_min']; ?>" />
-      <br />Active <input name="acc[default_status]" type="checkbox" value = "1"<?php if (!empty($values['default_status'])) print ' checked'; ?> />
-
+      <p>New Accounts are:<br />
+         <input type="radio" name= "acc[default_status]" value = "1"<?php if (!empty($values['default_status'])) print ' checked'; ?> />Enabled<br />
+         <input type="radio" name= "acc[default_status]" value = "0"<?php if (empty($values['default_status'])) print ' checked'; ?> />Disabled
+      </p>
       <input type="submit">
     </form>
   </body>

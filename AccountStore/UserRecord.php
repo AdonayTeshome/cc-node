@@ -15,18 +15,18 @@ class UserRecord extends Record {
 
   public $admin;
 
-  function __construct(string $id, $key, int $created, $status = NULL, $min = NULL, $max = NULL, $admin = NULL) {
-    parent::__construct($id, $created, $status, $min, $max, $admin);
-    $this->key = $key;
-    $this->admin = $admin;
+  function __construct(\stdClass $data) {
+    parent::__construct($data->id, $data->created, $data->status, $data->min??NULL, $data->max??NULL);
+    $this->key = $data->key;
+    $this->admin = $data->admin;
   }
 
 
-  function override($new_data) {
+  function set(\stdClass $new_data) {
     if (isset($new_data->admin)) {
       $this->admin = $new_data->admin;
     }
-    parent::override($new_data);
+    parent::set($new_data);
   }
 
 }

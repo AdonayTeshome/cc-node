@@ -9,54 +9,28 @@ namespace AccountStore;
 class AccountManager implements \Iterator, \ArrayAccess, \Countable {
 
   const FILESTORE = 'store.json';
-  private $defaults; // if this is true it can't be saved.
 
   /**
-   *
-   * @var array
+   * @var Record[]
    */
   public $accounts = [];
 
+  /**
+   * Needed for array interface.
+   * @var int
+   */
   private $pos = 0;
 
-  function __construct($with_defaults = TRUE) {
-    global $config;
+  function __construct() {
     $accs = (array)json_decode(file_get_contents(self::FILESTORE));
     foreach ($accs as $data) {
-      if ($with_defaults) {
-        $this->defaults = $with_defaults;
-        if (!isset($data->min)) {
-          $data->min = $config['default_min'];
-        }
-        if (!isset($data->max)) {
-          $data->max = $config['default_max'];
-        }
-        if (!isset($data->status)) {
-          $data->status = $config['default_status'];
-        }
-        if (!isset($data->admin)) {
-          $data->admin = 0;
-        }
-      }
       $class  = !empty($data->url) ? '\AccountStore\RemoteRecord' : '\AccountStore\UserRecord';
-      $this->accounts[$data->id] = new $class(
-        $data->id,
-        $data->url??$data->key,
-        $data->created,
-        $data->status??NULL,
-        $data->min??NULL,
-        $data->max??NULL,
-        $data->admin??NULL
-      );
-
+      $this->accounts[$data->id] = new $class($data);
     }
   }
 
 
   function save() {
-    if ($this->defaults) {
-      die("Can't save accounts loaded with defaults");
-    }
     file_put_contents(self::FILESTORE, json_encode($this->accounts, JSON_PRETTY_PRINT));
   }
 
@@ -101,7 +75,10 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
   }
 
   /**
+   * View all the accounts in the list.
+   *
    * @param string $view_mode
+   *   can be own, full, or name
    * @return stdClass[]
    */
   function view(string $view_mode) : array {
@@ -164,6 +141,11 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
   }
   public function count() : int {
     return count($this->accounts);
+  }
+
+  // alias of offsetExists.
+  public function has($id) {
+    return array_key_exists($id, $this->accounts);
   }
 }
 

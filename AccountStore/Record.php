@@ -20,7 +20,7 @@ abstract class Record {
   public $created;
 
   /**
-   * @var bool|null
+   * @var bool
    */
   public $status;
 
@@ -35,15 +35,19 @@ abstract class Record {
   public $max;
 
   /**
+   * @var array
+   */
+  private $overridableFields = ['min', 'max'];
+
+  /**
    *
    * @param string $id
    * @param int $created
-   * @param type $status
+   * @param bool $status
    * @param type $min
    * @param type $max
-   * @note we don't typecast here because optional values are NULL when loading in override mode.
    */
-  function __construct(string $id, int $created, $status = NULL, $min = NULL, $max = NULL) {
+  function __construct(string $id, int $created, bool $status, $min = NULL, $max = NULL) {
     $this->id = $id;
     $this->created = $created;
     $this->status = $status;
@@ -51,24 +55,53 @@ abstract class Record {
     $this->max = $max;
   }
 
-  function override(array $new_data) {
-    foreach (['status', 'min', 'max'] as $field) {
-      if (isset($new_data[$field])) {
-        // we can't send null values from form input so empty string means null i.e. revert to default.
-        $val = $new_data[$field] == '' ? NULL : $new_data[$field];
-        $this->{$field} = $val;
+  /**
+   * Set the record to the new values.
+   * Don't forget to do accountManager->save() afterwards.
+   * @param \stdClass $new_data
+   */
+  function set(\stdClass $new_data) {
+    if (isset($new_data->status)) {
+      $this->status = $new_data->status;
+    }
+    foreach ($this->overridableFields as $fname) {
+      if (isset($new_data->{$fname})) {
+        // We can't send null values from form input so empty string means null i.e. revert to default.
+        $val = $new_data->{$fname} == '' ? NULL : $new_data->{$fname};
+        $this->{$fname} = $val;
       }
     }
   }
 
   function overridden() {
     $overridden = new \stdClass();
-    foreach ((array)$this as $key=>$val) {
-      if (!is_null($val)) {
-        $overridden->{$key} = $val;
+    foreach ($this->overridableFields as $fname) {
+      if (!is_null($this->{$fname})) {
+        $overridden->{$fname} = $this->{$fname};
       }
     }
     return $overridden;
+  }
+
+  function view($mode) {
+    global $config;
+    if ($mode == 'own') {
+      $ret = $this;
+    }
+    if ($mode == 'name') {
+      $ret = $this->id;
+    }
+    if ($mode == 'full') {
+      $full = clone($this);
+      if (!isset($this->max)) {
+        $full->max = $config['default_max'];
+      }
+      if (!isset($this->min)) {
+        $full->max = $config['default_min'];
+      }
+      $ret = $full;
+    }
+    return $ret;
   }
 
 }

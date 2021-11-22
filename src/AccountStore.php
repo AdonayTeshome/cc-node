@@ -57,14 +57,14 @@ class AccountStore extends Requester {
    * Use this if you know the account exists.
    *
    * @param string $name
-   * @param string $nameonly
+   * @param string $view_mode
    * @return stdClass|string
    *   The account object
    */
-  function fetch(string $name) : Account {
+  function fetch(string $name, $view_mode = 'full') : Account {
+    $path = urlencode($name).'/'.$view_mode;
     try{
-      $result = $this->localRequest('fetch/'.urlencode($name));
-      if (!$result){echo 'no result from fetch/'.urlencode($name);die();}
+      $result = $this->localRequest($path);
     }
     catch (\Exception $e) {
       if ($e->getCode() == 404) {
@@ -73,7 +73,7 @@ class AccountStore extends Requester {
       }
       else {
         print_r($e->getMessage());
-        die($e->getCode() .' Unknown response from AccountStore fetch/'.urlencode($name));
+        die($e->getCode() ." Unknown response from AccountStore $path");
       }
     }
     $result = $this->upcast($result);
@@ -129,7 +129,7 @@ class AccountStore extends Requester {
     try {
       $this->setMethod('post')
         ->addField('id', urlencode($acc_id))
-        ->localRequest('join/'.$type);
+        ->localRequest($type);
     }
     catch (\Exception $e) {
       switch ($e->getCode()) {
@@ -144,42 +144,16 @@ class AccountStore extends Requester {
   }
 
   /**
-   * Get the account including the overridden values.
-   * @param string $acc_id
-   * @return Account
-   * @throws DoesNotExistViolation
-   * @throws CCFailure
-   *
-   * @todo refactor this into fetch()
-   */
-  function getOverriden(string $acc_id) : Account {
-    $this->options[RequestOptions::QUERY] = ['view_mode' => 'override'];
-    try {
-      //return $this->localRequest("override/$acc_id");
-      $result =  $this->localRequest('fetch/'.urlencode($acc_id));
-      return $this->upcast($result);
-    }
-    catch (\Exception $e) {
-      switch ($e->getCode()) {
-        case 404:
-          throw new DoesNotExistViolation(['id' => $acc_id, 'type' => 'account']);
-       default:
-          throw new CCFailure(['message' => 'Unexpected '.$e->getCode()." result from $this->baseUrl/override/$acc_id: ".$e->getMessage()]);
-      }
-    }
-  }
-
-  /**
    * Override account defaults.
    *
    * @param string $acc_id
    * @param array $vals
    */
- function override(string $acc_id, array $vals) : void {
-    $this->fields = $vals;
+ function set(string $acc_id, array $vals) : void {
+    $this->setBody($vals);
     try {
       $this->setMethod('patch')
-        ->localRequest('override/'.$acc_id);
+        ->localRequest($acc_id);
     }
     catch (\Exception $e) {
       switch($e->getCode()) {
@@ -234,7 +208,7 @@ class AccountStore extends Requester {
   function load(string $id = '') : \CreditCommons\Account {
     global $loadedAccounts;
     if (!isset($loadedAccounts[$id])) {
-      if ($id and $acc = $this->fetch($id, FALSE)) {
+      if ($id and $acc = $this->fetch($id, FALSE, 'full')) {
         $loadedAccounts[$id] = $acc;
       }
       else {

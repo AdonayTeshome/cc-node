@@ -1,5 +1,4 @@
 <?php
-
 namespace AccountStore;
 use AccountStore\AccountManager;
 use Psr\Http\Message\ResponseInterface as Response;
@@ -24,7 +23,7 @@ $config = parse_ini_file('accountstore.ini');
 require_once '../vendor/autoload.php';
 $app = new App();
 $app->get('/filter', function (Request $request, Response $response) {
-  $accounts = new AccountManager(TRUE);
+  $accounts = new AccountManager();
   $params = $request->getQueryParams();
   if (!empty($params['chars'])) {
     $accounts->filterByName($params['chars']);
@@ -35,64 +34,60 @@ $app->get('/filter', function (Request $request, Response $response) {
   if (!empty($params['local'])) {
     $accounts->filterByLocal((bool)$params['local']);
   }
-  $result = !empty($params['nameonly']) ? array_keys($accounts->accounts) : array_values($accounts->accounts);
+  $result = $accounts->view($params['view_mode']??'full');
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
 });
 
-$app->get('/fetch[/{acc_id}]', function (Request $request, Response $response, $args) {
-  $accounts = new AccountManager(TRUE); // defaults, not overrides
-  $params = $request->getQueryParams() + ['status' => TRUE, 'view_mode' => 'name'];
+$app->get('/{acc_id}[/{view_mode}]', function (Request $request, Response $response, $args) {
+  // View_mode can be either name, full, own (with null for default values)
+  $accounts = new AccountManager();
+  // To retrieve all accounts you would have to send status = NULL
+  $args += ['view_mode' => 'full'];
   if (isset($args['acc_id'])) {
-    if (isset($accounts[$args['acc_id']])) {
-      $response->getBody()->write(json_encode($accounts[$args['acc_id']]));
+    if ($accounts->has($args['acc_id'])) {
+      $account = $accounts[$args['acc_id']]->view($args['view_mode']);
+      $response->getBody()->write(json_encode($account));
     }
     else{
       throw new DoesNotExistViolation(['type' => 'account', 'id' => $args['acc_id']]);
-      throw new HttpNotFoundException();
     }
   }
   else {
-    $result = !empty($params['nameonly']) ? array_keys($accounts->accounts) : $accounts->view($params['view_mode']);
-    $response->getBody()->write($result);
+    throw new HttpNotFoundException();
   }
   return $response->withHeader('Content-Type', 'application/json');
 });
 
 
-$app->get('/overriden/{acc_id}', function (Request $request, Response $response, $args) {
-  $accounts = new AccountManager(FALSE);
-  $response->getBody()->write(json_encode($accounts[$args['acc_id']]->overridden()));
-  return $response;
-});
-
-$app->post('/join/{type}', function (Request $request, Response $response, $args) {
+$app->post('/{type}', function (Request $request, Response $response, $args) {
   // check permission?
-  $accounts = new AccountManager(FALSE);
+  $accounts = new AccountManager();
   //this is NOT a json object
   parse_str($request->getBody()->getContents(), $params);
   $data = (object)$params;
-  $acc_id = strtolower($data->id);
-  if (!$accounts->validName($acc_id)) {
+  $data->created = time();
+  $data->id = strtolower($data->id);
+  if (!$accounts->validName($data->id)) {
     throw new HttpBadRequestException();
   }
-  elseif (!$accounts->availableName($acc_id)) {
+  elseif (!$accounts->availableName($data->id)) {
     throw new HttpBadRequestException(); // this should actually be the credit commons duplicate exception
   }
   elseif (!$auth = $data->url??$data->key) {
     throw new HttpBadRequestException();
   }
   elseif ($args['type'] == 'node' and isset($data->url)) {
-    $record = new RemoteRecord($acc_id, $data->url, time());
+    $record = new RemoteRecord($data);
   }
   elseif ($args['type'] == 'user' and isset($data->key)) {
-    $record = new UserRecord($acc_id, $data->key, time());
+    $record = new UserRecord($data);
   }
   else {
     throw new HttpBadRequestException();
   }
   if (isset($record)) {
-    $record->override((array)$data);
+    $record->set($data);
     $accounts->addAccount($record);
     $accounts->save();
     // Todo clarify what this should return.
@@ -102,13 +97,16 @@ $app->post('/join/{type}', function (Request $request, Response $response, $args
   return $response;
 });
 
-$app->patch('/override/{id}', function (Request $request, Response $response, $args) {
-  $accounts = new AccountManager(FALSE);
-  //field input is NOT a json object
-  parse_str($request->getBody()->getContents(), $params);
-  $accounts[$args['id']]->override($params);
+$app->patch('/{acc_id}', function (Request $request, Response $response, $args) {
+  $accounts = new AccountManager();
+  if (!$accounts->has($args['acc_id'])) {
+    return $response->withStatus(404);
+  }
+  $contents = $request->getBody()->getContents();
+  $values = json_decode($contents);
+  $accounts[$args['acc_id']]->set($values);
   $accounts->save();
-  return $response->withStatus(201);
+  return $response->withStatus(200);
 });
 
 $app->run();

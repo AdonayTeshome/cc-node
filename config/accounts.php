@@ -11,30 +11,32 @@ if (!is_writable($store)) {
 }
 if ($_POST) {
   unset($_POST['submit']);
-
   if (!$errs) {
     require './writeini.php';
-    if ($_POST['user']['new']['id']) {
-      if (empty($_POST['user']['new']['key'])) $errs[] = 'New users must have an api key';
-      else add_account('user', $_POST['user']['new']);
+    // Save the new local account
+    if ($_POST['user']['new']['id'] and $_POST['user']['new']['key']) {
+      add_account('user', $_POST['user']['new']);
     }
     unset($_POST['user']['new']);
-    if (@$_POST['node']['new']['id']) {
-      if (empty($_POST['node']['new']['url'])) $errs[] = 'New nodes must have a url';
+    // Save the new remote account
+    if (@$_POST['node']['new']['id'] and $_POST['node']['new']['url']) {
       add_account('node', $_POST['node']['new']);
     }
     unset($_POST['node']['new']);
+    // Resave existing local accounts
     if (isset($_POST['user'])) {
       foreach ($_POST['user'] as $id => $fields) {
         mod_account('user', $id, $fields);
       }
     }
+    // Resave existing remote accounts
     if (isset($_POST['node'])) {
       foreach ($_POST['node'] as $id => $fields) {
         mod_account('node', $id, $fields);
       }
     }
     $node_conf = parse_ini_file(SETTINGS_INI_FILE);
+    // Save or resave the BoT account
     if ($node_conf['bot']['acc_id'] or !empty($_POST['bot']['acc_id'])) {
       $accs = load_accounts();
       if (isset($_POST['bot']['acc_id'])) {
@@ -73,9 +75,9 @@ $accs = load_accounts();
           <tr>
             <th title = "Wallet id, must be unique on this node">Name</th>
             <th title = "Password-like string">API Key</th>
-            <th title = "Account is active or blocked (override)">Status</th>
             <th title = "Minimum/Maximium balance (override default @todo)">Min/Max</th>
             <th title = "Checked if this account has admin privileges">Admin</th>
+            <th title = "Account is active or blocked">Enabled</th>
           </tr>
         </thead>
         <tbody>
@@ -85,29 +87,31 @@ $accs = load_accounts();
       <tr>
         <th title = "Wallet id, must be unique on this node"><?php print $id;?><!--<input type="hidden" name="user[<?php print $id;?>][id]" value = "<?php print $id;?>">--></th>
         <td title = "Password-like string"><input name="user[<?php print $id;?>][key]" value="<?php print $acc->key;?>" size = "6"></td>
-        <?php print status_cell('td','user['.$id.']', $acc); ?>
         <?php print minmax_cell('td','user['.$id.']', $acc); ?>
         <td title = "Checked if this account has admin privileges"><input name="user[<?php print $id;?>][admin]" type="checkbox" value = "1" <?php print !empty($acc->admin)?'checked':'';?>></td>
+        <td title = "Account is active or blocked">
+          <input type="checkbox" name="user[<?php print $id ?>][status]" value = 1 <?php if ($acc->status) print ' checked'?> />
+        </td>
       </tr>
       <?php endforeach; ?>
       <tr>
           <td title = "Wallet id, must be unique on this node"><input name="user[new][id]" size = "8" placeholder = "new_acc_id"></td>
           <td title = "Password-like string"><input name="user[new][key]" size = "8"></td>
-          <?php print status_cell('td', 'user[new]'); ?>
           <?php print minmax_cell('td', 'user[new]'); ?>
           <td title = "Checked if this account has admin privileges"><input name="user[new][admin]" type="checkbox" value = "1" ></td>
+          <td title = "Account is active or blocked"></td>
         </tr>
       </table>
-
+<!--
       <h2>Leafward nodes</h2>
       <p>Special accounts which are controlled by other, credit commons nodes.
       <table>
       <thead>
         <tr>
-          <th title = "Wallet id, must be unique on this node">Leafward node name</th>
-          <th title = "Url of the node">Leafward node url</th>
-          <th title = "Account is active or blocked (override)">status</th>
+          <th title = "Wallet id, must be unique on this node">Node name</th>
+          <th title = "Url of the node">Node url</th>
           <th title = "Minimum/Maximum balance (override default @todo)">Min/Max</th>
+          <th title = "Account is active or blocked">Enabled</th>
         </tr>
       </thead>
       <tbody>
@@ -123,15 +127,17 @@ $accs = load_accounts();
         <td title = "Url of the node">
           <input name="node[<?php print $id;?>][url]" value="<?php print $acc->url;?>" size = "8">
         </td>
-        <?php print status_cell('td', 'node['.$id.']', $acc); ?>
         <?php print minmax_cell('td', 'node['.$id.']', $acc); ?>
+        <td title = "Account is active or blocked">
+          <input type="checkbox" name="node[<?php print $id; ?>][status]" value = 1 <?php if ($acc->status) print ' checked'?> />
+        </td>
       </tr>
       <?php endforeach; ?>
       <tr>
         <td title = "Wallet id, must be unique on this node"><input name="node[new][id]" size = "8" placeholder = "new_account_id" value="<?php $bot_name;?>"></td>
         <td title = "Url of the remote node"><input name="node[new][url]" size = "8"  value="<?php $bot_url;?>"></td>
-        <?php print status_cell('td', 'node[new]'); ?>
         <?php print minmax_cell('td', 'node[new]'); ?>
+        <td title = "Account is active or blocked"></td>
       </tr>
       </tbody>
       </table>
@@ -145,13 +151,12 @@ $accs = load_accounts();
           <tr>
             <th title = "This is how this node identifies itself to the trunkward node.">Node name</th>
             <th title = "Url of the BoT node">Trunkwards url</th>
-            <th title = "Minimum/Maximum balance (override default @todo)">Min/Max</th>
             <th title = "The ratio of the local unit to the Branchward ledger's unit @todo clarify which way around this is">Exchange rate</th>
+            <th title = "Minimum/Maximum balance (override default @todo)">Min/Max</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <!-- if the account has traded, then these should no longer be form fields-->
             <td>
               <input name="bot[acc_id]" size = "8" placeholder = "bot_account_id" value="<?php print $node_conf['bot']['acc_id']; ?>" <?php if ($node_conf['bot']['acc_id']); ?>>
             </td>
@@ -174,14 +179,15 @@ $accs = load_accounts();
         <br />Expose anonymised stats<input name = "bot[priv_stats]" type = "checkbox" value = "1" <?php print $node_conf['bot']['priv_stats'] ? 'checked ': ''; ?>>
         <br />Transaction metadata <input name = "bot[metadata]" type = "checkbox" value = "1" <?php print $node_conf['bot']['metadata'] ? 'checked' : ''; ?>></span>
       </p>
-      <input type="submit">
+      -->
+      <input type="submit" value="Save">
     </form>
   </body>
 </html><?php
 
 
 function add_account($type, $fields): void {
-  print_r($fields);
+  $fields['status'] = parse_ini_file(ACC_STORAGE_INI_FILE)['default_status'];
   $id = $fields['id'];
   unset($fields['id']);
   $fields = array_filter($fields, 'strlen');
@@ -192,10 +198,12 @@ function add_account($type, $fields): void {
 }
 
 function mod_account($type, $id, $fields) :void {
-  $fields['admin'] = (int)!empty($fields['admin']);
   $config = parse_ini_file('../node.ini');
+  // Ensure there's a value in case of empty checkboxes
+  $fields['admin'] = (int)!empty($fields['admin']);
+  $fields['status'] = (int)!empty($fields['status']);
   $accountStore = new AccountStore($config['account_store_url']);
-  $accountStore->override($id, $fields);
+  $accountStore->set($id, $fields);
 }
 
 /**
@@ -208,20 +216,14 @@ function load_accounts() : array {
   $config = parse_ini_file('../node.ini');
   $accountStore = new AccountStore($config['account_store_url']);
   foreach ($accountStore->filter() as $acc) {
-    $accs[$acc->id] = $accountStore->getOverriden($acc->id);
+    $accs[$acc->id] = $accountStore->fetch($acc->id, 'own');
   }
   return $accs;
 }
 
 function status_cell($tag, $type, $acc = NULL) {
   $status = $acc && isset($acc->status) ? $acc->status : NULL; ?>
-<<?php print $tag; ?> title = "Account is active or blocked (override)">
-    <select name="<?php print $type; ?>[status]">
-      <option value = ""<?php print is_null($status) ? ' selected' : ''; ?>>Default</option>
-      <option value = "1"<?php print $status === '1' ? ' selected' : ''; ?>>Active</option>
-      <option value = "0"<?php print $status === '0' ? ' selected' : ''; ?>>Blocked</option>
-    </select>
-</<?php print $tag; ?>>
+  <checkbox name="<?php print $type; ?>[status]" value = 1 <?php if ($status) print ' checked'?>>
 <?php }
 
 function minmax_cell($tag, $type, $acc = NULL) {?>
