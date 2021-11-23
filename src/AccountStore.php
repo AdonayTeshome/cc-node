@@ -29,24 +29,28 @@ class AccountStore extends Requester {
    * Filter on the account names
    *
    * @param array $filters
-   *   possible keys are nameonly, status, local, chars
+   *   possible keys are view_mode, status, local, chars
    * @return array
    *   CreditCommons\Account[] or string[]
    */
-  function filter(array $filters = []) : array {
-    $valid = ['nameonly', 'status', 'local', 'chars'];
-    $this->options[RequestOptions::QUERY] = array_intersect_key($filters, array_flip($valid));
-    $results = $this->localRequest('filter');
-    if (!empty($filters['nameonly'])) {
-      $return = $results;
+  function filter(array $filters = [], $view_mode = 'full') : array {
+    $path = 'filter';
+    if (isset($filters['chars'])) {
+      $path.='/'.$filters['chars'];
+      unset($filters['chars']);
     }
-    elseif ($results) {
+    $valid = ['status', 'local', 'type'];
+    $filters = array_intersect_key($filters, array_flip($valid));
+    $filters += ['view_mode' => $view_mode];
+    $this->options[RequestOptions::QUERY] = $filters;
+    $results = $this->localRequest($path);
+    if ($filters['view_mode'] == 'name') {
+      $return = (array)$results;
+    }
+    else{
       foreach ($results as $res) {
         $return[] = $this->upcast($res);
       }
-    }
-    else {
-      $return = [];
     }
     return $return;
   }
@@ -201,6 +205,7 @@ class AccountStore extends Requester {
   }
 
   /**
+   * Get an account with the given id, even if it does not exist
    * @staticvar array $loadedAccounts
    * @param string $id
    * @return \Creditcommons\Account
@@ -208,7 +213,7 @@ class AccountStore extends Requester {
   function load(string $id = '') : \CreditCommons\Account {
     global $loadedAccounts;
     if (!isset($loadedAccounts[$id])) {
-      if ($id and $acc = $this->fetch($id, FALSE, 'full')) {
+      if ($id and $acc = $this->fetch($id, 'full')) {
         $loadedAccounts[$id] = $acc;
       }
       else {
@@ -233,7 +238,7 @@ class AccountStore extends Requester {
     // if its one name and it exists on this ledger then good.
     $parts = explode('/', $given_path);
     if (count($parts) == 1) {
-      if ($pol = $this->load($given_path)) {
+      if ($pol = $this->fetch($given_path, 'full')) {
         return $pol;
       }
       throw new DoesNotExistViolation(['type' => 'account', 'id' => $given_path]);
@@ -243,20 +248,21 @@ class AccountStore extends Requester {
     $pos = array_search($config['node_name'], $parts);
     if ($pos !== FALSE and $branch_name = $parts[$pos+1]) {
       try {
-        return $this->load($branch_name);
+        return $this->fetch($branch_name, 'full');
       }
       catch (DoesNotExistViolation $e) {}
     }
     // A branchwards or trunkwards account, starting with the account name on the local node
     $branch_name = reset($parts);
     try {
-      return $this->load($branch_name);
+      return $this->fetch($branch_name, 'full');
     }
     catch (DoesNotExistViolation $e) {}
 
     // Now the path is either trunkwards, or invalid.
     if ($config['bot']['acc_id']) {
-      $trunkwardsAccount = $this->load($config['bot']['acc_id'], TRUE);
+      // Don't have to 'try' because this account is known to exist.
+      $trunkwardsAccount = $this->fetch($config['bot']['acc_id']);
       if ($existing) {
         return $trunkwardsAccount;
       }

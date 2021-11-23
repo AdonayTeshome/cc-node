@@ -29,4 +29,12 @@ class UserRecord extends Record {
     parent::set($new_data);
   }
 
+
+  function view($mode) {
+    $result = parent::view($mode);
+    if ($mode <> 'own') {
+      unset($result->key);
+    }
+    return $result;
+  }
 }

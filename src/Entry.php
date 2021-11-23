@@ -28,7 +28,7 @@ class Entry extends CreditCommonsEntry {
   static function create(\stdClass $row) : CreditCommonsEntry {
     $missing = [];
     // Basic validation needs to be done all in one place.
-    foreach (['payer', 'payee', 'description', 'quant'] as $field_name) {
+    foreach (['payer', 'payee', 'quant'] as $field_name) {
       if (empty($row->{$field_name})) {
         $missing["entries-$key:$field_name"] = '_REQUIRED_';
       }

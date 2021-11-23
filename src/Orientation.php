@@ -2,6 +2,7 @@
 
 namespace CCNode;
 use CreditCommons\Account;
+use Accounts\Remote;
 
 
 /**
@@ -34,7 +35,7 @@ class Orientation {
    * Any remote account which isn't the upstreamAccount is marked as a downstream account
    */
   function addAccount(Account $acc) : void {
-    if ($acc instanceOf AccountRemote and $acc->id != $this->upstreamAccount->id) {
+    if ($acc instanceOf Remote and $acc->id != $this->upstreamAccount->id) {
       // The upstream account is the current user, so any other remote account is downstream.
       $this->downstreamAccount = $acc;
     }
@@ -108,12 +109,11 @@ class Orientation {
   function handshake() : array {
     global $config;
     $results = [];
-    $active_policies = AccountStore()->filter(['status' => 1]);
+    $active_policies = AccountStore()->filter(['status' => 1, 'class' => 'remote']);
     foreach ($active_policies as $account) {
-      if (!empty($account->url)) {
+      if ($account instanceof Remote) {
         //Make sure we load the remote version by giving a path longer than 1 part.
-        $ledgerAccount = accountStore()->load($config['node_name']."/$account->id");
-        list($code) = $this->getRequester()->handshake();
+        list($code) = $account->API()->handshake();
         $results[$code][] = $account->id;
       }
     }

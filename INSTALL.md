@@ -5,15 +5,15 @@
 * Mysql or mariadb.
 * Composer (php package manager). [Install Composer](https://getcomposer.org/download)
 * A web browser (to use the crude config interface)
-* A client application which supports the credit commons API. eg the [developer client](http://github.com/matslats/cc-client)
+* A client application which supports the credit commons API. eg the [developer client](https://gitlab.com/credit-commons-software-stack/cc-dev-client)
 
-# Installation procedure
+# Installation procedure for single instance.
 
   * Download this package from gitlab to your server.
   * Navigate to the current directory and do ``composer install --no-dev``
   * Create 3 virtualhosts in your web server configuration as indicated in the section below. The blogic service adds transaction fees and is optional. Don't forget to restart your web server.
   * Ensure your web server can write files nodes.ini, error_log, AccountStore/accountstore.ini, AccountStore/store.json
-  * Add the following line to /etc/hosts: ``127.0.0.1 myccnode accounts.myccnode blogic.myccnode`` replacing myccnode for your virtualhost name.
+  * Tell your browser these domains and subdomains are hosted locally and not online. Usually this is done by appending to /etc/hosts something like ``127.0.0.1 myccnode accounts.myccnode blogic.myccnode`` replacing myccnode for your virtualhost name.
   * In your browser go to ``http://myccnode/config`` and enter the db credentials.
   * On submission you will be directed to the AccountStore config where you can add to the default three accounts.
   * (optional) If you want business logic, then configure by editing BlogicService/blogic.ini by hand.
@@ -22,23 +22,23 @@
 # Setup for local development
 
   * Run composer as above but without the ``--no-dev`` flag. This will include the packages needed for testing.
-  * The OpenApi spec is at vendor/matslats/cc-php-lib/docs/credit-commons-openapi-3.0.yml
+  * The OpenApi spec is at vendor/credit-commons-software-stack/cc-php-lib/docs/credit-commons-openapi-3.0.yml
   * unittest compares inputs and outputs against the (local) Openapi spec. To run the battery of tests, from the node root ,do ``vendor/bin/phpunit tests/APITest.php``
 
-#minimal settings for virtualhosts in apache
-
+# Minimal settings for virtualhosts
+## Apache
 ``<VirtualHost *:80>
   ServerName myccnode
-  DocumentRoot /home/matslats/localhost/cc-node
+  DocumentRoot /var/www/localhost/cc-node
 </VirtualHost>
 
 <VirtualHost *:80>
   ServerName blogic.myccnode
-  DocumentRoot /home/matslats/localhost/cc-node/BlogicService
+  DocumentRoot /var/www/localhost/cc-node/BlogicService
 </VirtualHost>
 
 <VirtualHost *:80>
   ServerName accounts.myccnode
-  DocumentRoot /home/matslats/localhost/cc-node/AccountStore
+  DocumentRoot /var/www/localhost/cc-node/AccountStore
 </VirtualHost>``
 Each of these documentRoots must have the .htaccess file provided, as must myccnode/config

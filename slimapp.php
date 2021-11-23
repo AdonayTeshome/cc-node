@@ -113,32 +113,23 @@ $app->get('/accountnames[/{fragment}]', function (Request $request, Response $re
     $remote_names = API_calls()->accounts(@$args['fragment'], TRUE);
     // @todo Also we may want to query child ledgers.
   }
-  $local_names = accountStore()->filter(['chars' => @$args['fragment'], 'status' => 1, 'local' => 1, 'nameonly' => 1], TRUE);
+  $local_names = accountStore()->filter(['chars' => @$args['fragment'], 'status' => 1, 'local' => 1], 'name');
   return json_response($response, array_slice(array_merge($local_names, $remote_names), 0, $params['limit']??10));
 });
 
 $app->get('/account/limits/{acc_id}', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountHistory');
-  $account = accountStore()->fetch($args['acc_id'], FALSE);
+  $account = accountStore()->fetch($args['acc_id'], 'full');
   return json_response($response, (object)['min' => $account->min, 'max' => $account->max]);
 });
 
 
-$app->get('/account/summary[/{acc_path}]', function (Request $request, Response $response, $args) {
+$app->get('/account/summary/{acc_path}', function (Request $request, Response $response, $args) {
   global $orientation;
   check_permission($request, 'accountSummary');
   $params = $request->getQueryParams();
-  if (isset($args['acc_path'])) {
-    $account = accountStore()->load($args['acc_path'], FALSE);
-    $result = (new Wallet($account))->getTradeStats();
-  }
-  // The openAPI format doesn't allow acc_path to be empty, so this is undocumented and won't work here
-  else {
-    foreach (accountStore()->filter(['nameonly' => 1]) as $acc_id) {
-      $account = accountStore()->load($acc_id, TRUE);
-      $result[$acc_id] = (new Wallet($account))->getTradeStats();
-    }
-  }
+  $account = accountStore()->fetch($args['acc_path']);
+  $result = (new Wallet($account))->getTradeStats();
   $orientation->responseMode = TRUE;
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
@@ -149,7 +140,7 @@ $app->get('/account/history/{acc_path}', function (Request $request, Response $r
   global $orientation;
   check_permission($request, 'accountHistory');
   $params = $request->getQueryParams();
-  $account = accountStore()->load($args['acc_path'], FALSE);
+  $account = accountStore()->fetch($args['acc_path']);
   $result = (new Wallet($account))->getHistory($params['samples']??0, $account->created);
 
   $orientation->responseMode = TRUE;
@@ -158,7 +149,7 @@ $app->get('/account/history/{acc_path}', function (Request $request, Response $r
 });
 
 
-$app->get('/transaction/filter', function (Request $request, Response $response) {
+$app->get('/transaction[/{uuid}]', function (Request $request, Response $response) {
   global $orientation;
   check_permission($request, 'filterTransactions');
   $params = $request->getQueryParams();
@@ -246,7 +237,7 @@ return $app;
 function load_account(string $id) : Account {
   static $fetched = [];
   if (!isset($fetched[$id])) {
-    if ($id and $acc = accountStore()->fetch($id, FALSE)) {
+    if ($id and $acc = accountStore()->fetch($id)) {
       $fetched[$id] = $acc;
     }
     elseif (!$id) {

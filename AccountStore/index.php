@@ -22,11 +22,13 @@ ini_set('display_errors', 1);
 $config = parse_ini_file('accountstore.ini');
 require_once '../vendor/autoload.php';
 $app = new App();
-$app->get('/filter', function (Request $request, Response $response) {
+$app->get('/filter[/{chars}]', function (Request $request, Response $response, $args) {
   $accounts = new AccountManager();
   $params = $request->getQueryParams();
-  if (!empty($params['chars'])) {
-    $accounts->filterByName($params['chars']);
+  // For now support chars via path or query
+  $chars = $args['chars']??$params['chars']??'';
+  if (!empty($chars)) {
+    $accounts->filterByName($chars);
   }
   if (!empty($params['status'])) {
     $accounts->filterByStatus((bool)$params['status']);
@@ -34,7 +36,7 @@ $app->get('/filter', function (Request $request, Response $response) {
   if (!empty($params['local'])) {
     $accounts->filterByLocal((bool)$params['local']);
   }
-  $result = $accounts->view($params['view_mode']??'full');
+  $result = $accounts->view($params['view_mode']??'full'); // array
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
 });

@@ -53,11 +53,10 @@ if ($_POST) {
         CCNode\Db::query($query);
       }
     }
-    print "Check the db is created and then set up <a href=\"index.php?accounts\">the accounts</a>.";
-    exit;
+    print "Do check that the db has been created and then congratulations; the node should now be installed.<br />";
   }
 }
-else $values = $node_conf + parse_ini_file(ACC_STORAGE_INI_FILE);
+$values = $node_conf + parse_ini_file(ACC_STORAGE_INI_FILE);
 
 // the following form is used once in set up
 ?><!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">
@@ -67,10 +66,18 @@ else $values = $node_conf + parse_ini_file(ACC_STORAGE_INI_FILE);
   </head>
   <body>
     <?php if (!empty($errs)) {
-      print "<p><font color=red>".implode('<br />', $errs).'</font>';
+      print "<p><font color=red>".implode('<br />', $errs).'</font></p>';
     }?>
-    <form method="post">
+    <?php if (!empty($values['db']['name'])) {
+      print "<p>Now you can <ul>"
+        ."<li><a href=\"index.php?accounts\">Edit the default accounts</a></li>"
+        ."<li>Send requests from your own client</li>"
+        ."<li>or <a href=\"https://gitlab.com/credit-commons-software-stack/cc-dev-client/-/blob/master/INSTALL.md\">install</a> the developer's client.</li>"
+        . "</ul></p>";
+    }?>
 
+
+    <form method="post">
       <h2>Microservices</h2>
       <p title="The reference implementation uses these two microservices (with as yet undocumented apis)">
         Account store <input name = "account_store_url" value = "<?php print $values['account_store_url'] ?: 'http://accounts.'.$_SERVER['HTTP_HOST']; ?>" placeholder = "https://accounts.mydomain.com">

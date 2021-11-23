@@ -29,7 +29,7 @@ paths:
             type: string
         - in: query
           name: view_mode
-          description: "'full', 'overrides', or just the 'nameonly'"
+          description: One of full, own, or nameonly
           required: false
           schema:
             type: string
@@ -85,14 +85,14 @@ paths:
           description: the overrides were written.
         "404":
           description: The account does not exist
-  "/filter":
+  "/filter/{chars}":
     get:
       summary: filter the active user names for a string
       operationId: filterName
       description: Get a list of account names
       parameters:
         - name: chars
-          in: query
+          in: path
           description: the string or fragment to check against account names.
           required: false
           schema:
@@ -122,9 +122,8 @@ paths:
           content:
             "application/json":
               schema:
+                # Can be ids or full account objects
                 type: array
-                items:
-                  type: string
   "/config":
     patch:
       summary: Edit one or more config values

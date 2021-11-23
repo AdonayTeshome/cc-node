@@ -58,7 +58,6 @@ class APITest extends \PHPUnit\Framework\TestCase {
     $response = $this->sendRequest("accountnames/$char");
     $this->checks($response, 200, 'application/json');
     $acc_ids = json_decode($response->getBody()->getContents());
-    $this->assertIsArray($acc_ids);
     // should be a list of account names including 'a'
     foreach ($acc_ids as $acc_id) {
       $this->assertStringContainsString($char, $acc_id);
@@ -101,6 +100,27 @@ class APITest extends \PHPUnit\Framework\TestCase {
     $this->checks($response, 201);
   }
 
+
+  /**
+   * Todo think about how the transactions are filtered by their main properties,
+   * their entry properties, and how the results are returned.
+   */
+  function testTransactionFilter() {
+    $response = $this->sendRequest("transaction?".$querystring, 'get');
+    $this->checks($response, 200, 'application/json');
+    $all_transactions = json_decode($response->getBody()->getContents());
+    // Check filter by state
+    $response = $this->sendRequest("transaction?state=pending&full=false", 'get');
+    $this->checks($response, 200, 'application/json');
+    $pending_transaction_uuids = json_decode($response->getBody()->getContents());
+    $this->checkTransactions($all_transactions, $pending_transaction_uuids, ['state' => 'pending']);
+
+  }
+
+  function testTransactionStateChange() {
+
+  }
+
   function testStats() {
     global $users;
     $test_user_id = end($users)->id;
@@ -135,7 +155,8 @@ class APITest extends \PHPUnit\Framework\TestCase {
     $response = $this->getApp()->process($request, new Response());
     $response->getBody()->rewind();
     if ($response->getStatusCode() > 399) {
-      print_r($response->getBody()->getContents());
+      // Blurt out to terminal to ensure all info is captured.
+      print_r($response->getBody()->getContents()); // Seems to be truncated hmph.
       $request->getBody()->rewind();
     }
     $this->assertTrue($response->hasHeader('Node-path'));
@@ -165,6 +186,20 @@ class APITest extends \PHPUnit\Framework\TestCase {
     if ($mime_type) {
       $this->assertGreaterThan(0, $body->getSize());
     }
+  }
+
+  private function checkTransactions(array $all_transactions, array $filtered_uuids, array $conditions) {
+    foreach ($all_transactions as $t) {
+      $pass = FALSE;
+      foreach ($conditions as $key => $value) {
+        $pass = $t->{$key} == $value;
+        if (!$pass) break;
+      }
+      if ($pass) {
+        $uuids[] = $t->uuid;
+      }
+    }
+    $this->assertEquals($uuids, $filtered_uuids);
   }
 
 }

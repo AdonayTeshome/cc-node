@@ -82,10 +82,11 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
    * @return stdClass[]
    */
   function view(string $view_mode) : array {
-    return array_map(
+    $results = array_map(
       function ($a) use ($view_mode) {return $a->view($view_mode);},
       $this->accounts
     );
+    return array_values($results);
   }
 
 

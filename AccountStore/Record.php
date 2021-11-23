@@ -62,7 +62,7 @@ abstract class Record {
    */
   function set(\stdClass $new_data) {
     if (isset($new_data->status)) {
-      $this->status = $new_data->status;
+      $this->status = (bool)$new_data->status;
     }
     foreach ($this->overridableFields as $fname) {
       if (isset($new_data->{$fname})) {
@@ -93,14 +93,15 @@ abstract class Record {
     }
     if ($mode == 'full') {
       $full = clone($this);
-      if (!isset($this->max)) {
+      if (is_null($this->max)) {
         $full->max = $config['default_max'];
       }
-      if (!isset($this->min)) {
-        $full->max = $config['default_min'];
+      if (is_null($this->min)) {
+        $full->min = $config['default_min'];
       }
       $ret = $full;
     }
+
     return $ret;
   }
 

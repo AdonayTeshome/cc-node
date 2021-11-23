@@ -141,7 +141,7 @@ class Wallet {
    * @return array
    */
   static function getAllTradeStats(bool $details = FALSE) : array {
-    $all_account_names = accountStore()->filter(['status' => TRUE], 'nameonly');
+    $all_account_names = accountStore()->filter(['status' => TRUE, 'view_mode' => 'name']);
     $results = [];
     foreach (static::TRADE_STATS as $stat) {
       $default[$stat] = 0;
