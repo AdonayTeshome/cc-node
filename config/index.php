@@ -53,6 +53,7 @@ if ($_POST) {
         CCNode\Db::query($query);
       }
     }
+    $node_conf = $values;
     print "Do check that the db has been created and then congratulations; the node should now be installed.<br />";
   }
 }
@@ -85,7 +86,8 @@ $values = $node_conf + parse_ini_file(ACC_STORAGE_INI_FILE);
       </p>
 
       <h2>Database settings</h2>
-      <p>Db name <input name = "db[name]" value = "<?php print $values['db']['name']; ?>">
+      <p>Db server <input name = "db[server]" value = "<?php print $values['db']['server']; ?>">
+        <br />Db name <input name = "db[name]" value = "<?php print $values['db']['name']; ?>">
         <br />Db user <input name = "db[user]" value = "<?php print $values['db']['user']; ?>">
         <br /><span title="Password is not required for the moment">Db pass <input name = "db[pass]" value = "<?php print $values['db']['pass']; ?>"></span>
       </p>
