@@ -1,6 +1,10 @@
 <?php
+
 namespace CCNode;
 
+use CCNode\Entry;
+use CCNode\BlogicRequester;
+use CCNode\FlatEntry;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\MaxLimitViolation;
 use CreditCommons\Exceptions\MinLimitViolation;
@@ -12,13 +16,7 @@ use CreditCommons\NewTransaction;
 use CreditCommons\Workflows;
 use CreditCommons\Workflow;
 use CreditCommons\Account;
-use CCNode\Entry;
-use CCNode\BlogicRequester;
 
-/**
- * Transaction class on a credit commons node.
- *
- */
 class Transaction extends \CreditCommons\Transaction {
 
   /**
@@ -182,7 +180,7 @@ class Transaction extends \CreditCommons\Transaction {
    *   TRUE on success
    */
   function writeValidatedToTemp() {
-    //version is 0 until is it written in the transactions table.
+    //version is 0 until is it written in the main transactions table.
     $data = Db::connect()->real_escape_string(serialize($this));
     $q = "INSERT INTO temp (uuid, serialized) VALUES ('$this->uuid', '$data')";
     $result = Db::query($q);
@@ -219,10 +217,10 @@ class Transaction extends \CreditCommons\Transaction {
       $ledgerAccountInfo = (new Wallet($account))->getTradeStats();
       $projected = $ledgerAccountInfo['pending']['balance'] + $info->diff;
       if ($projected > $this->payee->max) {
-        throw new MaxLimitViolation(['acc_id' => $acc_id, 'limit' => $this->payee->max, 'projected' => $projected]);
+        throw new MaxLimitViolation($acc_id, $this->payee->max, $projected);
       }
       elseif ($projected < $this->payer->min) {
-        throw new MinLimitViolation(['acc_id' => $acc_id, 'limit' => $this->payer->min, 'projected' => $projected]);
+        throw new MinLimitViolation($acc_id, $this->payer->min, $projected);
       }
     }
     $this->state = TransactionInterface::STATE_VALIDATED;
@@ -347,7 +345,7 @@ class Transaction extends \CreditCommons\Transaction {
    *
    * @param Transaction $transaction
    * @return array
-   *   The differences, keyed by account name
+   *   The differences, keyed by account name.
    */
   public function sum() : array {
     $accounts = [];
@@ -363,23 +361,52 @@ class Transaction extends \CreditCommons\Transaction {
     return $accounts;
   }
 
-
   /**
    * @param array $params
-   *   valid keys: state, payer, payee, involving, type, before, after, description
-   * @return uuid[]
-   * @note Because neither signatures as such nor the need for them is stored in
-   * the db, this method can't filter by them.
+   *   valid keys: state, payer, payee, involving, type, before, after, description, format
+   * @param string $format
+   *   the name of the transaction format to return. entry, full, or uuid
+   *
+   * @return []
+   *   Depending on 'format': full gives normal transactions with entries indexed
+   *   by uuid; uuid gives a list of uuids; 'entry' gives a list of Extended entries
+   *
+   * @note It is not possible to filter by signatures needed or signed because
+   * they don't exist, as such, in the db.
    */
-  static function filter(array $params) : array {
+  static function filter(array $params, $format = 'entry') : array {
+    $results = static::filterQuery($params);
+    if ($format <> 'entry') {
+      // we're interested in the uuids, so make them unique.
+      $results = array_unique($results);
+    }
+    foreach ($results as $id => $uuid) {
+      if ($format == 'entry') {
+        $formatted[] = FlatEntry::load($id);
+      }
+      elseif ($format == 'full') {
+        $formatted[] = Transaction::loadByUuid($uuid);
+      }
+      else {
+        $formatted[] = $uuid;
+      }
+    }
+    return $formatted;
+  }
+
+
+  /**
+   *
+   * @param array $params
+   * @return []
+   *   uuids keyed by entry ids
+   */
+  private static function filterQuery(array $params) : array {
     extract($params);
-    $query = "SELECT t.uuid FROM transactions t "
+    // Get only the latest version of each row in the transactions table.
+    $query = "SELECT e.id, t.uuid FROM transactions t "
       . "INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver "
       . "LEFT JOIN entries e ON t.id = e.txid";
-    if (isset($is_primary) and $is_primary) {
-      // This prevents you from filtering for non-primary transactions only.
-      $conditions[]  = 'is_primary = 1';
-    }
     if (isset($payer)) {
       if ($col = strpos($payer, '/')) {
         $conditions[] = "metadata LIKE '%$payer%'";
@@ -433,12 +460,11 @@ class Transaction extends \CreditCommons\Transaction {
     if (isset($conditions)) {
       $query .= ' WHERE '.implode(' AND ', $conditions);
     }
-    $result = Db::query($query);
-    $uuids = [];
-    while ($row = $result->fetch_object()) {
-      $uuids[] = $row->uuid;
+    $query_result = Db::query($query);
+    while ($row = $query_result->fetch_object()) {
+      $results[$row->id] = $row->uuid;
     }
-    return $uuids;
+    return $results;
   }
 
 }

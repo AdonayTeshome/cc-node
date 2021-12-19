@@ -40,19 +40,24 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
   }
 
   /**
-   *
    * @param string $string
    */
-  function filterByName(string $string = '') {
-    if ($string) {
-      $this->accounts = array_filter($this->accounts, function ($a) use ($string) {
-        return is_int(stripos($a->id, $string));
-      });
-    }
+  function filterByAuth(string $string) {
+    $this->accounts = array_filter($this->accounts, function ($a) use ($string) {
+      return is_int(stripos($a->auth, $string));
+    });
   }
 
   /**
-   *
+   * @param string $string
+   */
+  function filterByName(string $string) {
+    $this->accounts = array_filter($this->accounts, function ($a) use ($string) {
+      return is_int(stripos($a->id, $string));
+    });
+  }
+
+  /**
    * @param bool $status
    *   True for active, FALSE for Blocked
    */
@@ -62,8 +67,8 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
       return $status == $a->status;
     });
   }
+
   /**
-   *
    * @param bool $local
    *   TRUE for local accounts, FALSE for remote accounts
    */

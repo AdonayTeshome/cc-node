@@ -59,7 +59,7 @@ $accs = load_accounts();
 
 ?><!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">
   <head>
-    <title>Credit Commons setup</title>
+    <title>Credit Commons config</title>
     <style>th{background-color: #eee;}</style>
   </head>
   <body>

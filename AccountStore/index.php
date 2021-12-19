@@ -30,6 +30,10 @@ $app->get('/filter[/{chars}]', function (Request $request, Response $response, $
   if (!empty($chars)) {
     $accounts->filterByName($chars);
   }
+  if (count($accounts) ==1 and !empty($params['auth'])) {
+    //prevents getting a list of all users with a given auth string.
+    $accounts->filterByAuth($params['auth']);
+  }
   if (!empty($params['status'])) {
     $accounts->filterByStatus((bool)$params['status']);
   }

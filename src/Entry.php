@@ -1,5 +1,5 @@
 <?php
-namespace CCnode;
+namespace CCNode;
 
 use CreditCommons\Entry as CreditCommonsEntry;
 use CreditCommons\Account;

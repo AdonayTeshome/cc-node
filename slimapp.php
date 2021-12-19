@@ -14,17 +14,20 @@ use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\CCError;
 use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\PermissionViolation;
+use CreditCommons\Exceptions\AuthViolation;
 use CreditCommons\CreditCommonsInterface;
 use CreditCommons\Workflows;
 use CreditCommons\Workflow;
 use CreditCommons\AccountRemote;
 use CreditCommons\RestAPI;
 use CreditCommons\Account;
-use CCnode\Accounts\BoT;
+use CCNode\Accounts\BoT;
 
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\App;
+
+file_put_contents('debug.txt', print_r($_SERVER, 1));
 
 $config = parse_ini_file('./node.ini');
 // Slim4 (when the League\OpenAPIValidation is ready)
@@ -149,26 +152,6 @@ $app->get('/account/history/{acc_path}', function (Request $request, Response $r
 });
 
 
-$app->get('/transaction[/{uuid}]', function (Request $request, Response $response) {
-  global $orientation;
-  check_permission($request, 'filterTransactions');
-  $params = $request->getQueryParams();
-  $uuids = Transaction::filter($params);
-
-  if ($uuids and !empty($params['full'])) {
-    foreach ($uuids as $key => $uuid) {
-      $result[$uuid] = Transaction::loadByUuid($uuid);
-    }
-  }
-  else {
-    $result = $uuids;
-  }
-  $orientation->responseMode = TRUE;
-  $response->getBody()->write(json_encode($result));
-  return $response->withHeader('Content-Type', 'application/json');
-});
-
-
 // Create a new transaction
 $app->post('/transaction/new', function (Request $request, Response $response) {
   global $orientation;
@@ -209,6 +192,19 @@ $app->post('/transaction/new/relay', function (Request $request, Response $respo
 });
 
 $uuid_regex = '[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-\b[0-9a-f]{12}';
+$app->get('/transaction/{uuid:'.$uuid_regex.'}/{format}', function (Request $request, Response $response, $args) {
+  global $orientation;
+  check_permission($request, 'getTransaction');
+  if ($args['format'] == 'entry') {
+    $result = FlatEntry::loadByUuid($args['uuid']);
+  }
+  else {// format = full
+    $result = Transaction::loadByUuid($args['uuid']);
+  }
+  $orientation->responseMode = TRUE;
+  return json_response($response, $result, 200);
+});
+
 $app->patch('/transaction/{uuid:'.$uuid_regex.'}/{dest_state}', function (Request $request, Response $response, $args) {
   check_permission($request, 'stateChange');
   global $orientation;
@@ -221,6 +217,15 @@ $app->patch('/transaction/{uuid:'.$uuid_regex.'}/{dest_state}', function (Reques
   }
   $transaction->changeState($args['dest_state']);
   return $response->withStatus(201);
+});
+
+$app->get('/transaction', function (Request $request, Response $response) {
+  global $orientation;
+  check_permission($request, 'filterTransactions');
+  $params = $request->getQueryParams();
+  $results = Transaction::filter($params, $params['format']??'entry');
+  $orientation->responseMode = TRUE;
+  return json_response($response, $results, 200);
 });
 
 return $app;
@@ -237,12 +242,15 @@ return $app;
 function load_account(string $id) : Account {
   static $fetched = [];
   if (!isset($fetched[$id])) {
-    if ($id and $acc = accountStore()->fetch($id)) {
+    if ($id == '<anon>') {
+      $dummy = (object)['id'=>'<anon>', 'created' => 0];
+      $fetched[$id] = new Account($dummy);
+    }
+    elseif ($id and $acc = accountStore()->fetch($id)) {
       $fetched[$id] = $acc;
     }
-    elseif (!$id) {
-      $dummy = (object)['id'=>'<anon>', 'created' => 0];
-      return new Account($dummy);
+    else {
+      throw new \Exception(); // What kind of exception? This should never happen.
     }
   }
   return $fetched[$id];
@@ -263,8 +271,18 @@ function check_permission(Request $request, string $operationId) {
   }
 }
 
-
-function permitted_operations() {
+/**
+ * Access control for each API method.
+ *
+ * Anyone can see what endpoints they can user, any authenticated user can check
+ * the workflows and the connectivity of adjacent nodes. But most operations are
+ * only accessible to direct members and leafward member, making this node quite
+ * private with respect to the rest of the tree.
+ * @global type $user
+ * @return string[]
+ *   A list of the api method names the current user can access.
+ */
+function permitted_operations() : array {
   global $user;
   $data = CreditCommonsInterface::OPERATIONS;
   $permitted[] = 'permittedEndpoints';
@@ -280,8 +298,9 @@ function permitted_operations() {
       $permitted[] = 'accountNameAutocomplete';
       $permitted[] = 'accountSummary';
       $permitted[] = 'newTransaction';
-      $permitted[] = 'stateChange';
+      $permitted[] = 'getTransaction';
       $permitted[] = 'filterTransactions';
+      $permitted[] = 'stateChange';
     }
     if ($user instanceof Remote) {
       $permitted[] = 'relayTransaction';
@@ -290,27 +309,41 @@ function permitted_operations() {
   return array_intersect_key(CreditCommonsInterface::OPERATIONS, array_flip($permitted));
 }
 
-
+/**
+ * Taking the user id and auth key from the header and comparing with the database. If the id is of a remote account, compare the extra
+ * @global array $config
+ * @global type $user
+ * @param Request $request
+ * @return void
+ * @throws HashMismatchFailure
+ */
 function authenticate(Request $request) : void {
   global $config, $user;
-  $acc_id = '';
-  $user = load_account(''); // Anon
+  $user = load_account('<anon>'); // Anon
   if ($request->hasHeader('cc-user') and $request->hasHeader('cc-auth')) {
-    $acc_id = $request->getHeader('cc-user')[0];
-    $auth = $request->getHeader('cc-auth')[0];
-    // Find out where the request is coming from, check the hash if it is another
-    // node, and set up the session, which should persist accross the microservices.
-    if ($acc_id and $acc_id <> 'null') {
+    $acc_id = $request->getHeaderLine('cc-user');
+    $auth = $request->getHeaderLine('cc-auth');
+    // Users connect with an API key which can compared directly with the database.
+    if ($acc_id) {
       $user = load_account($acc_id);
-      // Check the ratchet
       if ($user instanceOf Remote) {
-        $query = "SELECT TRUE FROM hash_history WHERE acc = '$account->id' AND hash = '$hash' ORDER BY id DESC LIMIT 0, 1";
+        // Remote nodes connect with a hash of the connected account, which needs to be compared.
+        $query = "SELECT TRUE FROM hash_history WHERE acc = '$account->id' AND hash = '$auth' ORDER BY id DESC LIMIT 0, 1";
         $result = Db::query($query)->fetch_row();
         if ($hash && !$result or !$hash && $result) {
-          throw new HashMismatchFailure(['downStreamNode' => $config['node_name']]);
+          throw new HashMismatchFailure(['remoteNode' => $acc_id]);
         }
       }
+      elseif (!accountStore()->filter(['chars' => $acc_id, 'auth' => $auth])) {
+        throw new AuthViolation($acc_id);
+      }
     }
+    else {
+      // Blank username supplied.
+    }
+  }
+  else {
+    // No attempt to authenticate.
   }
 }
 

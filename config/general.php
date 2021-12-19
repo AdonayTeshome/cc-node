@@ -1,5 +1,5 @@
 <?php
-//namespace CCnode;
+//namespace CCNode;
 ini_set('display_errors', 1);
 const NODE_SETTINGS_FILE = '../node.ini';
 require_once '../vendor/autoload.php';
@@ -26,11 +26,11 @@ if (!is_writable(NODE_SETTINGS_FILE)) {
 }
 ?><!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">
   <head>
-    <title>Credit Commons setup</title>
+    <title>Credit Commons config</title>
   </head>
   <body>
     <h1>Credit Commons node settings</h1>
-    <p>Hover for help. To edit settings after this setup, see the ini files;
+    <p>Hover for help. To edit settings, see the ini files;
       <br />Or go to <a href = "index.php?accounts">account settings</a>.
     <?php if (!empty($errs)) print "<p><font color=red>".implode('<br />', $errs).'</font>'; ?>
     <form method="post">

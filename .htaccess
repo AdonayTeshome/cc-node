@@ -1,7 +1,7 @@
 #Options +FollowSymLinks
 RewriteEngine on
 # Allow navigation to the following
-RewriteRule ^setup - [L,NC] 
+RewriteRule ^config - [L,NC] 
 RewriteRule ^AccountStore - [L,NC] 
 RewriteRule ^BlogicService - [L,NC] 
 

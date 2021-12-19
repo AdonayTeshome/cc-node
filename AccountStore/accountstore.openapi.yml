@@ -99,13 +99,19 @@ paths:
             type: string
         - name: status
           in: query
-          description: filter for active (true) or blocked (false) accounts
+          description: Filter for active (true) or blocked (false) accounts
           required: false
           schema:
             type: boolean
         - name: local
           in: query
-          description: filter for local (TRUE) accounts or remote (FALSE) accounts
+          description: Filter for local (TRUE) accounts or remote (FALSE) accounts
+          required: false
+          schema:
+            type: boolean
+        - name: auth
+          in: query
+          description: Filter for accounts with the given auth key. Must be used in conjunction with name
           required: false
           schema:
             type: boolean

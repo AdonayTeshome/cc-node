@@ -39,7 +39,7 @@ class AccountStore extends Requester {
       $path.='/'.$filters['chars'];
       unset($filters['chars']);
     }
-    $valid = ['status', 'local', 'type'];
+    $valid = ['status', 'local', 'type', 'key'];
     $filters = array_intersect_key($filters, array_flip($valid));
     $filters += ['view_mode' => $view_mode];
     $this->options[RequestOptions::QUERY] = $filters;
@@ -61,6 +61,7 @@ class AccountStore extends Requester {
    * Use this if you know the account exists.
    *
    * @param string $name
+   *   Need to be clear if this is the local name or a path
    * @param string $view_mode
    * @return stdClass|string
    *   The account object
@@ -205,25 +206,12 @@ class AccountStore extends Requester {
   }
 
   /**
-   * Get an account with the given id, even if it does not exist
-   * @staticvar array $loadedAccounts
-   * @param string $id
-   * @return \Creditcommons\Account
+   * @param string $acc_id
+   * @param string $auth_key
    */
-  function load(string $id = '') : \CreditCommons\Account {
-    global $loadedAccounts;
-    if (!isset($loadedAccounts[$id])) {
-      if ($id and $acc = $this->fetch($id, 'full')) {
-        $loadedAccounts[$id] = $acc;
-      }
-      else {
-        $dummy = (object)['id' => '', 'created' => 0];// these are both required fields
-        $loadedAccounts[$id] = new Accounts\User($dummy);
-      }
-    }
-    return $loadedAccounts[$id];
+  function compareKeys(string $acc_id, string $auth_key) {
+    return (bool)$this->filter(['chars' => $acc_id, 'key' => $auth_key]);
   }
-
 
   /**
    * Resolve to an account on the current node.

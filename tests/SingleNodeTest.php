@@ -4,7 +4,9 @@ use League\OpenAPIValidation\PSR15\ValidationMiddlewareBuilder;
 use League\OpenAPIValidation\PSR15\SlimAdapter;
 use Slim\Psr7\Response;
 
-class APITest extends \PHPUnit\Framework\TestCase {
+class SingleNodeTest extends \PHPUnit\Framework\TestCase {
+
+  private $pending;
 
   public static function setUpBeforeClass(): void {
     global $config, $users;
@@ -16,35 +18,34 @@ class APITest extends \PHPUnit\Framework\TestCase {
   }
 
   function testEndpoints() {
-    $response = $this->sendRequest('', 'options', TRUE);
-    $this->checks($response, 200, 'application/json');
+    $response = $this->sendRequest('', 'options', 200, TRUE);
+    $this->checks($response, 'application/json');
     $body = json_decode($response->getBody()->getContents());
     $this->assertObjectHasAttribute("permittedEndpoints", $body);
     $this->assertObjectNotHasAttribute("accountSummary", $body);
     $this->assertObjectNotHasAttribute("filterTransactions", $body);
-    $response = $this->sendRequest('', 'options');
+    $response = $this->sendRequest('', 'options', 200);
     /** @var \Slim\Psr7\Response $response */
-    $this->checks($response, 200, 'application/json');
+    $this->checks($response, 'application/json');
     $body = json_decode($response->getBody()->getContents());
     $this->assertObjectHasAttribute("filterTransactions", $body);
     $this->assertObjectHasAttribute("accountSummary", $body);
   }
 
   function testRootPath() {
-    $response = $this->sendRequest('', 'get', TRUE); // default front page, visible to all.
-    $this->checks($response, 200, 'text/html');
+    $response = $this->sendRequest('', 'get', 200, TRUE); // default front page, visible to all.
+    $this->checks($response, 'text/html');
     $message = $response->getBody()->getContents();
     $this->assertisString($message);
-    $response = $this->sendRequest('');
-    $this->checks($response, 200, 'text/html');
+    $response = $this->sendRequest('', 'get', 200);
+    $this->checks($response, 'text/html');
     $message = $response->getBody()->getContents();
     $this->assertisString($message);
   }
 
   function testHandshake() {
     // By default this is only accessible for authenticated users.
-    $response = $this->sendRequest('handshake');
-    $this->checks($response, 200, 'application/json');
+    $response = $this->sendRequest('handshake', 'get', 200);
     // The structure has been checked against the API
     $nodes = json_decode($response->getBody()->getContents());
     foreach ($nodes as $status_code => $urls) {
@@ -55,8 +56,7 @@ class APITest extends \PHPUnit\Framework\TestCase {
   function testAccountNames() {
     global $users;
     $char = substr($users[0]->id, 0, 1);
-    $response = $this->sendRequest("accountnames/$char");
-    $this->checks($response, 200, 'application/json');
+    $response = $this->sendRequest("accountnames/$char", 'get', 200);
     $acc_ids = json_decode($response->getBody()->getContents());
     // should be a list of account names including 'a'
     foreach ($acc_ids as $acc_id) {
@@ -66,8 +66,7 @@ class APITest extends \PHPUnit\Framework\TestCase {
 
   function testWorkflows() {
     // By default this is only accessible for authenticated users.
-    $response = $this->sendRequest('workflows');
-    $this->checks($response, 200, 'application/json');
+    $response = $this->sendRequest('workflows', 'get', 200);
     $wfs = (array)json_decode($response->getBody()->getContents());
     $this->assertNotEmpty($wfs);
   }
@@ -78,68 +77,93 @@ class APITest extends \PHPUnit\Framework\TestCase {
     $obj = [
       'payee' => $users[0]->id,
       'payer' => $users[1]->id,
-      'description' => 'blah',
+      'description' => 'test 3rdparty',
+      'quantity' => 1000000000,
+      'type' => '3rdparty'
+    ];
+    // This SHOULD generate an error.
+    $response = $this->sendRequest('transaction/new', 'post', 400, FALSE, json_encode($obj));
+    $err_obj = json_decode($response->getBody()->getContents());
+    $exception = \CreditCommons\RestAPI::reconstructCCException($err_obj);
+    // Should violate min OR max
+    $this->assertInstanceOf('\CreditCommons\Exceptions\TransactionLimitViolation', $exception);
+
+    $obj = [
+      'payee' => $users[0]->id,
+      'payer' => $users[1]->id,
+      'description' => 'test 3rdparty',
       'quantity' => 1,
       'type' => '3rdparty'
     ];
     // 3rdParty transactions are created already complete.
-    $response = $this->sendRequest('transaction/new', 'post', FALSE, json_encode($obj));
-    $this->checks($response, 201, 'application/json');
+    $response = $this->sendRequest('transaction/new', 'post', 201, FALSE, json_encode($obj));
+
     $obj = [
       'payee' => $users[0]->id,
       'payer' => $users[1]->id,
-      'description' => 'blah',
+      'description' => 'test bill',
       'quantity' => 1,
       'type' => 'bill'
     ];
     // 'bill' transactions must be approved, and enter pending state.
-    $response = $this->sendRequest('transaction/new', 'post', FALSE, json_encode($obj));
-    $this->checks($response, 200, 'application/json');
+    $response = $this->sendRequest('transaction/new', 'post', 200, FALSE, json_encode($obj));
     $transaction = json_decode($response->getBody()->getContents());
-    $response = $this->sendRequest("transaction/$transaction->uuid/" .reset($transaction->transitions), 'patch');
-    $this->checks($response, 201);
+    $response = $this->sendRequest("transaction/$transaction->uuid/" .reset($transaction->transitions), 'patch', 201);
   }
 
 
   /**
-   * Todo think about how the transactions are filtered by their main properties,
-   * their entry properties, and how the results are returned.
+   * @todo wait for an answer to https://github.com/Nyholm/psr7/issues/181
    */
-  function testTransactionFilter() {
-    $response = $this->sendRequest("transaction?".$querystring, 'get');
-    $this->checks($response, 200, 'application/json');
-    $all_transactions = json_decode($response->getBody()->getContents());
-    // Check filter by state
-    $response = $this->sendRequest("transaction?state=pending&full=false", 'get');
-    $this->checks($response, 200, 'application/json');
-    $pending_transaction_uuids = json_decode($response->getBody()->getContents());
-    $this->checkTransactions($all_transactions, $pending_transaction_uuids, ['state' => 'pending']);
+  function __testTransactionFilterRetrieve() {
+    // Filter description and return flat entries
+    $response = $this->sendRequest("transaction?description=test%203rdparty&format=entry", 'get', 200);
+    $test_transactions = json_decode($response->getBody()->getContents());
+      $first = reset($test_transactions);
+      print_r($first);
+    $this->assertStringContainsString("test 3rdparty", $first->description);
+
+    // Filter state and return full transactions.
+    $response = $this->sendRequest("transaction?state=pending&format=full", 'get', 200);
+    $results = json_decode($response->getBody()->getContents());
+    $pending_transaction = reset($results);
+    $this->assertEquals($pending_transaction->state, 'pending');
+
+    // Get a flat entry by uuid
+    $response = $this->sendRequest("transaction/$first->uuid/entry", 'get', 200);
+
+    // Get a full transaction entry by uuid
+    $response = $this->sendRequest("transaction/$first->uuid/full", 'get', 200);
 
   }
 
-  function testTransactionStateChange() {
-
+  function __testTransactionStateChange() {
+    $response = $this->sendRequest("transaction?state=pending&format=full", 'get', 200);
+    $results = json_decode($response->getBody()->getContents());
+    $pending_transaction = reset($results);
+    print_R($pending_transaction);
+    $this->assertNotEmpty($pending_transaction->transitions);
+    $state = reset($pending_transaction->transitions);
+    $response = $this->sendRequest("transaction/$pending_transaction->uuid/$state", 'patch', 201);
   }
 
   function testStats() {
     global $users;
     $test_user_id = end($users)->id;
-    $response = $this->sendRequest("account/history/$test_user_id");
-    $response = $this->sendRequest("account/summary/$test_user_id");
-    $response = $this->sendRequest("account/limits/$test_user_id");
-    $this->checks($response, 200, 'application/json');
+    $response = $this->sendRequest("account/history/$test_user_id", 'get', 200);
+    $response = $this->sendRequest("account/limits/$test_user_id", 'get', 200);
     $limits = json_decode($response->getBody()->getContents());
     $this->assertIsObject($limits);
     $this->assertObjectHasAttribute('min', $limits);
     $this->assertObjectHasAttribute('max', $limits);
     $this->assertlessThan(0, $limits->min);
     $this->assertGreaterThan(0, $limits->max);
+    $response = $this->sendRequest("account/summary/$test_user_id", 'get', 200);
   }
 
 
-  protected function sendRequest($path, $method = 'get', bool $anon = FALSE, string $request_body = '') : Response {
+  protected function sendRequest($path, $method = 'get', int $expected_code, bool $anon = FALSE, string $request_body = '') : Response {
     global $users;
-    $app = $this->getApp();
     $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
     $request = $psr17Factory->createServerRequest(strtoupper($method), '/'.$path);
     if (!$anon) {
@@ -150,16 +174,16 @@ class APITest extends \PHPUnit\Framework\TestCase {
     if ($request_body) {
       $request = $request->withHeader('Content-type', 'application/json');
       $request->getBody()->write($request_body);
-      $request->getBody()->rewind();
     }
+
     $response = $this->getApp()->process($request, new Response());
-    $response->getBody()->rewind();
-    if ($response->getStatusCode() > 399) {
+    $this->assertEquals($expected_code, $response->getStatusCode());
+    if ($response->getStatusCode() <> $expected_code) {
+      $response->getBody()->rewind();
       // Blurt out to terminal to ensure all info is captured.
-      print_r($response->getBody()->getContents()); // Seems to be truncated hmph.
-      $request->getBody()->rewind();
+      echo "\n Unexpected code ".$response->getStatusCode()." on $path: ".print_r($response->getBody()->getContents(), 1)."\n"; // Seems to be truncated hmph.
     }
-    $this->assertTrue($response->hasHeader('Node-path'));
+    $response->getBody()->rewind();
     return $response;
   }
 
@@ -179,8 +203,7 @@ class APITest extends \PHPUnit\Framework\TestCase {
     return $app;
   }
 
-  private function checks(Response $response, int $status_code, string $mime_type = '') {
-    $this->assertEquals($status_code, $response->getStatusCode());
+  private function checks(Response $response, string $mime_type = '') {
     $this->assertEquals($mime_type, $response->getHeaderLine('Content-Type'));
     $body = $response->getbody();
     if ($mime_type) {

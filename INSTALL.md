@@ -23,7 +23,7 @@
 
   * Run composer as above but without the ``--no-dev`` flag. This will include the packages needed for testing.
   * The OpenApi spec is at vendor/credit-commons-software-stack/cc-php-lib/docs/credit-commons-openapi-3.0.yml
-  * unittest compares inputs and outputs against the (local) Openapi spec. To run the battery of tests, from the node root ,do ``vendor/bin/phpunit tests/APITest.php``
+  * unittest compares inputs and outputs against the (local) Openapi spec. To run the battery of tests, from the node root ,do ``vendor/bin/phpunit tests/SingleNodeTest.php``
 
 # Minimal settings for virtualhosts
 ## Apache
