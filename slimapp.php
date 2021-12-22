@@ -75,15 +75,17 @@ $app->add(function ($request, $response, $next) {
 	return $response->withHeader('Node-path', absolute_path());
 });
 
-
 /**
- * Implement the Credit Commons API methods
+ * Default HTML page.
  */
 $app->get('/', function (Request $request, Response $response) {
   $response->getBody()->write('It works!');
   return $response->withHeader('Content-Type', 'text/html');
 });
 
+/**
+ * Implement the Credit Commons API methods
+ */
 $app->options('/', function (Request $request, Response $response) {
   // No access control
   check_permission($request, 'permittedEndpoints');
