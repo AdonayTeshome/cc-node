@@ -32,17 +32,6 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     $this->assertObjectHasAttribute("accountSummary", $body);
   }
 
-  function testRootPath() {
-    $response = $this->sendRequest('', 'get', 200, TRUE); // default front page, visible to all.
-    $this->checks($response, 'text/html');
-    $message = $response->getBody()->getContents();
-    $this->assertisString($message);
-    $response = $this->sendRequest('', 'get', 200);
-    $this->checks($response, 'text/html');
-    $message = $response->getBody()->getContents();
-    $this->assertisString($message);
-  }
-
   function testHandshake() {
     // By default this is only accessible for authenticated users.
     $response = $this->sendRequest('handshake', 'get', 200);
@@ -117,23 +106,20 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
    */
   function __testTransactionFilterRetrieve() {
     // Filter description and return flat entries
-    $response = $this->sendRequest("transaction?description=test%203rdparty&format=entry", 'get', 200);
-    $test_transactions = json_decode($response->getBody()->getContents());
-      $first = reset($test_transactions);
-      print_r($first);
-    $this->assertStringContainsString("test 3rdparty", $first->description);
+    $response = $this->sendRequest("transaction?description=test%203rdparty", 'get', 200);
+    $uuids = json_decode($response->getBody()->getContents());
+    //We have the results, now fetch and test the first result
+    $response = $this->sendRequest("transaction/".reset($uuids)."/full", 'get', 200);
+    $transaction = json_decode($response->getBody()->getContents());
+    $this->assertStringContainsString("test 3rdparty", $transaction->description);
 
-    // Filter state and return full transactions.
-    $response = $this->sendRequest("transaction?state=pending&format=full", 'get', 200);
-    $results = json_decode($response->getBody()->getContents());
-    $pending_transaction = reset($results);
-    $this->assertEquals($pending_transaction->state, 'pending');
 
-    // Get a flat entry by uuid
-    $response = $this->sendRequest("transaction/$first->uuid/entry", 'get', 200);
-
-    // Get a full transaction entry by uuid
-    $response = $this->sendRequest("transaction/$first->uuid/full", 'get', 200);
+    // test again filtering by state and retrieving an Entry.
+    $response = $this->sendRequest("transaction?state=pending", 'get', 200);
+    $uuids = json_decode($response->getBody()->getContents());
+    $response = $this->sendRequest("transaction/".reset($uuids)."/entry", 'get', 200);
+    $transaction = json_decode($response->getBody()->getContents());
+    $this->assertStringEqualsString("pending", $transaction->state);
 
   }
 

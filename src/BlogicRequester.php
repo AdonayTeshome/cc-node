@@ -20,7 +20,7 @@ class BlogicRequester extends Requester {
     $additional = $this
       ->setBody($transaction->entries[0])
       ->setMethod('post')
-      ->request(200, 'append/'.$transaction->workflow->id);
+      ->request(200, 'append/'.$transaction->type);
     return $additional;
   }
 

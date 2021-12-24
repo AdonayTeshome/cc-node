@@ -217,15 +217,15 @@ class AccountStore extends Requester {
    * Resolve to an account on the current node.
    * @return Account
    * @param bool $existing
-   *   TRUE if the transaction has already been written, and thus we know the
-   *   accounts exist. Unknown accounts either resolved to the BoT account or
-   *   throw an exception
+   *   TRUE if we know the account exists. Then unknown accounts either resolve
+   *   to the BoT account or throw an exception
    */
   public function resolveAddress(string $given_path, bool $existing) : Account {
     global $orientation, $config;
-    // if its one name and it exists on this ledger then good.
     $parts = explode('/', $given_path);
+    // If it is one path item long.
     if (count($parts) == 1) {
+      // If it exists on this node.
       if ($pol = $this->fetch($given_path, 'full')) {
         return $pol;
       }

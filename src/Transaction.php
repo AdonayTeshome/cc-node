@@ -3,8 +3,9 @@
 namespace CCNode;
 
 use CCNode\Entry;
-use CCNode\BlogicRequester;
 use CCNode\FlatEntry;
+use CCNode\BlogicRequester;
+use CCNode\Workflows;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\MaxLimitViolation;
 use CreditCommons\Exceptions\MinLimitViolation;
@@ -13,17 +14,16 @@ use CreditCommons\Exceptions\CCViolation;
 use CreditCommons\Exceptions\WorkflowViolation;
 use CreditCommons\TransactionInterface;
 use CreditCommons\NewTransaction;
-use CreditCommons\Workflows;
 use CreditCommons\Workflow;
 use CreditCommons\Account;
 
-class Transaction extends \CreditCommons\Transaction {
+class Transaction extends \CreditCommons\Transaction implements \JsonSerializable {
 
   /**
    * The workflow object for this transaction, determined by the $type.
    * @var Workflow
    */
-  public $workflow;
+  //public $workflow;
 
   /**
    * @param string $uuid
@@ -34,7 +34,8 @@ class Transaction extends \CreditCommons\Transaction {
    */
   public function __construct(string $uuid, int $version, string $type, string $state, array $entries, $txID = NULL) {
     parent::__construct($uuid, $version, $type, $state, $entries, $txID);
-    $this->workflow = Workflows::get($type, get_all_workflows());
+    //$this->workflow = Workflows::get($type, Workflows::loadAll());
+
   }
 
 
@@ -193,10 +194,12 @@ class Transaction extends \CreditCommons\Transaction {
    */
   function buildValidate(string $desired_state = '') : void {
     global $loadedAccounts, $config, $user;
+    
+    $workflow = (new Workflows())->get($this->type);
     if (empty($desired_state)) {
-      $desired_state = $this->workflow->creation->state;
+      $desired_state = $workflow->creation->state;
     }
-    if (!$this->workflow->canTransitionToState($user->id, $this, $desired_state, $user->admin)) {
+    if (!$workflow->canTransitionToState($user->id, $this, $desired_state, $user->admin)) {
       throw new WorkflowViolation([
         'acc_id' => $user->id,
         'type' => $this->type,
@@ -243,7 +246,8 @@ class Transaction extends \CreditCommons\Transaction {
    */
   function sign(string $target_state) {
     global $user;
-    if (!$this->workflow->canTransitionToState($user->id, $this, $target_state, $user->admin)) {
+    $workflow = (new Workflows())->get($this->type);
+    if (!$workflow->canTransitionToState($user->id, $this, $target_state, $user->admin)) {
       throw new WorkflowViolation([
         'acc_id' => $user->id,
         'type' => $this->type,
@@ -374,34 +378,7 @@ class Transaction extends \CreditCommons\Transaction {
    * @note It is not possible to filter by signatures needed or signed because
    * they don't exist, as such, in the db.
    */
-  static function filter(array $params, $format = 'entry') : array {
-    $results = static::filterQuery($params);
-    if ($format <> 'entry') {
-      // we're interested in the uuids, so make them unique.
-      $results = array_unique($results);
-    }
-    foreach ($results as $id => $uuid) {
-      if ($format == 'entry') {
-        $formatted[] = FlatEntry::load($id);
-      }
-      elseif ($format == 'full') {
-        $formatted[] = Transaction::loadByUuid($uuid);
-      }
-      else {
-        $formatted[] = $uuid;
-      }
-    }
-    return $formatted;
-  }
-
-
-  /**
-   *
-   * @param array $params
-   * @return []
-   *   uuids keyed by entry ids
-   */
-  private static function filterQuery(array $params) : array {
+  static function filter(array $params) : array {
     extract($params);
     // Get only the latest version of each row in the transactions table.
     $query = "SELECT e.id, t.uuid FROM transactions t "
@@ -461,10 +438,33 @@ class Transaction extends \CreditCommons\Transaction {
       $query .= ' WHERE '.implode(' AND ', $conditions);
     }
     $query_result = Db::query($query);
+    $results = [];
     while ($row = $query_result->fetch_object()) {
       $results[$row->id] = $row->uuid;
     }
     return $results;
+  }
+
+  /**
+   * Export the transaction to json for transport.
+   * - get the actions
+   * - remove some properties.
+   *
+   * @return array
+   *
+   * @todo make transitions a property or function of the transaction object.
+   */
+  public function jsonSerialize() : array {
+    global $user;
+    $workflow = (new Workflows())->get($this->type);
+    return [
+      'uuid' => $this->uuid,
+      'state' => $this->state,
+      'type' => $this->type,
+      'version' => $this->version,
+      'entries' => $this->entries,
+      'transitions' => $workflow->getTransitions($user->id, $this, $user->admin)
+    ];
   }
 
 }

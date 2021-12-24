@@ -16,12 +16,11 @@ use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\PermissionViolation;
 use CreditCommons\Exceptions\AuthViolation;
 use CreditCommons\CreditCommonsInterface;
-use CreditCommons\Workflows;
-use CreditCommons\Workflow;
 use CreditCommons\AccountRemote;
 use CreditCommons\RestAPI;
 use CreditCommons\Account;
 use CCNode\Accounts\BoT;
+use CCNode\Workflows;
 
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -99,7 +98,8 @@ $app->get('/trunkwards', function (Request $request, Response $response) {
 
 $app->get('/workflows', function (Request $request, Response $response) {
   check_permission($request, 'workflows');
-  return json_response($response, get_all_workflows());
+  // Todo need to instantiate workflows with the BoT requester if there is one.
+  return json_response($response, (new Workflows())->loadAll());
 });
 
 $app->get('/handshake', function (Request $request, Response $response) {
@@ -166,14 +166,15 @@ $app->post('/transaction/new', function (Request $request, Response $response) {
   $transaction = Transaction::createFromClient($newTransaction); // in state 'init'
   $transaction->buildValidate($data->state??''); // in state 'validated'
   $orientation->responseMode = TRUE;
-  if ($transaction->workflow->creation->confirm) {
+  $workflow = (new Workflows())->get($transaction->type);
+  if ($workflow->creation->confirm) {
     // Send the transaction back to the user to confirm.
     $transaction->writeValidatedToTemp();
     $status_code = 200;
   }
   else {
     // Write the transaction immediately to its 'creation' state
-    $transaction->state = $transaction->workflow->creation->state;
+    $transaction->state = $workflow->creation->state;
     $transaction->saveNewVersion();
     $status_code = 201;
   }
@@ -194,18 +195,6 @@ $app->post('/transaction/new/relay', function (Request $request, Response $respo
 });
 
 $uuid_regex = '[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-\b[0-9a-f]{12}';
-$app->get('/transaction/{uuid:'.$uuid_regex.'}/{format}', function (Request $request, Response $response, $args) {
-  global $orientation;
-  check_permission($request, 'getTransaction');
-  if ($args['format'] == 'entry') {
-    $result = FlatEntry::loadByUuid($args['uuid']);
-  }
-  else {// format = full
-    $result = Transaction::loadByUuid($args['uuid']);
-  }
-  $orientation->responseMode = TRUE;
-  return json_response($response, $result, 200);
-});
 
 $app->patch('/transaction/{uuid:'.$uuid_regex.'}/{dest_state}', function (Request $request, Response $response, $args) {
   check_permission($request, 'stateChange');
@@ -220,14 +209,27 @@ $app->patch('/transaction/{uuid:'.$uuid_regex.'}/{dest_state}', function (Reques
   $transaction->changeState($args['dest_state']);
   return $response->withStatus(201);
 });
+// Retrieve one transaction
+$app->get('/transaction/{uuid:'.$uuid_regex.'}/{format}', function (Request $request, Response $response, $args) {
+  global $orientation;
+  check_permission($request, 'getTransaction');
+  if ($args['format'] == 'entry') {
+    $result = FlatEntry::loadByUuid($args['uuid']);
+  }
+  else {// format = full
+    $result = Transaction::loadByUuid($args['uuid']);
+  }
+  $orientation->responseMode = TRUE;
+  return json_response($response, $result, 200);
+});
 
 $app->get('/transaction', function (Request $request, Response $response) {
   global $orientation;
   check_permission($request, 'filterTransactions');
   $params = $request->getQueryParams();
-  $results = Transaction::filter($params, $params['format']??'entry');
-  $orientation->responseMode = TRUE;
-  return json_response($response, $results, 200);
+  $uuids = Transaction::filter($params);
+  // return uuids or entry ids?
+  return json_response($response, $uuids, 200);
 });
 
 return $app;
@@ -347,27 +349,6 @@ function authenticate(Request $request) : void {
   else {
     // No attempt to authenticate.
   }
-}
-
-
-/**
- * @todo: cache this and check once a day.
- */
-function get_all_workflows() {
-  return Workflows::getAll(load_local_workflows(), API_calls());
-}
-
-function load_local_workflows() : array {
-  $wfs = [];
-  if (file_exists('workflows.json')) {
-    $content = file_get_contents('workflows.json');
-    if ($data = json_decode($content)) {
-      foreach ($data as $wf) {
-        $wfs[] = new Workflow($wf);
-      }
-    }
-  }
-  return $wfs;
 }
 
 /**
