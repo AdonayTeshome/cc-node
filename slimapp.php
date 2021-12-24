@@ -26,8 +26,6 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\App;
 
-file_put_contents('debug.txt', print_r($_SERVER, 1));
-
 $config = parse_ini_file('./node.ini');
 // Slim4 (when the League\OpenAPIValidation is ready)
 //use Slim\Factory\AppFactory;
@@ -75,7 +73,7 @@ $app->add(function ($request, $response, $next) {
 });
 
 /**
- * Default HTML page.
+ * Default HTML page. (Not part of the API)
  */
 $app->get('/', function (Request $request, Response $response) {
   $response->getBody()->write('It works!');

@@ -30,10 +30,7 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     $body = json_decode($response->getBody()->getContents());
     $this->assertObjectHasAttribute("filterTransactions", $body);
     $this->assertObjectHasAttribute("accountSummary", $body);
-  }
 
-  function testHandshake() {
-    // By default this is only accessible for authenticated users.
     $response = $this->sendRequest('handshake', 'get', 200);
     // The structure has been checked against the API
     $nodes = json_decode($response->getBody()->getContents());
@@ -60,7 +57,7 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     $this->assertNotEmpty($wfs);
   }
 
-  function testNewTransaction() {
+  function test3rdParty() {
     global $users;
     $this->assertGreaterThan('1', count($users));
     $obj = [
@@ -77,6 +74,7 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     // Should violate min OR max
     $this->assertInstanceOf('\CreditCommons\Exceptions\TransactionLimitViolation', $exception);
 
+    // Might want to retrieve workflow first.
     $obj = [
       'payee' => $users[0]->id,
       'payer' => $users[1]->id,
@@ -86,7 +84,10 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     ];
     // 3rdParty transactions are created already complete.
     $response = $this->sendRequest('transaction/new', 'post', 201, FALSE, json_encode($obj));
+  }
 
+  function testTransactionLifecycle() {
+    global $users;
     $obj = [
       'payee' => $users[0]->id,
       'payer' => $users[1]->id,
@@ -97,40 +98,25 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     // 'bill' transactions must be approved, and enter pending state.
     $response = $this->sendRequest('transaction/new', 'post', 200, FALSE, json_encode($obj));
     $transaction = json_decode($response->getBody()->getContents());
-    $response = $this->sendRequest("transaction/$transaction->uuid/" .reset($transaction->transitions), 'patch', 201);
+    $this->assertNotEmpty($transaction->transitions);
+    $this->assertContains('pending', $transaction->transitions);
+    $this->assertEquals("validated", $transaction->state);
+    $this->sendRequest("transaction/$transaction->uuid/pending", 'patch', 201);
+    // Erase
+    $this->sendRequest("transaction/$transaction->uuid/erased", 'patch', 201);
   }
-
 
   /**
    * @todo wait for an answer to https://github.com/Nyholm/psr7/issues/181
    */
   function __testTransactionFilterRetrieve() {
-    // Filter description and return flat entries
+    // Filter description
     $response = $this->sendRequest("transaction?description=test%203rdparty", 'get', 200);
     $uuids = json_decode($response->getBody()->getContents());
     //We have the results, now fetch and test the first result
     $response = $this->sendRequest("transaction/".reset($uuids)."/full", 'get', 200);
     $transaction = json_decode($response->getBody()->getContents());
-    $this->assertStringContainsString("test 3rdparty", $transaction->description);
-
-
-    // test again filtering by state and retrieving an Entry.
-    $response = $this->sendRequest("transaction?state=pending", 'get', 200);
-    $uuids = json_decode($response->getBody()->getContents());
-    $response = $this->sendRequest("transaction/".reset($uuids)."/entry", 'get', 200);
-    $transaction = json_decode($response->getBody()->getContents());
-    $this->assertStringEqualsString("pending", $transaction->state);
-
-  }
-
-  function __testTransactionStateChange() {
-    $response = $this->sendRequest("transaction?state=pending&format=full", 'get', 200);
-    $results = json_decode($response->getBody()->getContents());
-    $pending_transaction = reset($results);
-    print_R($pending_transaction);
-    $this->assertNotEmpty($pending_transaction->transitions);
-    $state = reset($pending_transaction->transitions);
-    $response = $this->sendRequest("transaction/$pending_transaction->uuid/$state", 'patch', 201);
+    $this->assertStringContainsString("test 3rdparty", $transaction->entries[0]->description);
   }
 
   function testStats() {
@@ -163,11 +149,11 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     }
 
     $response = $this->getApp()->process($request, new Response());
-    $this->assertEquals($expected_code, $response->getStatusCode());
     if ($response->getStatusCode() <> $expected_code) {
       $response->getBody()->rewind();
       // Blurt out to terminal to ensure all info is captured.
       echo "\n Unexpected code ".$response->getStatusCode()." on $path: ".print_r($response->getBody()->getContents(), 1)."\n"; // Seems to be truncated hmph.
+      $this->assertEquals($expected_code, $response->getStatusCode());
     }
     $response->getBody()->rewind();
     return $response;
