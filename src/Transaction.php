@@ -41,6 +41,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     else {
       throw new UnknownWorkflowViolation($this->type);
     }
+  }
 
 
   /**
