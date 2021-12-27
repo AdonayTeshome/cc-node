@@ -3,7 +3,6 @@
 namespace CCNode;
 
 use CCNode\Entry;
-use CCNode\FlatEntry;
 use CCNode\BlogicRequester;
 use CCNode\Workflows;
 use CreditCommons\Exceptions\DoesNotExistViolation;
@@ -12,6 +11,7 @@ use CreditCommons\Exceptions\MinLimitViolation;
 use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\CCViolation;
 use CreditCommons\Exceptions\WorkflowViolation;
+use CreditCommons\Exceptions\UnknownWorkflowViolation;
 use CreditCommons\TransactionInterface;
 use CreditCommons\NewTransaction;
 use CreditCommons\Workflow;
@@ -34,9 +34,13 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
    */
   public function __construct(string $uuid, int $version, string $type, string $state, array $entries, $txID = NULL) {
     parent::__construct($uuid, $version, $type, $state, $entries, $txID);
-    //$this->workflow = Workflows::get($type, Workflows::loadAll());
-
-  }
+    // @todo refactor this because workflows must be instantiated with the BoT Url if there is one.
+    if ($workflow = (new Workflows())->get($this->type)) {
+      $this->workflow = $workflow = (new Workflows())->get($this->type);
+    }
+    else {
+      throw new UnknownWorkflowViolation($this->type);
+    }
 
 
   /**
@@ -180,7 +184,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
    * @return bool
    *   TRUE on success
    */
-  function writeValidatedToTemp() {
+  function writeToTemp() {
     //version is 0 until is it written in the main transactions table.
     $data = Db::connect()->real_escape_string(serialize($this));
     $q = "INSERT INTO temp (uuid, serialized) VALUES ('$this->uuid', '$data')";
@@ -194,8 +198,8 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
    */
   function buildValidate(string $desired_state = '') : void {
     global $loadedAccounts, $config, $user;
-    
-    $workflow = (new Workflows())->get($this->type);
+
+    $workflow = (new Workflows())->get($this->type); // @todo refactor this
     if (empty($desired_state)) {
       $desired_state = $workflow->creation->state;
     }

@@ -4,6 +4,9 @@ use League\OpenAPIValidation\PSR15\ValidationMiddlewareBuilder;
 use League\OpenAPIValidation\PSR15\SlimAdapter;
 use Slim\Psr7\Response;
 
+/**
+ * So far this tests the API functions assuming good results, but doesn't test the error messages.
+ */
 class SingleNodeTest extends \PHPUnit\Framework\TestCase {
 
   private $pending;
@@ -41,12 +44,12 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
 
   function testAccountNames() {
     global $users;
-    $char = substr($users[0]->id, 0, 1);
-    $response = $this->sendRequest("accountnames/$char", 'get', 200);
+    $char = substr($users[0]->id, 0, 2);
+    $response = $this->sendRequest("accounts/$char", 'get', 200);
     $acc_ids = json_decode($response->getBody()->getContents());
     // should be a list of account names including 'a'
     foreach ($acc_ids as $acc_id) {
-      $this->assertStringContainsString($char, $acc_id);
+      $this->assertStringStartsWith($char, $acc_id);
     }
   }
 

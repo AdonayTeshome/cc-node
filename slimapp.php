@@ -106,13 +106,13 @@ $app->get('/handshake', function (Request $request, Response $response) {
   return json_response($response, $orientation->handshake());
 });
 
-$app->get('/accountnames[/{fragment}]', function (Request $request, Response $response, $args) {
+$app->get('/accounts[/{fragment}]', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountNameAutocomplete');
   $params = $request->getQueryParams();
   $remote_names = [];
   if (!empty($config['bot']['acc_id'])) {// $orientation might be cleaner
     //@todo pass this to the parent ledger
-    throw new CCFailure(['message' => 'accountnames/{fragment} not implemented for ledger tree.']);
+    throw new CCFailure(['message' => 'accounts/{fragment} not implemented for ledger tree.']);
     $remote_names = API_calls()->accounts(@$args['fragment'], TRUE);
     // @todo Also we may want to query child ledgers.
   }
@@ -167,7 +167,7 @@ $app->post('/transaction/new', function (Request $request, Response $response) {
   $workflow = (new Workflows())->get($transaction->type);
   if ($workflow->creation->confirm) {
     // Send the transaction back to the user to confirm.
-    $transaction->writeValidatedToTemp();
+    $transaction->writeToTemp();
     $status_code = 200;
   }
   else {
@@ -187,7 +187,7 @@ $app->post('/transaction/new/relay', function (Request $request, Response $respo
   $data = json_decode($request->getBody()->read());
   $transaction = TransversalTransaction::createFromUpstreamNode($post);
   $transaction->buildValidate($post['state']??'');
-  $transaction->writeValidatedToTemp();
+  $transaction->writeToTemp();
   $orientation->responseMode = TRUE;
   return json_response($response, $transaction, 201);
 });
