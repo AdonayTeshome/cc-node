@@ -24,7 +24,7 @@ The current version of the protocol requires that each incoming request includes
 The reference implementation has a permission for every API call described, and there is currently no way to configure them. The user admin flag is enabled, the user has all permissions. Permission to manipulate transactions are controlled by the workflow system. 
 
 ###The BLogic service
-The protcocol allows for nodes to append sub-transactions (entries) such as fees or taxes, as a transaction is being built and validated. This is called Business logic, and is implemented here as a microservice with a single method. This means that deployments can easily write their own business logic in whatever language they please. The url of this microservice is also configured in node.ini. If the value is left empty, the business logic step is skipped.
+The protocol allows for nodes to append sub-transactions (entries) such as fees or taxes, as a transaction is being built and validated. This is called Business logic, and is implemented here as a microservice with a single method. This means that deployments can easily write their own business logic in whatever language they please. The url of this microservice is also configured in node.ini. If the value is left empty, the business logic step is skipped.
 
 ###Account class hierarchy
 In order to relay a transaction accross the tree, the node needs to know its position in the path from twig to twig. It does this by parsing the payer and payee paths and loading them as account objects of different classes.
