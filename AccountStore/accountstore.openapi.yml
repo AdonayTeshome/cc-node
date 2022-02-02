@@ -43,48 +43,50 @@ paths:
                 $ref: "#/components/schemas/Policy"
         "404":
           description: The account doesn't exist.
-  "{type}":
-    post:
-      summary: Apply to join a ledger as a child to a parent.
-      operationId: signUp
-      description: The parent ledger creates an account and returns the new policy.
-      parameters:
-        - in: path
-          name: name
-          description: The name matches the regex '^[a-z0-9@.]{1,32}$'
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: The new policy, if granted with given balance limits
-          content:
-            "application/json":
-              schema:
-                $ref: "#/components/schemas/Policy"
-        "409":
-          description: the name is a duplicate
-        "422":
-          description: Unprocessable entity (bad chars)
-  "{acc_id}":
-    patch:
-      summary: Rewrite the account overrides
-      operationId: override
-      description: Edit account details. Any value not provided will revert to default.
-      parameters:
-        - in: path
-          name: name
-          description: The name of the account to override. (cannot be changed)
-          required: true
-          schema:
-            type: string
-      requestBody:
-        $ref: "#/components/requestBodies/Override"
-      responses:
-        "200":
-          description: the overrides were written.
-        "404":
-          description: The account does not exist
+#  "{type}":
+#    post:
+#      summary: Apply to join a ledger as a child to a parent.
+#      operationId: signUp
+#      description: The parent ledger creates an account and returns the new policy.
+#      parameters:
+#        - in: path
+#          name: name
+#          description: The name matches the regex '^[a-z0-9@.]{1,32}$'
+#          required: true
+#          schema:
+#            type: string
+#      requestBody:
+#        $ref: '#/components/requestBodies/NewAccount'
+#      responses:
+#        "200":
+#          description: The new policy, if granted with given balance limits
+#          content:
+#            "application/json":
+#              schema:
+#                $ref: "#/components/schemas/Policy"
+#        "400":
+#          description: bad data, duplicate name
+#        "422":
+#          description: Unprocessable entity (bad chars)
+#  "{acc_id}":
+#    patch:
+#      summary: Rewrite the account overrides
+#      operationId: override
+#      description: Edit account details. Any value not provided will revert to default.
+#      parameters:
+#        - in: path
+#          name: name
+#          description: The name of the account to override. (cannot be changed)
+#          required: true
+#          schema:
+#            type: string
+#      requestBody:
+#        $ref: "#/components/requestBodies/Override"
+#      responses:
+#        "200":
+#          description: the overrides were written.
+#        "404":
+#          description: The account does not exist
   "/filter/{chars}":
     get:
       summary: filter the active user names for a string
@@ -196,6 +198,12 @@ components:
           description: The default maximum account balance (<= 0)
           example: 1000
   requestBodies:
+#    NewAccount:
+#      description:
+#      properties:
+#        id:
+#        key:
+#        url:
     Override:
       description: Contains optional fields to be overridden
       content:

@@ -6,10 +6,22 @@ use Slim\Psr7\Response;
 
 /**
  * So far this tests the API functions assuming good results, but doesn't test the error messages.
+ * @todo
+ *  AccountResolutionViolation
+    AuthViolation
+    BadCharactersViolation
+    DoesNotExistViolation
+    HashMismatchFailure
+    IntermediateledgerViolation
+    InvalidFieldsViolation
+    PermissionViolation
+    UnexpectedResultFailure
+    UnknownWorkflowViolation
+    WorkflowViolation
+ *
+ *  OfflineFailure CANT
  */
 class SingleNodeTest extends \PHPUnit\Framework\TestCase {
-
-  private $pending;
 
   public static function setUpBeforeClass(): void {
     global $config, $users;
@@ -77,7 +89,8 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     // Should violate min OR max
     $this->assertInstanceOf('\CreditCommons\Exceptions\TransactionLimitViolation', $exception);
 
-    // Might want to retrieve workflow first.
+    // Now test a valid transaction.
+    // This assumes the default workflow is unmodified.
     $obj = [
       'payee' => $users[0]->id,
       'payer' => $users[1]->id,

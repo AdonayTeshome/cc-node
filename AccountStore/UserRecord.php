@@ -8,7 +8,7 @@ namespace AccountStore;
 class UserRecord extends Record {
 
   /**
-   * A password or api key (user accounts only)
+   * A password or API key (user accounts only)
    * @var string
    */
   public $key;

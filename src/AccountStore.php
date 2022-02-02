@@ -74,7 +74,7 @@ class AccountStore extends Requester {
     catch (\Exception $e) {
       if ($e->getCode() == 404) {
         // N.B. the name might have been deleted because of GDPR
-        throw new DoesNotExistViolation(['type' => 'account', 'id' => $name]);
+        throw new DoesNotExistViolation(type: 'account', id: $name);
       }
       else {
         print_r($e->getMessage());
@@ -103,7 +103,6 @@ class AccountStore extends Requester {
     );
     return new $class($data);
   }
-
 
   /**
    *
@@ -139,11 +138,11 @@ class AccountStore extends Requester {
     catch (\Exception $e) {
       switch ($e->getCode()) {
         case 400:
-          throw new BadCharactersViolation($acc_id);
+          throw new BadCharactersViolation(string: $acc_id);
         case 404:
-          throw new DoesNotExistViolation(['id' => $acc_id, 'type' => 'account']);
+          throw new DoesNotExistViolation(id: $acc_id, type: 'account');
         default:
-          throw new CCFailure(['message' => 'Unexpected '.$e->getCode()." result from $this->baseUrl/join: ".$e->getMessage()]);
+          throw new CCFailure(message: 'Unexpected '.$e->getCode()." result from $this->baseUrl/join: ".$e->getMessage());
       }
     }
   }
@@ -153,6 +152,8 @@ class AccountStore extends Requester {
    *
    * @param string $acc_id
    * @param array $vals
+   *
+   * @deprecated This is not part of the AccountStore API. Is it used for setup?
    */
  function set(string $acc_id, array $vals) : void {
     $this->setBody($vals);
@@ -163,9 +164,9 @@ class AccountStore extends Requester {
     catch (\Exception $e) {
       switch($e->getCode()) {
         case 400:
-          throw new InvalidFieldsViolation(['fields' => $result]);
+          throw new InvalidFieldsViolation(fields: $result);
         case 404:
-          throw new DoesNotExistViolation(['type' => 'account', 'id' => $acc_id]);
+          throw new DoesNotExistViolation(type: account, id: $acc_id);
         default:
           throw new \Exception('Unexpected '.$e->getCode()." result from $this->baseUrl/override/$acc_id");
       }
@@ -192,12 +193,11 @@ class AccountStore extends Requester {
       $this->options[RequestOptions::BODY] = http_build_query($this->fields);
     }
     try{
-//echo strtoupper($this->method) ." $this->baseUrl/$endpoint".print_r($this->options, 1);
       $response = $client->{$this->method}($endpoint, $this->options);
     }
     catch (RequestException $e) {
       if ($e->getStatusCode() == 500) {
-        throw new CCFailure(['message' => $e->getMessage()]);
+        throw new CCFailure(message: $e->getMessage());
       }
       throw $e;
     }
@@ -229,7 +229,7 @@ class AccountStore extends Requester {
       if ($pol = $this->fetch($given_path, 'full')) {
         return $pol;
       }
-      throw new DoesNotExistViolation(['type' => 'account', 'id' => $given_path]);
+      throw new AccountResolutionViolation(path: $given_path);
     }
 
     // A branchwards account, including the local node name
@@ -258,9 +258,8 @@ class AccountStore extends Requester {
         return $trunkwardsAccount;
       }
     }
-    throw new DoesNotExistViolation(['type' => 'account', 'id' => $given_path]);
+    throw new DoesNotExistViolation(type: 'account', id: $given_path);
   }
-
 
   /**
    * Determine the class of the given Account, considering this node's position
@@ -293,10 +292,6 @@ class AccountStore extends Requester {
       $class = 'User';
     }
     return 'CCNode\Accounts\\'. $class;
-
   }
 
-
-
 }
-

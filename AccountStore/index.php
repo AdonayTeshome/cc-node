@@ -56,7 +56,7 @@ $app->get('/{acc_id}[/{view_mode}]', function (Request $request, Response $respo
       $response->getBody()->write(json_encode($account));
     }
     else{
-      throw new DoesNotExistViolation(['type' => 'account', 'id' => $args['acc_id']]);
+      throw new HttpNotFoundException();
     }
   }
   else {
@@ -65,7 +65,7 @@ $app->get('/{acc_id}[/{view_mode}]', function (Request $request, Response $respo
   return $response->withHeader('Content-Type', 'application/json');
 });
 
-
+/*
 $app->post('/{type}', function (Request $request, Response $response, $args) {
   // check permission?
   $accounts = new AccountManager();
@@ -78,9 +78,11 @@ $app->post('/{type}', function (Request $request, Response $response, $args) {
     throw new HttpBadRequestException();
   }
   elseif (!$accounts->availableName($data->id)) {
-    throw new HttpBadRequestException(); // this should actually be the credit commons duplicate exception
+    // Name already exists
+    throw new HttpBadRequestException();
   }
   elseif (!$auth = $data->url??$data->key) {
+    // No auth key provided
     throw new HttpBadRequestException();
   }
   elseif ($args['type'] == 'node' and isset($data->url)) {
@@ -90,6 +92,7 @@ $app->post('/{type}', function (Request $request, Response $response, $args) {
     $record = new UserRecord($data);
   }
   else {
+    // Bad combination of fields
     throw new HttpBadRequestException();
   }
   if (isset($record)) {
@@ -114,5 +117,6 @@ $app->patch('/{acc_id}', function (Request $request, Response $response, $args) 
   $accounts->save();
   return $response->withStatus(200);
 });
+ */
 
 $app->run();

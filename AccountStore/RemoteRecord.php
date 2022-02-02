@@ -13,10 +13,8 @@ class RemoteRecord extends Record {
    */
   public $url;
 
-
   function __construct(\stdClass $data) {
     parent::__construct($data->id, $data->created, $data->status, $data->min??NULL, $data->max??NULL);
     $this->url = $url;
   }
 }
-

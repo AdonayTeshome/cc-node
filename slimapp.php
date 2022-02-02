@@ -112,7 +112,7 @@ $app->get('/accounts[/{fragment}]', function (Request $request, Response $respon
   $remote_names = [];
   if (!empty($config['bot']['acc_id'])) {// $orientation might be cleaner
     //@todo pass this to the parent ledger
-    throw new CCFailure(['message' => 'accounts/{fragment} not implemented for ledger tree.']);
+    throw new CCFailure(message: 'accounts/{fragment} not implemented for ledger tree.');
     $remote_names = API_calls()->accounts(@$args['fragment'], TRUE);
     // @todo Also we may want to query child ledgers.
   }
@@ -252,7 +252,7 @@ function load_account(string $id) : Account {
       $fetched[$id] = $acc;
     }
     else {
-      throw new \Exception(); // What kind of exception? This should never happen.
+      throw new \DoesNotExistViolation(type: account, id: $id);
     }
   }
   return $fetched[$id];
@@ -265,11 +265,11 @@ function check_permission(Request $request, string $operationId) {
 
   $permitted = \CCNode\permitted_operations();
   if (!in_array($operationId, array_keys($permitted))) {
-    throw new PermissionViolation([
-      'account' => $user->id?:'<anon>',
-      'method' => $request->getMethod(),
-      'url' => $request->getRequestTarget()
-    ]);
+    throw new PermissionViolation(
+      acc_id: $user->id?:'<anon>',
+      method: $request->getMethod(),
+      endpoint: $request->getRequestTarget()
+    );
   }
 }
 
@@ -314,7 +314,7 @@ function permitted_operations() : array {
 /**
  * Taking the user id and auth key from the header and comparing with the database. If the id is of a remote account, compare the extra
  * @global array $config
- * @global type $user
+ * @global stdClass $user
  * @param Request $request
  * @return void
  * @throws HashMismatchFailure
@@ -333,11 +333,11 @@ function authenticate(Request $request) : void {
         $query = "SELECT TRUE FROM hash_history WHERE acc = '$account->id' AND hash = '$auth' ORDER BY id DESC LIMIT 0, 1";
         $result = Db::query($query)->fetch_row();
         if ($hash && !$result or !$hash && $result) {
-          throw new HashMismatchFailure(['remoteNode' => $acc_id]);
+          throw new HashMismatchFailure(remoteNode: $acc_id);
         }
       }
       elseif (!accountStore()->filter(['chars' => $acc_id, 'auth' => $auth])) {
-        throw new AuthViolation($acc_id);
+        throw new AuthViolation(acc_id: $acc_id);
       }
     }
     else {
@@ -390,17 +390,18 @@ class Slim3ErrorHandler {
     global $config;
     if (!$exception instanceOf CCError) {
       // isolate only the first exception because the protocol allows only one.
-      $e = new CCFailure([
-        'message' => $exception->getMessage()?:get_class($exception)
-      ]);
+      $e = new CCFailure(
+        message: $exception->getMessage()?:get_class($exception)
+      );
       while ($exception = $exception->getPrevious()) {
-        $e = new CCFailure([
-          'message' => $exception->getMessage()?:get_class($exception)
-        ]);
+        $e = new CCFailure(
+          message: $exception->getMessage()?:get_class($exception)
+        );
       }
       $exception = $e;
     }
     $exception->node = $config['node_name'];
+    $exception->class = get_class($exception);
     // this bypasses the middleware, so need to do this again.
 	  $response = $response->withHeader('Node-path', absolute_path());
     return json_response($response, $exception, $exception->getCode());
@@ -409,7 +410,7 @@ class Slim3ErrorHandler {
 
 function json_response(Response $response, $body, int $code = 200) : Response {
   if (is_scalar($body)) {
-    throw new CCFailure(['message' => 'Scalar value sent to json_encode']);
+    throw new CCFailure(message: 'Scalar value sent to json_encode');
   }
   $response->getBody()->write(json_encode($body, JSON_UNESCAPED_UNICODE));
   $response = $response->withHeader('Content-Type', 'application/json');

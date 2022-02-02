@@ -34,7 +34,7 @@ class Entry extends CreditCommonsEntry {
       }
     }
     if ($missing) {
-      throw new InvalidFieldsViolation(['fields' => $missing]);
+      throw new InvalidFieldsViolation(fields: $missing);
     }
     $payee = accountStore()->ResolveAddress($row->metadata->{$row->payee} ?? $row->payee, FALSE);
     $payer = accountStore()->ResolveAddress($row->metadata->{$row->payer} ?? $row->payer, FALSE);

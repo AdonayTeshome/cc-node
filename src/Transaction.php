@@ -39,7 +39,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
       $this->workflow = $workflow = (new Workflows())->get($this->type);
     }
     else {
-      throw new UnknownWorkflowViolation($this->type);
+      throw new UnknownWorkflowViolation(workflow_id: $this->type);
     }
   }
 
@@ -52,7 +52,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
   static function createEntries(array $rows) : array {
     foreach ($rows as $row) {
       if (empty($row->author)) {
-        throw new CCViolation(['message' => 'Entry is missing author.']);
+        throw new CCViolation('Entry is missing author.');
       }
       $entries[] = Entry::create($row);
     }
@@ -79,7 +79,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
       }
     }
     if ($missing) {
-      throw new MissingRequiredFieldViolation(['fields' => $missing]);
+      throw new MissingRequiredFieldViolation(fields: $missing);
     }
     $input->author = $user->id;
     $entries = static::createEntries([$input]); // why is this false?
@@ -205,12 +205,12 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
       $desired_state = $workflow->creation->state;
     }
     if (!$workflow->canTransitionToState($user->id, $this, $desired_state, $user->admin)) {
-      throw new WorkflowViolation([
-        'acc_id' => $user->id,
-        'type' => $this->type,
-        'from' => $this->state,
-        'to' => $desired_state,
-      ]);
+      throw new WorkflowViolation(
+        acc_id: $user->id,
+        type: $this->type,
+        from: $this->state,
+        to: $desired_state,
+      );
     }
     // Add fees, etc by calling on the blogic service
     if ($config['blogic_service_url']) {
@@ -225,10 +225,10 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
       $ledgerAccountInfo = (new Wallet($account))->getTradeStats();
       $projected = $ledgerAccountInfo['pending']['balance'] + $info->diff;
       if ($projected > $this->payee->max) {
-        throw new MaxLimitViolation($acc_id, $this->payee->max, $projected);
+        throw new MaxLimitViolation(acc_id: $acc_id, limit: $this->payee->max, projected: $projected);
       }
       elseif ($projected < $this->payer->min) {
-        throw new MinLimitViolation($acc_id, $this->payer->min, $projected);
+        throw new MinLimitViolation(acc_id: $acc_id, limit: $this->payer->min, projected: $projected);
       }
     }
     $this->state = TransactionInterface::STATE_VALIDATED;
@@ -253,12 +253,12 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     global $user;
     $workflow = (new Workflows())->get($this->type);
     if (!$workflow->canTransitionToState($user->id, $this, $target_state, $user->admin)) {
-      throw new WorkflowViolation([
-        'acc_id' => $user->id,
-        'type' => $this->type,
-        'from' => $this->state,
-        'to' => $target_state,
-      ]);
+      throw new WorkflowViolation(
+        acc_id: $user->id,
+        type: $this->type,
+        from: $this->state,
+        to: $target_state,
+      );
     }
 
     $this->state = $target_state;
@@ -332,7 +332,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     if ($stored = $result->fetch_object() and $string = $stored->serialized) {
       return unserialize($string);
     }
-    throw new DoesNotExistViolation(['type' => 'transaction', 'id' => $uuid]);
+    throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
   }
 
   /**
@@ -345,7 +345,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     if (isset($this->entries[0]->$name)) {
       return $this->entries[0]->$name;
     }
-    throw new CCFailure(['message' => 'Requested unknown property of Transaction:'.$name]);
+    throw new CCFailure('Requested unknown property of Transaction: '.$name);
   }
 
   /**
