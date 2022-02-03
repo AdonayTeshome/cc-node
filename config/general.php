@@ -1,9 +1,9 @@
 <?php
-//namespace CCNode;
+
 ini_set('display_errors', 1);
-const NODE_SETTINGS_FILE = '../node.ini';
+const NODE_INI_FILE = '../node.ini';
 require_once '../vendor/autoload.php';
-$node_config = parse_ini_file(NODE_SETTINGS_FILE);
+$node_config = parse_ini_file(NODE_INI_FILE);
 
 if ($_POST) {
   unset($_POST['submit']);
@@ -15,14 +15,14 @@ if ($_POST) {
 
   if (!$errs) {
     require './writeini.php';
-    replaceIni($_POST, NODE_SETTINGS_FILE);
+    replaceIni($_POST, NODE_INI_FILE);
   }
 
 }
-$node_config = parse_ini_file(NODE_SETTINGS_FILE);
+$node_config = parse_ini_file(NODE_INI_FILE);
 
-if (!is_writable(NODE_SETTINGS_FILE)) {
-  $errs[] = NODE_SETTINGS_FILE . " is not writable";
+if (!is_writable(NODE_INI_FILE)) {
+  $errs[] = NODE_INI_FILE . " is not writable";
 }
 ?><!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">
   <head>

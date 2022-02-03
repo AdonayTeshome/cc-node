@@ -2,7 +2,6 @@
 
 namespace CCNode;
 
-use CreditCommons\Exceptions\InvalidFieldsViolation;
 use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Requester;
@@ -20,54 +19,50 @@ class AccountStore extends Requester {
     $this->options[RequestOptions::HEADERS]['Accept'] = 'application/json';
   }
 
+  // Instantiate this object by calling AccountStore();
   function __invoke() {
     return new static();
   }
 
 
   /**
-   * Filter on the account names
+   * Filter on the account names.
    *
    * @param array $filters
-   *   possible keys are view_mode, status, local, chars
+   *   possible keys are status, local, chars, key
+   * @param bool $full
+   *   TRUE to return the loaded Account objects
    * @return array
    *   CreditCommons\Account[] or string[]
    */
-  function filter(array $filters = [], $view_mode = 'full') : array {
+  function filter(array $filters = [], $full = FALSE) : array {
     $path = 'filter';
-    if (isset($filters['chars'])) {
-      $path.='/'.$filters['chars'];
-      unset($filters['chars']);
+    if ($full) {
+      $path .= '/full';
     }
-    $valid = ['status', 'local', 'type', 'key'];
-    $filters = array_intersect_key($filters, array_flip($valid));
-    $filters += ['view_mode' => $view_mode];
+    // Ensure only known filters are passed
+    $filters = array_intersect_key($filters, array_flip(['status', 'local', 'chars', 'auth']));
     $this->options[RequestOptions::QUERY] = $filters;
-    $results = $this->localRequest($path);
-    if ($filters['view_mode'] == 'name') {
-      $return = (array)$results;
+    $results = (array)$this->localRequest($path);
+    if ($full) {
+      array_walk($results, [$this, 'upcast']);
     }
-    else{
-      foreach ($results as $res) {
-        $return[] = $this->upcast($res);
-      }
-    }
-    return $return;
+    return $results;
   }
 
   /**
-   * Get an account
-   *
-   * Use this if you know the account exists.
+   * Get an account object by name.
    *
    * @param string $name
    *   Need to be clear if this is the local name or a path
    * @param string $view_mode
    * @return stdClass|string
    *   The account object
+   *
+   * @todo rename this to load
    */
-  function fetch(string $name, $view_mode = 'full') : Account {
-    $path = urlencode($name).'/'.$view_mode;
+  function fetch(string $name) : Account {
+    $path = urlencode($name);
     try{
       $result = $this->localRequest($path);
     }
@@ -77,111 +72,10 @@ class AccountStore extends Requester {
         throw new DoesNotExistViolation(type: 'account', id: $name);
       }
       else {
-        print_r($e->getMessage());
-        die($e->getCode() ." Unknown response from AccountStore $path");
+        throw new \CreditCommons\Exceptions\UnexpectedResultFailure(status_code: $e->getCode(), url: "$this->baseUrl/fetch/$name");
       }
     }
-    $result = $this->upcast($result);
-    return $result;
-  }
-
-  /**
-   * Determine what Account class has been fetched and instantiate it.
-   *
-   * @global type $orientation
-   * @global type $config
-   * @param \stdClass $data
-   * @return Account
-   */
-  private function upcast(\stdClass $data) : Account {
-    global $orientation, $config;
-    $class = self::determineAccountClass(
-      $data->id,
-      $data->url??'',
-      isset($orientation->upstreamAccount) ? $orientation->upstreamAccount->id : '',
-      $config['bot']['acc_id']
-    );
-    return new $class($data);
-  }
-
-  /**
-   *
-   * @param string $type
-   * @param string $acc_id
-   * @param array $fields
-   *   The fields overriding the defaults, including url for node and key for users
-   * @return Account
-   * @throws \Exception
-   *
-   * @note this is not part of the CreditCommons API
-   */
-  function join(string $type, string $acc_id, array $fields) {
-    if ($type == 'node') {
-      $this->addField('url', $fields['url']);
-      unset($fields['url']);
-    }
-    elseif ($type == 'user') {
-      $this->addField('key', $fields['key']);
-      unset($fields['key']);
-    }
-    else {
-      throw new Exception('Wrong account type');
-    }
-    foreach ($fields as $key => $val) {
-      $this->addField($key, $val);
-    }
-    try {
-      $this->setMethod('post')
-        ->addField('id', urlencode($acc_id))
-        ->localRequest($type);
-    }
-    catch (\Exception $e) {
-      switch ($e->getCode()) {
-        case 400:
-          throw new BadCharactersViolation(string: $acc_id);
-        case 404:
-          throw new DoesNotExistViolation(id: $acc_id, type: 'account');
-        default:
-          throw new CCFailure(message: 'Unexpected '.$e->getCode()." result from $this->baseUrl/join: ".$e->getMessage());
-      }
-    }
-  }
-
-  /**
-   * Override account defaults.
-   *
-   * @param string $acc_id
-   * @param array $vals
-   *
-   * @deprecated This is not part of the AccountStore API. Is it used for setup?
-   */
- function set(string $acc_id, array $vals) : void {
-    $this->setBody($vals);
-    try {
-      $this->setMethod('patch')
-        ->localRequest($acc_id);
-    }
-    catch (\Exception $e) {
-      switch($e->getCode()) {
-        case 400:
-          throw new InvalidFieldsViolation(fields: $result);
-        case 404:
-          throw new DoesNotExistViolation(type: account, id: $acc_id);
-        default:
-          throw new \Exception('Unexpected '.$e->getCode()." result from $this->baseUrl/override/$acc_id");
-      }
-    }
-  }
-
-  /**
-   * Add a field to the request body.
-   * @param string $key
-   * @param type $value
-   * @return $this
-   */
-  protected function addField(string $key, $value) {
-    $this->fields[$key] = $value;
-    return $this;
+    return $this->upcast($result);
   }
 
   /**
@@ -206,14 +100,6 @@ class AccountStore extends Requester {
   }
 
   /**
-   * @param string $acc_id
-   * @param string $auth_key
-   */
-  function compareKeys(string $acc_id, string $auth_key) {
-    return (bool)$this->filter(['chars' => $acc_id, 'key' => $auth_key]);
-  }
-
-  /**
    * Resolve to an account on the current node.
    * @return Account
    * @param bool $existing
@@ -226,7 +112,7 @@ class AccountStore extends Requester {
     // If it is one path item long.
     if (count($parts) == 1) {
       // If it exists on this node.
-      if ($pol = $this->fetch($given_path, 'full')) {
+      if ($pol = $this->fetch($given_path)) {
         return $pol;
       }
       throw new AccountResolutionViolation(path: $given_path);
@@ -236,14 +122,14 @@ class AccountStore extends Requester {
     $pos = array_search($config['node_name'], $parts);
     if ($pos !== FALSE and $branch_name = $parts[$pos+1]) {
       try {
-        return $this->fetch($branch_name, 'full');
+        return $this->fetch($branch_name);
       }
       catch (DoesNotExistViolation $e) {}
     }
     // A branchwards or trunkwards account, starting with the account name on the local node
     $branch_name = reset($parts);
     try {
-      return $this->fetch($branch_name, 'full');
+      return $this->fetch($branch_name);
     }
     catch (DoesNotExistViolation $e) {}
 
@@ -262,6 +148,25 @@ class AccountStore extends Requester {
   }
 
   /**
+   * Determine what Account class has been fetched and instantiate it.
+   *
+   * @global type $orientation
+   * @global type $config
+   * @param \stdClass $data
+   * @return Account
+   */
+  private function upcast(\stdClass $data) : Account {
+    global $orientation, $config;
+    $class = self::determineAccountClass(
+      $data->id,
+      $data->url??'',
+      isset($orientation->upstreamAccount) ? $orientation->upstreamAccount->id : '',
+      $config['bot']['acc_id']
+    );
+    return new $class($data);
+  }
+
+  /**
    * Determine the class of the given Account, considering this node's position
    * in the ledger tree.
    *
@@ -271,7 +176,7 @@ class AccountStore extends Requester {
    * @param string $BoT_acc_id
    * @return string
    */
-  static function determineAccountClass(string $acc_id, string $account_url = '', string $upstream_acc_id = '', string $BoT_acc_id = '') : string {
+  private static function determineAccountClass(string $acc_id, string $account_url = '', string $upstream_acc_id = '', string $BoT_acc_id = '') : string {
     if ($account_url) {
       $BoT = $acc_id == $BoT_acc_id;
       $upS = $acc_id == $upstream_acc_id;

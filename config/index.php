@@ -6,13 +6,13 @@ if (!is_dir('../vendor')) {
 require_once '../vendor/autoload.php';
 ini_set('display_errors', 1);
 
-const SETTINGS_INI_FILE = '../node.ini';
+const NODE_INI_FILE = '../node.ini';
 const ACC_STORAGE_INI_FILE  = '../AccountStore/accountstore.ini';
-$node_conf = parse_ini_file(SETTINGS_INI_FILE);
+$node_conf = parse_ini_file(NODE_INI_FILE);
 $errs = [];
 if (!empty($_SERVER['QUERY_STRING'])){
   if ($node_conf['account_store_url']) {
-    include $_SERVER['QUERY_STRING'].'.php';
+    require $_SERVER['QUERY_STRING'].'.php'; // only appleis to accounts.php ATM
     exit;
   }
 }
@@ -42,7 +42,7 @@ if ($_POST) {
     require './writeini.php';
     $acc = $values['acc'];
     unset($values['acc']);
-    replaceIni($values, SETTINGS_INI_FILE);
+    replaceIni($values, NODE_INI_FILE);
     replaceIni($acc, ACC_STORAGE_INI_FILE);
     $connection = new mysqli('localhost', $values['db']['user'], $values['db']['pass']);
     $connection->query("DROP DATABASE ".$values['db']['name']);
@@ -94,13 +94,13 @@ $values = $node_conf + parse_ini_file(ACC_STORAGE_INI_FILE);
 
 
       <h2>Default values for new accounts</h2>
-      <p>Max account limit: <input name="acc[default_max]" type="number" min="1" max="1000000" size="3" value="<?php print $values['default_max']; ?>" />
-      <br />Min account limit: <input name="acc[default_min]" type="number" max="0" min="-1000000" size="3" value="<?php print $values['default_min']; ?>" />
-      <p>New Accounts are:<br />
+      <p>Max limit: <input name="acc[default_max]" type="number" min="1" max="1000000" size="3" value="<?php print $values['default_max']; ?>" />
+      <br />Min limit: <input name="acc[default_min]" type="number" max="0" min="-1000000" size="3" value="<?php print $values['default_min']; ?>" />
+      <p>Accounts are created as:<br />
          <input type="radio" name= "acc[default_status]" value = "1"<?php if (!empty($values['default_status'])) print ' checked'; ?> />Enabled<br />
          <input type="radio" name= "acc[default_status]" value = "0"<?php if (empty($values['default_status'])) print ' checked'; ?> />Disabled
       </p>
-      <input type="submit">
+      <input type="submit" value="(Re)Install database">
     </form>
   </body>
 </html>

@@ -14,12 +14,6 @@ abstract class Record {
   public $id;
 
   /**
-   * The unixtime the account was created
-   * @var string
-   */
-  public $created;
-
-  /**
    * @var bool
    */
   public $status;
@@ -42,14 +36,12 @@ abstract class Record {
   /**
    *
    * @param string $id
-   * @param int $created
    * @param bool $status
    * @param type $min
    * @param type $max
    */
-  function __construct(string $id, int $created, bool $status, $min = NULL, $max = NULL) {
+  function __construct(string $id, bool $status, $min = NULL, $max = NULL) {
     $this->id = $id;
-    $this->created = $created;
     $this->status = $status;
     $this->min = $min;
     $this->max = $max;

@@ -1,4 +1,5 @@
 <?php
+// included by index.php based on url param.
 use CCNode\AccountStore;
 use AccountStore\AccountManager;
 $store = '../AccountStore/'.AccountManager::FILESTORE;
@@ -35,10 +36,10 @@ if ($_POST) {
         mod_account('node', $id, $fields);
       }
     }
-    $node_conf = parse_ini_file(SETTINGS_INI_FILE);
+    $node_conf = parse_ini_file(NODE_INI_FILE);
     // Save or resave the BoT account
     if ($node_conf['bot']['acc_id'] or !empty($_POST['bot']['acc_id'])) {
-      $accs = load_accounts();
+      $accs = editable_accounts();
       if (isset($_POST['bot']['acc_id'])) {
         add_account('node', $_POST['bot'] + ['id' => $_POST['bot']['acc_id']]);
       }
@@ -50,12 +51,12 @@ if ($_POST) {
       }
       // populate unchecked boxes
       $bot_settings = $_POST['bot'] + ['priv_accounts' => 0, 'priv_transactions' => 0, 'priv_stats' => '0', 'metadata' => 0];
-      replaceIni(['bot' => $bot_settings], SETTINGS_INI_FILE);
+      replaceIni(['bot' => $bot_settings], NODE_INI_FILE);
     }
   }
 }
-$node_conf = parse_ini_file(SETTINGS_INI_FILE);
-$accs = load_accounts();
+$node_conf = parse_ini_file(NODE_INI_FILE);
+$accs = editable_accounts();
 
 ?><!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">
   <head>
@@ -69,7 +70,7 @@ $accs = load_accounts();
       print "<p><font color=red>".implode('<br />', $errs).'</font>';
     ?><form method="post">
       <h2>User accounts</h2>
-      <p>Resubmit the form to create at least two accounts.
+      <p>Resubmit the form to create at least two accounts. Accounts should not be removed in case they appear in the ledger.
       <table cellpadding="2">
         <thead>
           <tr>
@@ -192,47 +193,69 @@ function add_account($type, $fields): void {
   unset($fields['id']);
   $fields = array_filter($fields, 'strlen');
   $fields['admin'] = (int)!empty($fields['admin']);
-  $config = parse_ini_file('../node.ini');
-  $accountStore = new AccountStore($config['account_store_url']);
-  $accountStore->join($type, $id, $fields);
+
+  if ($type == 'node') {
+    if (empty($fields['url'])) {
+      die('bad data');
+    }
+    else {
+      unset($fields['key']);
+    }
+  }
+  elseif ($type == 'user') {
+    if (empty($fields['key'])) {
+      die('bad data');
+    }
+    else {
+      unset($fields['url']);
+    }
+  }
+  // edit the csv file directly.
+  $accounts = editable_accounts();
+  $accounts[$id] = (object)$fields;
+  editable_accounts($accounts);
 }
 
-function mod_account($type, $id, $fields) :void {
+function mod_account($type, $id, $fields) : void {
+  global $config;
   $config = parse_ini_file('../node.ini');
   // Ensure there's a value in case of empty checkboxes
   $fields['admin'] = (int)!empty($fields['admin']);
   $fields['status'] = (int)!empty($fields['status']);
-  $accountStore = new AccountStore($config['account_store_url']);
-  $accountStore->set($id, $fields);
+  $accounts = editable_accounts();
+  $accounts[$id] = (object)$fields;
+  editable_accounts($accounts);
+}
+
+
+function status_cell($tag, $type, $acc = NULL) {
+  $status = $acc && isset($acc->status) ? $acc->status : NULL;
+  ?><checkbox name="<?php print $type; ?>[status]" value = 1 <?php if ($status) print ' checked'?>><?php
+}
+
+function minmax_cell($tag, $type, $acc = NULL) {
+  ?><<?php print $tag; ?> title = "Min/max balance (override default @todo)">
+    <input name="<?php print $type; ?>[min]" type="number" min="-999999" max="0" size="4" value="<?php print $acc?$acc->min:'';?>" />
+    <input name="<?php print $type; ?>[max]" type="number" max="999999" min="0" size="4"  value="<?php print $acc?$acc->max:'';?>" />
+  </<?php print $tag; ?>><?php
 }
 
 /**
- *
- * @return stdClass[]
+ * load or save the set of accounts directly to the file.
+ * @param array $accounts
+ * @return array
  */
-function load_accounts() : array {
-  global $config;
-  $accs = [];
-  $config = parse_ini_file('../node.ini');
-  $accountStore = new AccountStore($config['account_store_url']);
-  foreach ($accountStore->filter() as $acc) {
-    $accs[$acc->id] = $accountStore->fetch($acc->id, 'own');
+function editable_accounts(array $accounts = []) : array {
+  if ($accounts) {//save
+    foreach ($accounts as $id => &$account) {
+      $account->id = $id;
+      if ($account->max === '')$account->max = NULL;
+      if ($account->min === '')$account->min = NULL;
+    }
+    file_put_contents('../AccountStore/store.json', json_encode($accounts));
+    return [];
   }
-  return $accs;
-}
-
-function status_cell($tag, $type, $acc = NULL) {
-  $status = $acc && isset($acc->status) ? $acc->status : NULL; ?>
-  <checkbox name="<?php print $type; ?>[status]" value = 1 <?php if ($status) print ' checked'?>>
-<?php }
-
-function minmax_cell($tag, $type, $acc = NULL) {?>
-<<?php print $tag; ?> title = "Min/max balance (override default @todo)">
-    <input name="<?php print $type; ?>[min]" type="number" min="-999999" max="0" size="4" value="<?php print $acc?$acc->min:'';?>" />
-    <input name="<?php print $type; ?>[max]" type="number" max="999999" min="0" size="4"  value="<?php print $acc?$acc->max:'';?>" />
-  </<?php print $tag; ?>>
-<?php }
-
-function render_table($headers, $rows) {
-
+  else {
+    return (array)json_decode(file_get_contents('../AccountStore/store.json'));
+  }
 }

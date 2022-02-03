@@ -116,13 +116,13 @@ $app->get('/accounts[/{fragment}]', function (Request $request, Response $respon
     $remote_names = API_calls()->accounts(@$args['fragment'], TRUE);
     // @todo Also we may want to query child ledgers.
   }
-  $local_names = accountStore()->filter(['chars' => @$args['fragment'], 'status' => 1, 'local' => 1], 'name');
+  $local_names = accountStore()->filter(['chars' => @$args['fragment'], 'status' => TRUE, 'local' => TRUE], FALSE);
   return json_response($response, array_slice(array_merge($local_names, $remote_names), 0, $params['limit']??10));
 });
 
 $app->get('/account/limits/{acc_id}', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountHistory');
-  $account = accountStore()->fetch($args['acc_id'], 'full');
+  $account = accountStore()->fetch($args['acc_id']);
   return json_response($response, (object)['min' => $account->min, 'max' => $account->max]);
 });
 
@@ -144,7 +144,7 @@ $app->get('/account/history/{acc_path}', function (Request $request, Response $r
   check_permission($request, 'accountHistory');
   $params = $request->getQueryParams();
   $account = accountStore()->fetch($args['acc_path']);
-  $result = (new Wallet($account))->getHistory($params['samples']??0, $account->created);
+  $result = (new Wallet($account))->getHistory($params['samples']??0);
 
   $orientation->responseMode = TRUE;
   $response->getBody()->write(json_encode($result));
@@ -238,8 +238,11 @@ return $app;
  * @staticvar array $fetched
  * @param string $id
  *   The account id or empty string to load a dummy account.
- * @return CreditCommonms\Account
+ * @return CreditCommons\Account
  * @throws DoesNotExistViolation
+ *
+ * @todo make sure this is used whenever possible because it is cached.
+ * @todo This doesn't seem like a good place to throw a violation.
  */
 function load_account(string $id) : Account {
   static $fetched = [];
@@ -327,7 +330,13 @@ function authenticate(Request $request) : void {
     $auth = $request->getHeaderLine('cc-auth');
     // Users connect with an API key which can compared directly with the database.
     if ($acc_id) {
-      $user = load_account($acc_id);
+      try {
+        $user = load_account($acc_id);
+      }
+      catch (\CreditCommons\Exceptions\DoesNotExistViolation $e) {
+        // Fallback to anon.
+        return;
+      }
       if ($user instanceOf Remote) {
         // Remote nodes connect with a hash of the connected account, which needs to be compared.
         $query = "SELECT TRUE FROM hash_history WHERE acc = '$account->id' AND hash = '$auth' ORDER BY id DESC LIMIT 0, 1";
@@ -339,13 +348,14 @@ function authenticate(Request $request) : void {
       elseif (!accountStore()->filter(['chars' => $acc_id, 'auth' => $auth])) {
         throw new AuthViolation(acc_id: $acc_id);
       }
+      // Acc_id is neither local nor remote, fallback to anon.
     }
     else {
-      // Blank username supplied.
+      // Blank username supplied, fallback to anon
     }
   }
   else {
-    // No attempt to authenticate.
+    // No attempt to authenticate, fallback to anon
   }
 }
 
@@ -408,16 +418,20 @@ class Slim3ErrorHandler {
    }
 }
 
+/**
+ * Populate a json response.
+ *
+ * @param Response $response
+ * @param stdClass|array $body
+ * @param int $code
+ * @return Response
+ */
 function json_response(Response $response, $body, int $code = 200) : Response {
-  if (is_scalar($body)) {
-    throw new CCFailure(message: 'Scalar value sent to json_encode');
+  if (is_scalar($body)){
+    throw new CCFailure('Illegal value passed to json_response()');
   }
   $response->getBody()->write(json_encode($body, JSON_UNESCAPED_UNICODE));
-  $response = $response->withHeader('Content-Type', 'application/json');
-  if ($code <> 200) {
-    $response = $response->withStatus($code);
-  }
-  return $response;
+  return $response->withHeader('Content-Type', 'application/json')->withStatus($code);
 }
 
 /**

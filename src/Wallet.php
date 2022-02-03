@@ -35,10 +35,27 @@ class Wallet {
    *   steps, points, smoothed = .
    * @return array
    *   Balances keyed by timestamp, oldest first
+   *
+   * @todo URGENT this reads all versions transactions as different transactions
    */
-  function getHistory($samples = 0, int $since) : array {
-    $points[date("Y-m-d H:i:s", $since)] = 0;
-    $points += $this->_getHistory();
+  function getHistory($samples = 0) : array {
+    global $config;
+
+    $chart = [];
+    Db::query("SET @csum := 0");
+    $query = "SELECT written, (@csum := @csum + diff) as balance FROM transaction_index WHERE uid1 = '$this->id' ORDER BY written ASC";
+    $result = Db::query($query);
+    // database is storing timestamps as 'Y-m-d H:i:s.0'
+    // make a first point at zero balance 1 sec before the first balance.
+    $t = $result->fetch_object();
+    $start_sec = (new \DateTime($t->written))->modify('-1 second');
+    // 2022-02-02 23:39:56.000000
+    $points[$start_sec->format('Y-m-d H:i:s')] = 0;
+    $points[$t->written] = round($t->balance, $config['decimal_places']);
+    while($t = $result->fetch_object()) {
+      $points[$t->written] = round($t->balance, $config['decimal_places']);
+    }
+
     if ($samples === 0){
       $times = $values = [];
       // Make two values for each one in the keys and values.
@@ -65,24 +82,6 @@ class Wallet {
       // implementation, we don't create a create a point for initial 0 balance.
     }
     return $points;
-  }
-
-  /**
-   * @return array
-   *   Balances keyed by timestamp, oldest first
-   * @todo urgent this reads all versions transactions as different transactions
-   */
-  private function _getHistory()  : array {
-    global $config;
-    $chart = [];
-    Db::query("SET @csum := 0");
-    $query = "SELECT written, (@csum := @csum + diff) as balance FROM transaction_index WHERE uid1 = '$this->id' ORDER BY written ASC";
-    $result = Db::query($query);
-    // At the moment we don't know when the account was opened.
-    while($t = $result->fetch_object()) {
-      $chart[$t->written] = round($t->balance, $config['decimal_places']);
-    }
-    return $chart;
   }
 
 
@@ -137,32 +136,36 @@ class Wallet {
 
   /**
    *
-   * @param bool $details
+   * @param bool $include_virgins
    * @return array
    */
-  static function getAllTradeStats(bool $details = FALSE) : array {
-    $all_account_names = accountStore()->filter(['status' => TRUE, 'view_mode' => 'name']);
+  static function getAllTradeStats($include_virgins = FALSE) : array {
     $results = [];
-    foreach (static::TRADE_STATS as $stat) {
-      $default[$stat] = 0;
+    // NB this is only the balances of accounts which have traded.
+    $all_balances = static::getAllLocalTradeStats();
+    foreach ($all_account_names as $name) {
+      $results[$name] = $all_balances[$name]['completed'] ?? (object)$default;
     }
-    if ($details) {
-      // NB this is only the balances of accounts which have traded.
-      $all_balances = static::_getAllTradeStats();
-      foreach ($all_account_names as $name) {
-        $results[$name] = $all_balances[$name]['completed'] ?? (object)$default;
+    if ($include_virgins) {
+      $all_account_names = accountStore()->filter(['status' => TRUE]);
+      foreach (static::TRADE_STATS as $stat) {
+        $default[$stat] = 0;
       }
+      foreach ($all_account_names as $name) {
+        if (!isset($results[$name])) {
+          $results[$name] = $default;
+        }
+      }
+
     }
-    else {
-      $results = $all_account_names;
-    }
+
     return $results;
   }
 
   /**
    * @return array
    */
-  private static function _getAllTradeStats() : array {
+  private static function getAllLocalTradeStats() : array {
     $balances = [];
     $result = Db::query("SELECT uid1, uid2, income, expenditure, diff, volume, state, is_primary FROM transaction_index WHERE income > 0");
     while ($row = $result->fetch_object()) {

@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   version: 1.0.0
-  title: "Credit commons: Policy service"
+  title: "Credit commons: AccountStore service"
   description: Internal API called by Credit Commons reference implementation for managing accounts and balance limits.
   contact:
     name: Matthew Slater
@@ -9,7 +9,7 @@ info:
   license:
     name: GNU GPL
 paths:
-  /{acc_id}/{view_mode}:
+  /{acc_id}:
     get:
       summary: Get one account.
       operationId: listActive.
@@ -20,78 +20,20 @@ paths:
           required: true
           schema:
             type: string
-        - in: path
-          name: view_mode
-          description: "View the name|own|full account data. 'own' means that the fields with default values are retrieved as null"
-          required: false
-          default: full
-          schema:
-            type: string
-        - in: query
-          name: view_mode
-          description: One of full, own, or nameonly
-          required: false
-          schema:
-            type: string
-            default: full
       responses:
         "200":
-          description: the policy
+          description: the account
           content:
             "application/json":
               schema:
-                $ref: "#/components/schemas/Policy"
+                $ref: "#/components/schemas/Account"
         "404":
           description: The account doesn't exist.
-#  "{type}":
-#    post:
-#      summary: Apply to join a ledger as a child to a parent.
-#      operationId: signUp
-#      description: The parent ledger creates an account and returns the new policy.
-#      parameters:
-#        - in: path
-#          name: name
-#          description: The name matches the regex '^[a-z0-9@.]{1,32}$'
-#          required: true
-#          schema:
-#            type: string
-#      requestBody:
-#        $ref: '#/components/requestBodies/NewAccount'
-#      responses:
-#        "200":
-#          description: The new policy, if granted with given balance limits
-#          content:
-#            "application/json":
-#              schema:
-#                $ref: "#/components/schemas/Policy"
-#        "400":
-#          description: bad data, duplicate name
-#        "422":
-#          description: Unprocessable entity (bad chars)
-#  "{acc_id}":
-#    patch:
-#      summary: Rewrite the account overrides
-#      operationId: override
-#      description: Edit account details. Any value not provided will revert to default.
-#      parameters:
-#        - in: path
-#          name: name
-#          description: The name of the account to override. (cannot be changed)
-#          required: true
-#          schema:
-#            type: string
-#      requestBody:
-#        $ref: "#/components/requestBodies/Override"
-#      responses:
-#        "200":
-#          description: the overrides were written.
-#        "404":
-#          description: The account does not exist
-  "/filter/{chars}":
+  "/filter/{full}":
     get:
-      summary: filter the active user names for a string
-      operationId: filterName
-      description: Get a list of account names
+      summary: Filter account objects
+      operationId: filterAccount
+      description: Filter accounts, and return full account objects
       parameters:
         - name: chars
           in: path
@@ -105,52 +47,72 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: auth
+          in: query
+          description: The account's auth key. (Must be used in conjunction with name for login)
+          required: false
+          schema:
+            type: boolean
         - name: local
           in: query
           description: Filter for local (TRUE) accounts or remote (FALSE) accounts
           required: false
           schema:
             type: boolean
-        - name: auth
-          in: query
-          description: Filter for accounts with the given auth key. Must be used in conjunction with name
-          required: false
-          schema:
-            type: boolean
-        - name: view_mode
-          in: query
-          description: Any of full, name, or own.
-          required: false
-          schema:
-            type: string
-            default: full
       responses:
         "200":
-          description: An array of names, or policies if full was true
+          description: An array of names
           content:
             "application/json":
               schema:
                 # Can be ids or full account objects
                 type: array
-  "/config":
-    patch:
-      summary: Edit one or more config values
-      operationId: editConfig
-      description: Change the settings of the service (admin only!)
-      requestBody:
-        $ref: '#/components/requestBodies/Config'
+                items:
+                  type: string
+  "/filter":
+    get:
+      summary: Filter account names
+      operationId: filterName
+      description: Filter accounts, and return a list of names
+      parameters:
+        - name: chars
+          in: path
+          description: the string or fragment to check against account names.
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter for active (true) or blocked (false) accounts
+          required: false
+          schema:
+            type: boolean
+        - name: auth
+          in: query
+          description: The account's auth key. (Must be used in conjunction with name for login)
+          required: false
+          schema:
+            type: boolean
+        - name: local
+          in: query
+          description: Filter for local (TRUE) accounts or remote (FALSE) accounts
+          required: false
+          schema:
+            type: boolean
       responses:
         "200":
-          description: the config value(s) were updated
-        "403":
-          description: the overrides were written.
-        "400":
-          description: One of more of the given values failed validation. Others written
+          description: An array of names
+          content:
+            "application/json":
+              schema:
+                type: array
+                items:
+                  type: string
 components:
   schemas:
-    Policy:
+    Account:
       type: object
-      description: The group's policy pertaining to an account.
+      description: All the ledger needs to know about an account.
       properties:
         name:
           type: string
@@ -181,41 +143,4 @@ components:
           description: The exchange rate relative to the parent's accuouting unit (BoT
             account only?)
           example: 1
-    Config:
-      type: object
-      description: All (or some) of the config settings
-      properties:
-        default_status:
-          type: boolean
-          description: TRUE if new accounts start disabled.
-          example: 1
-        default_min:
-          type: number
-          description: The default minimum account balance (<= 0)
-          example: -1000
-        default_max:
-          type: number
-          description: The default maximum account balance (<= 0)
-          example: 1000
-  requestBodies:
-#    NewAccount:
-#      description:
-#      properties:
-#        id:
-#        key:
-#        url:
-    Override:
-      description: Contains optional fields to be overridden
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Policy'
-      required: true
-    Config:
-      description: Some or all of the config settings
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Config'
-      required: true
 

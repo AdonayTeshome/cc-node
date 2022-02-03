@@ -23,9 +23,9 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
 
   function __construct() {
     $accs = (array)json_decode(file_get_contents(self::FILESTORE));
-    foreach ($accs as $data) {
+    foreach ($accs as $id => $data) {
       $class  = !empty($data->url) ? '\AccountStore\RemoteRecord' : '\AccountStore\UserRecord';
-      $this->accounts[$data->id] = new $class($data);
+      $this->accounts[$id] = new $class($data);
     }
   }
 
@@ -41,10 +41,12 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
 
   /**
    * @param string $string
+   * This looks weird and next time I would check the login credentials differently.
    */
   function filterByAuth(string $string) {
     $this->accounts = array_filter($this->accounts, function ($a) use ($string) {
-      return is_int(stripos($a->auth, $string));
+      $auth = $a->key??$a->url;
+      return $auth === $string;
     });
   }
 

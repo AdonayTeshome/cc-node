@@ -3,6 +3,7 @@
 use League\OpenAPIValidation\PSR15\ValidationMiddlewareBuilder;
 use League\OpenAPIValidation\PSR15\SlimAdapter;
 use Slim\Psr7\Response;
+use CCNode\AccountStore;
 
 /**
  * So far this tests the API functions assuming good results, but doesn't test the error messages.
@@ -19,17 +20,33 @@ use Slim\Psr7\Response;
     UnknownWorkflowViolation
     WorkflowViolation
  *
- *  OfflineFailure CANT
+ *  OfflineFailure Is this testable? Maybe with an invalid url?
  */
 class SingleNodeTest extends \PHPUnit\Framework\TestCase {
 
   public static function setUpBeforeClass(): void {
-    global $config, $users;
+    global $config, $users, $admin_acc_id, $norm_acc_id;
     // Get some user data directly from the accountStore
     // NB the accountstore should deny requests from outside this server.
     $config = parse_ini_file(__DIR__.'/../node.ini');
-    $requester = new \CCNode\AccountStore($config['account_store_url']);
-    $users = $requester->filter(['status' => 1]);
+    // Augment the user objects with the key.
+    $accounts = array_filter(
+      (array)json_decode(file_get_contents('AccountStore/store.json')),
+      function($u) {return $u->status && $u->key;}
+    );
+    foreach ($accounts as $a) {
+      if ($a->admin) {
+        $admin_acc_id = $a->id;
+      }
+      else {
+        $norm_acc_id = $a->id;
+      }
+      // what if there is no admin? what if no normies.
+      $users[$a->id] = $a->key;
+    }
+    if (empty($norm_acc_id) || empty($admin_acc_id)) {
+      die("Testing requires both admin and non-admin accounts in store.json");
+    }
   }
 
   function testEndpoints() {
@@ -40,7 +57,6 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     $this->assertObjectNotHasAttribute("accountSummary", $body);
     $this->assertObjectNotHasAttribute("filterTransactions", $body);
     $response = $this->sendRequest('', 'options', 200);
-    /** @var \Slim\Psr7\Response $response */
     $this->checks($response, 'application/json');
     $body = json_decode($response->getBody()->getContents());
     $this->assertObjectHasAttribute("filterTransactions", $body);
@@ -56,12 +72,12 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
 
   function testAccountNames() {
     global $users;
-    $char = substr($users[0]->id, 0, 2);
-    $response = $this->sendRequest("accounts/$char", 'get', 200);
-    $acc_ids = json_decode($response->getBody()->getContents());
+    $chars = substr(key($users), 0, 2);
+    $response = $this->sendRequest("accounts/$chars", 'get', 200);
+    $results = json_decode($response->getBody()->getContents());
     // should be a list of account names including 'a'
-    foreach ($acc_ids as $acc_id) {
-      $this->assertStringStartsWith($char, $acc_id);
+    foreach ($results as $acc_id) {
+      $this->assertStringStartsWith($chars, $acc_id);
     }
   }
 
@@ -75,15 +91,18 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
   function test3rdParty() {
     global $users;
     $this->assertGreaterThan('1', count($users));
+    $payee = key($users);
+    next($users);
+    $payer = key($users);
     $obj = [
-      'payee' => $users[0]->id,
-      'payer' => $users[1]->id,
+      'payee' => $payee,
+      'payer' => $payer,
       'description' => 'test 3rdparty',
       'quantity' => 1000000000,
       'type' => '3rdparty'
     ];
     // This SHOULD generate an error.
-    $response = $this->sendRequest('transaction/new', 'post', 400, FALSE, json_encode($obj));
+    $response = $this->sendRequest('transaction/new', 'post', 400, 'admin', json_encode($obj));
     $err_obj = json_decode($response->getBody()->getContents());
     $exception = \CreditCommons\RestAPI::reconstructCCException($err_obj);
     // Should violate min OR max
@@ -92,27 +111,27 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     // Now test a valid transaction.
     // This assumes the default workflow is unmodified.
     $obj = [
-      'payee' => $users[0]->id,
-      'payer' => $users[1]->id,
+      'payee' => $payee,
+      'payer' => $payer,
       'description' => 'test 3rdparty',
       'quantity' => 1,
       'type' => '3rdparty'
     ];
     // 3rdParty transactions are created already complete.
-    $response = $this->sendRequest('transaction/new', 'post', 201, FALSE, json_encode($obj));
+    $response = $this->sendRequest('transaction/new', 'post', 201, 'admin', json_encode($obj));
   }
 
   function testTransactionLifecycle() {
-    global $users;
+    global $users, $norm_acc_id, $admin_acc_id;
     $obj = [
-      'payee' => $users[0]->id,
-      'payer' => $users[1]->id,
+      'payer' => $admin_acc_id,
+      'payee' => $norm_acc_id,
       'description' => 'test bill',
       'quantity' => 1,
       'type' => 'bill'
     ];
     // 'bill' transactions must be approved, and enter pending state.
-    $response = $this->sendRequest('transaction/new', 'post', 200, FALSE, json_encode($obj));
+    $response = $this->sendRequest('transaction/new', 'post', 200, 'acc', json_encode($obj));
     $transaction = json_decode($response->getBody()->getContents());
     $this->assertNotEmpty($transaction->transitions);
     $this->assertContains('pending', $transaction->transitions);
@@ -136,8 +155,9 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
   }
 
   function testStats() {
-    global $users;
-    $test_user_id = end($users)->id;
+    global $users, $test_user_id;
+    end($users);
+    $test_user_id = key($users);
     $response = $this->sendRequest("account/history/$test_user_id", 'get', 200);
     $response = $this->sendRequest("account/limits/$test_user_id", 'get', 200);
     $limits = json_decode($response->getBody()->getContents());
@@ -150,14 +170,19 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
   }
 
 
-  protected function sendRequest($path, $method = 'get', int $expected_code, bool $anon = FALSE, string $request_body = '') : Response {
-    global $users;
+  protected function sendRequest($path, $method = 'get', int $expected_code, string $role = 'acc', string $request_body = '') : Response {
+    global $users, $admin_acc_id, $norm_acc_id;
     $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
     $request = $psr17Factory->createServerRequest(strtoupper($method), '/'.$path);
-    if (!$anon) {
-      $firstuser = reset($users);
-      $request = $request->withHeader('cc-user', $firstuser->id);
-      $request = $request->withHeader('cc-auth', $firstuser->key);
+    if ($role == 'admin') {
+      $acc_id = $admin_acc_id;
+    }
+    elseif ($role == 'acc') {
+      $acc_id = $norm_acc_id; // TODO
+    }
+    if (isset($acc_id)) {
+      $request = $request->withHeader('cc-user', $acc_id);
+      $request = $request->withHeader('cc-auth', $users[$acc_id]);
     }
     if ($request_body) {
       $request = $request->withHeader('Content-type', 'application/json');

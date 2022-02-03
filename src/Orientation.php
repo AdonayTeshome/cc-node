@@ -109,8 +109,8 @@ class Orientation {
   function handshake() : array {
     global $config;
     $results = [];
-    $active_policies = AccountStore()->filter(['status' => 1, 'class' => 'remote']);
-    foreach ($active_policies as $account) {
+    $active_accounts = AccountStore()->filter(['status' => 1, 'class' => 'remote'], TRUE);
+    foreach ($active_accounts as $account) {
       if ($account instanceof Remote) {
         //Make sure we load the remote version by giving a path longer than 1 part.
         list($code) = $account->API()->handshake();
