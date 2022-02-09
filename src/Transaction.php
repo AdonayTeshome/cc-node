@@ -5,131 +5,41 @@ namespace CCNode;
 use CCNode\Entry;
 use CCNode\BlogicRequester;
 use CCNode\Workflows;
+use CreditCommons\Workflow;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\MaxLimitViolation;
 use CreditCommons\Exceptions\MinLimitViolation;
 use CreditCommons\Exceptions\CCFailure;
-use CreditCommons\Exceptions\CCViolation;
 use CreditCommons\Exceptions\WorkflowViolation;
-use CreditCommons\Exceptions\UnknownWorkflowViolation;
 use CreditCommons\TransactionInterface;
-use CreditCommons\NewTransaction;
-use CreditCommons\Workflow;
+use CreditCommons\BaseTransaction;
 use CreditCommons\Account;
+use CreditCommons\TransversalEntry;
+use CreditCommons\Exceptions\UnknownWorkflowViolation;
 
-class Transaction extends \CreditCommons\Transaction implements \JsonSerializable {
-
-  /**
-   * The workflow object for this transaction, determined by the $type.
-   * @var Workflow
-   */
-  //public $workflow;
-
-  /**
-   * @param string $uuid
-   * @param int $version
-   * @param string $type
-   * @param string $state
-   * @param Entry[] $entries
-   */
-  public function __construct(string $uuid, int $version, string $type, string $state, array $entries, $txID = NULL) {
-    parent::__construct($uuid, $version, $type, $state, $entries, $txID);
-    // @todo refactor this because workflows must be instantiated with the BoT Url if there is one.
-    if ($workflow = (new Workflows())->get($this->type)) {
-      $this->workflow = $workflow = (new Workflows())->get($this->type);
-    }
-    else {
-      throw new UnknownWorkflowViolation(workflow_id: $this->type);
-    }
-  }
-
-
-  /**
-   * @param array $rows
-   * @return Entry[]
-   * @throws CCViolation
-   */
-  static function createEntries(array $rows) : array {
-    foreach ($rows as $row) {
-      if (empty($row->author)) {
-        throw new CCViolation('Entry is missing author.');
-      }
-      $entries[] = Entry::create($row);
-    }
-    return $entries;
-  }
-
+class Transaction extends BaseTransaction implements \JsonSerializable {
 
   /**
    * Create a new transaction from a few required fields defined upstream.
-   * @param stdClass $input
-   *   validated to contain payer, payee, description & quantity
+   * @param stdClass $data
+   *   well formatted payer, payee, description & quant and array of stdClass entries.
    * @return \static
    */
-  public static function createFromUpstreamNode(\stdClass $input) : \CreditCommons\Transaction {
-    global $config, $user;
-    // basic validation of the input
-    if (!isset($input->quant) or (!$config['zero_payments'] and empty($input->quant))) {
-      $missing['quant'] = '_REQUIRED_';
-    }
-    foreach (['payer', 'payee', 'description'] as $field_name) {
-      // @todo there is a setting that allows 'quant' to be empty;
-      if (!isset($input->{$field_name}) or empty($input->{$field_name})) {
-        $missing[$field_name] = '_REQUIRED_';
-      }
-    }
-    if ($missing) {
-      throw new MissingRequiredFieldViolation(fields: $missing);
-    }
-    $input->author = $user->id;
-    $entries = static::createEntries([$input]); // why is this false?
-    $class = static::determineClass($entries);
-
-    return new $class(
-      static::makeUuid(),
-      0,
-      $input->type,
-      TransactionInterface::STATE_INITIATED,
-      $entries
-    );
-  }
-
-  /**
-   * This is only needed on a leaf node (one with local users)
-   * It mustn't call Node\Account
-   *
-   * @param NewTransaction $nt
-   * @return \static
-   */
-  public static function createFromClient(NewTransaction $nt) : \CreditCommons\Transaction {
+  public static function createFromUpstream(\stdClass $data) : BaseTransaction {
     global $user;
-    $entry = new Entry(
-      accountStore()->resolveAddress($nt->payee, TRUE),
-      accountStore()->resolveAddress($nt->payer, TRUE),
-      $nt->quantity,
-      $nt->description,
-      $user->id,
-      (object)[]
-    );
-    $class = static::determineClass([$entry]);
-    $transaction = new $class(
-      static::makeUuid(),
-      0,
-      $nt->type,
-      TransactionInterface::STATE_INITIATED,
-      [$entry]
-    );
-
-    return $transaction;
+    $data->author = $user->id;
+    $data->state = TransactionInterface::STATE_INITIATED;
+    $data->entries = static::createEntries($data->entries, $user);
+    $class = static::determineTransactionClass($data->entries);
+    return $class::create($data);
   }
-
 
   /**
    * @param array $entries
    * @return boolean
    *   TRUE if these entries imply a TransversalTransaction
    */
-  protected static function determineClass(array $entries) : string {
+  protected static function determineTransactionClass(array $entries) : string {
     foreach ($entries as $entry) {
       if ($entry instanceOf TransversalEntry) {
         return 'CCNode\TransversalTransaction';
@@ -138,41 +48,41 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     return 'CCNode\Transaction';
   }
 
-
-
   /**
    * @param type $uuid
    * @return \Transaction
    */
   static function loadByUuid($uuid) : Transaction {
     global $orientation;
-    $q = "SELECT id, version, type, state FROM transactions "
+    $q = "SELECT id as txID, uuid, version, type, state FROM transactions "
       . "WHERE uuid = '$uuid' "
       . "ORDER BY version DESC "
       . "LIMIT 0, 1";
     $tx = Db::query($q)->fetch_object();
     if ($tx) {
       $q = "SELECT payee, payer, description, quant, author, metadata FROM entries "
-        . "WHERE txid = $tx->id "
+        . "WHERE txid = $tx->txID "
         . "ORDER BY id ASC";
       $result = Db::query($q);
       while ($row = $result->fetch_object()) {
         $row->metadata = unserialize($row->metadata);
         $entry_rows[] = $row;
       }
-      $entries = static::createEntries($entry_rows);
-      $class = static::determineClass($entries);
-      $transaction = new $class(
-        $uuid,
-        $tx->version,
-        $tx->type,
-        $tx->state,
-        $entries,
-        $tx->id
-      );
+      $tx->entries = static::createEntries($entry_rows);
+      $class = static::determineTransactionClass($tx->entries);
+      // All these values should be validated, so no need to use static::create
+      $transaction = $class::create($tx);
     }
     else {
-      $transaction = static::getTemp($uuid);
+      // No saved transaction exists, so check the temp table
+      require_once __DIR__.'/Entry.php';// I don't think this is necessary any more.
+      $result = Db::query("SELECT serialized FROM temp WHERE uuid = '$uuid'");
+      if ($stored = $result->fetch_object() and $string = $stored->serialized) {
+        $transaction = unserialize($string);
+      }
+      else {
+        throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
+      }
       // Tell the node if these accounts imply coordination with other (downstream) ledgers
       $orientation->addAccount($transaction->entries[0]->payee);
       $orientation->addAccount($transaction->entries[0]->payer);
@@ -195,12 +105,13 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
 
 
   /**
-   * Call the business logic and append entries.
+   * Call the business logic, append entries.
+   * Validate the transaction in its workflow's 'creation' state
    */
-  function buildValidate(string $desired_state = '') : void {
+  function buildValidate() : void {
     global $loadedAccounts, $config, $user;
 
-    $workflow = (new Workflows())->get($this->type); // @todo refactor this
+    $workflow = $this->getWorkflow();
     if (empty($desired_state)) {
       $desired_state = $workflow->creation->state;
     }
@@ -251,8 +162,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
    */
   function sign(string $target_state) {
     global $user;
-    $workflow = (new Workflows())->get($this->type);
-    if (!$workflow->canTransitionToState($user->id, $this, $target_state, $user->admin)) {
+    if (!$this->getWorkflow()->canTransitionToState($user->id, $this, $target_state, $user->admin)) {
       throw new WorkflowViolation(
         acc_id: $user->id,
         type: $this->type,
@@ -262,7 +172,6 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     }
 
     $this->state = $target_state;
-    $this->version++;
     $this->saveNewVersion();
     return $this;
   }
@@ -274,6 +183,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
    */
   public function saveNewVersion() {
     global $user;
+    $this->version++;
     // The datestamp is added automatically
     $q = "INSERT INTO transactions (uuid, version, type, state, scribe) "
     . "VALUES ('$this->uuid', $this->version, '$this->type', '$this->state', '$user->id')";
@@ -307,7 +217,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     foreach (['payee', 'payer'] as $role) {
       $$role = $entry->{$role}->id;
       if ($entry->{$role} instanceof RemoteAccount) {
-        $entry->metadata->{$$role} = $entry->{$role}->givenPath;
+        $entry->metadata[$$role] = $entry->{$role}->givenPath;
       }
     }
     $metadata = serialize($entry->metadata);
@@ -318,21 +228,6 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     if ($this->id = Db::query($q)) {
       return (bool)$this->id;
     }
-  }
-
-  /**
-   * Retrieve a transaction from serialized, in the db.
-   * @param string $uuid
-   * @return \Transaction
-   */
-  protected static function getTemp($uuid) : Transaction {
-    // This seems to work but I suspect there is a cleaner way with PSR4
-    require_once __DIR__.'/Entry.php';
-    $result = Db::query("SELECT serialized FROM temp WHERE uuid = '$uuid'");
-    if ($stored = $result->fetch_object() and $string = $stored->serialized) {
-      return unserialize($string);
-    }
-    throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
   }
 
   /**
@@ -461,15 +356,46 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
    */
   public function jsonSerialize() : array {
     global $user;
-    $workflow = (new Workflows())->get($this->type);
     return [
       'uuid' => $this->uuid,
       'state' => $this->state,
       'type' => $this->type,
       'version' => $this->version,
       'entries' => $this->entries,
-      'transitions' => $workflow->getTransitions($user->id, $this, $user->admin)
+      'transitions' => $this->getWorkflow()->getTransitions($user->id, $this, $user->admin)
     ];
+  }
+
+  /**
+   * Load this transaction's workflow from the local json storage.
+   * @todo Sort out
+   */
+  public function getWorkflow() : Workflow {
+    if ($w = (new Workflows())->get($this->type)) {
+      return $w;
+    }
+    throw new UnknownWorkflowViolation(workflow_id: $this->type);
+  }
+
+  /**
+   *
+   * @param stdClass[] $rows
+   *   Which are Entry objects flattened by json for transport.
+   * @param string $author
+   * @return Entry[]
+   *   The created entries
+   */
+  protected static function createEntries(array $rows, Account $author = NULL) : array {
+    $entries = [];
+    foreach ($rows as $row) {
+      if ($author){
+        $row->author = $author->id;
+      }
+      $row->payer = load_account($row->payer);
+      $row->payee = load_account($row->payee);
+      $entries[] = Entry::create($row);
+    }
+    return $entries;
   }
 
 }

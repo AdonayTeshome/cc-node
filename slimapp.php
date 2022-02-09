@@ -9,7 +9,6 @@
  */
 namespace CCNode;
 
-use CreditCommons\NewTransaction;
 use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\CCError;
 use CreditCommons\Exceptions\HashMismatchFailure;
@@ -21,6 +20,8 @@ use CreditCommons\RestAPI;
 use CreditCommons\Account;
 use CCNode\Accounts\BoT;
 use CCNode\Workflows;
+use CCNode\FlatEntry;
+use CCNode\NewTransaction;
 
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -91,7 +92,7 @@ $app->options('/', function (Request $request, Response $response) {
 // @todo this isn't documented or implemented???
 $app->get('/trunkwards', function (Request $request, Response $response) {
   check_permission($request, 'trunkwardsNodes');
-  return json_response($response, RestAPI::getTrunkwardsNodes(API_calls()), 200);
+  return json_response($response, RestAPI::getTrunkwardsNodeNames(API_calls()), 200);
 });
 
 $app->get('/workflows', function (Request $request, Response $response) {
@@ -151,18 +152,17 @@ $app->get('/account/history/{acc_path}', function (Request $request, Response $r
   return $response->withHeader('Content-Type', 'application/json');
 });
 
-
 // Create a new transaction
 $app->post('/transaction/new', function (Request $request, Response $response) {
-  global $orientation;
+  global $orientation, $user;
   check_permission($request, 'newTransaction');
-  // Because the testing framework already read it.
-  $request->getBody()->rewind();
+  $request->getBody()->rewind(); // ValidationMiddleware leaves this at the end.
   $data = json_decode($request->getBody()->getContents());
-  $newTransaction = new NewTransaction($data->payee, $data->payer, $data->quantity, $data->description, $data->type);
-
-  $transaction = Transaction::createFromClient($newTransaction); // in state 'init'
-  $transaction->buildValidate($data->state??''); // in state 'validated'
+  // validate the input and create UUID
+  NewTransaction::prepareClientInput($data);
+  $transaction = Transaction::createFromUpstream($data); // in state 'init'
+  // Validate the transaction in its workflow's 'creation' state
+  $transaction->buildValidate();
   $orientation->responseMode = TRUE;
   $workflow = (new Workflows())->get($transaction->type);
   if ($workflow->creation->confirm) {
@@ -182,11 +182,10 @@ $app->post('/transaction/new', function (Request $request, Response $response) {
 $app->post('/transaction/new/relay', function (Request $request, Response $response) {
   global $orientation;
   check_permission($request, 'relayTransaction');
-  // Because the testing framework already read it.
-  $request->getBody()->rewind();
+  $request->getBody()->rewind(); // ValidationMiddleware leaves this at the end.
   $data = json_decode($request->getBody()->read());
-  $transaction = TransversalTransaction::createFromUpstreamNode($post);
-  $transaction->buildValidate($post['state']??'');
+  $transaction = TransversalTransaction::createFromUpstream($data);
+  $transaction->buildValidate();
   $transaction->writeToTemp();
   $orientation->responseMode = TRUE;
   return json_response($response, $transaction, 201);
@@ -248,8 +247,7 @@ function load_account(string $id) : Account {
   static $fetched = [];
   if (!isset($fetched[$id])) {
     if ($id == '<anon>') {
-      $dummy = (object)['id'=>'<anon>', 'created' => 0];
-      $fetched[$id] = new Account($dummy);
+      $fetched[$id] = \CCNode\Accounts\User::AnonAccount();
     }
     elseif ($id and $acc = accountStore()->fetch($id)) {
       $fetched[$id] = $acc;
@@ -291,7 +289,6 @@ function permitted_operations() : array {
   global $user;
   $data = CreditCommonsInterface::OPERATIONS;
   $permitted[] = 'permittedEndpoints';
-
   if ($user->id <> '<anon>') {
     $permitted[] = 'handshake';
     $permitted[] = 'workflows';
@@ -346,6 +343,7 @@ function authenticate(Request $request) : void {
         }
       }
       elseif (!accountStore()->filter(['chars' => $acc_id, 'auth' => $auth])) {
+        //local user with the wrong password
         throw new AuthViolation(acc_id: $acc_id);
       }
       // Acc_id is neither local nor remote, fallback to anon.
@@ -393,8 +391,8 @@ function accountStore() : AccountStore {
  */
 class Slim3ErrorHandler {
   /**
-   * Probably all errors and warnings should include an emergency message to the admin.
-   * CC nodes should be seamless.
+   * Probably all errors and warnings should include an emergency SMS to admin.
+   * This callback is also used by the ValidationMiddleware
    */
   public function __invoke($request, $response, $exception) {
     global $config;

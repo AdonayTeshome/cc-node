@@ -70,7 +70,7 @@
   {
     "id": "disabled",
     "label": "Disabled",
-    "summary": "This workflow should never be loaded",
+    "summary": "This workflow is not available for new transactions",
     "active": "0",
     "creation": {
       "by" : ["payer"],

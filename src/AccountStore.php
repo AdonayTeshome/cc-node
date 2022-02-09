@@ -105,8 +105,9 @@ class AccountStore extends Requester {
    * @param bool $existing
    *   TRUE if we know the account exists. Then unknown accounts either resolve
    *   to the BoT account or throw an exception
+   * @todo why is this only used while making transactions?
    */
-  public function resolveAddress(string $given_path, bool $existing) : Account {
+  public function resolveAddressToLocal(string $given_path, bool $existing) : Account {
     global $orientation, $config;
     $parts = explode('/', $given_path);
     // If it is one path item long.
@@ -144,7 +145,7 @@ class AccountStore extends Requester {
         return $trunkwardsAccount;
       }
     }
-    throw new DoesNotExistViolation(type: 'account', id: $given_path);
+    throw new AccountResolutionViolation(type: 'account', id: $given_path);
   }
 
   /**
@@ -163,7 +164,7 @@ class AccountStore extends Requester {
       isset($orientation->upstreamAccount) ? $orientation->upstreamAccount->id : '',
       $config['bot']['acc_id']
     );
-    return new $class($data);
+    return $class::create($data);
   }
 
   /**

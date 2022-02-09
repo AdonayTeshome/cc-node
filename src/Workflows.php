@@ -45,6 +45,9 @@ class Workflows extends \CreditCommons\Workflows {
           $wfs[$workflow->getHash()] = $workflow;
         }
       }
+      else {
+        new \CreditCommons\Exceptions\CCFailure('Bad json workflows file');
+      }
     }
     return $wfs;
   }
@@ -107,7 +110,7 @@ class Workflows extends \CreditCommons\Workflows {
         }
       }
     }
-    throw new DoesNotExistViolation(['type' => 'workflow', 'id' => $needed_id]);
+    throw new DoesNotExistViolation(type: 'workflow', id: $needed_id);
   }
 
 

@@ -3,15 +3,12 @@
 use League\OpenAPIValidation\PSR15\ValidationMiddlewareBuilder;
 use League\OpenAPIValidation\PSR15\SlimAdapter;
 use Slim\Psr7\Response;
-use CCNode\AccountStore;
 
 /**
  * So far this tests the API functions assuming good results, but doesn't test the error messages.
  * @todo
- *  AccountResolutionViolation
-    AuthViolation
-    BadCharactersViolation
-    DoesNotExistViolation
+    DoesNotExistViolation account
+    DoesNotExistViolation transaction
     HashMismatchFailure
     IntermediateledgerViolation
     InvalidFieldsViolation
@@ -21,6 +18,7 @@ use CCNode\AccountStore;
     WorkflowViolation
  *
  *  OfflineFailure Is this testable? Maybe with an invalid url?
+ *  try new transaction with existing uuid.
  */
 class SingleNodeTest extends \PHPUnit\Framework\TestCase {
 
@@ -49,8 +47,8 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     }
   }
 
-  function testEndpoints() {
-    $response = $this->sendRequest('', 'options', 200, TRUE);
+  function testAnonEndpoints() {
+    $response = $this->sendRequest('', 'options', 200, 'anon');
     $this->checks($response, 'application/json');
     $body = json_decode($response->getBody()->getContents());
     $this->assertObjectHasAttribute("permittedEndpoints", $body);
@@ -70,10 +68,21 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     }
   }
 
+  function testBadPassword() {
+    global $norm_acc_id;
+    $request = $this->getRequest('trunkwards')
+      ->withHeader('cc-user', $norm_acc_id)
+      ->withHeader('cc-auth', 'zzz123');
+    $response = $this->getApp()->process($request, new Response());
+    $this->assertEquals($response->getStatusCode(), 400);
+    $this->checkErrorClass($response, 'AuthViolation');
+  }
+
   function testAccountNames() {
     global $users;
     $chars = substr(key($users), 0, 2);
-    $response = $this->sendRequest("accounts/$chars", 'get', 200);
+    $response = $this->sendRequest("accounts/$chars", 'get', 400, 'anon'); // AuthViolation
+    $response = $this->sendRequest("accounts/$chars", 'get', 200, 'acc');
     $results = json_decode($response->getBody()->getContents());
     // should be a list of account names including 'a'
     foreach ($results as $acc_id) {
@@ -95,18 +104,24 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     next($users);
     $payer = key($users);
     $obj = [
-      'payee' => $payee,
+      'payee' => 'aaaaaa',
       'payer' => $payer,
       'description' => 'test 3rdparty',
-      'quantity' => 1000000000,
+      'quant' => 1,
       'type' => '3rdparty'
     ];
-    // This SHOULD generate an error.
     $response = $this->sendRequest('transaction/new', 'post', 400, 'admin', json_encode($obj));
-    $err_obj = json_decode($response->getBody()->getContents());
-    $exception = \CreditCommons\RestAPI::reconstructCCException($err_obj);
-    // Should violate min OR max
-    $this->assertInstanceOf('\CreditCommons\Exceptions\TransactionLimitViolation', $exception);
+    $this->checkErrorClass($response, 'DoesNotExistViolation');
+    $obj['payee'] = $payee;
+    $obj['quant'] = 999999999;
+    $response = $this->sendRequest('transaction/new', 'post', 400, 'admin', json_encode($obj));
+    // Should show min OR maxLimitViolation
+    $this->checkErrorClass($response, 'TransactionLimitViolation');
+    $obj['quant'] = 1;
+    $obj['type'] = 'zzzzzz';
+    $response = $this->sendRequest('transaction/new', 'post', 400, 'admin', json_encode($obj));
+    $this->checkErrorClass($response, 'DoesNotExistViolation');
+    $obj['type'] = '3rdparty';
 
     // Now test a valid transaction.
     // This assumes the default workflow is unmodified.
@@ -114,11 +129,14 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
       'payee' => $payee,
       'payer' => $payer,
       'description' => 'test 3rdparty',
-      'quantity' => 1,
+      'quant' => 1,
       'type' => '3rdparty'
     ];
     // 3rdParty transactions are created already complete.
     $response = $this->sendRequest('transaction/new', 'post', 201, 'admin', json_encode($obj));
+
+    // try a zero value transaction
+    // use disabled/nonexistent workflow
   }
 
   function testTransactionLifecycle() {
@@ -127,7 +145,7 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
       'payer' => $admin_acc_id,
       'payee' => $norm_acc_id,
       'description' => 'test bill',
-      'quantity' => 1,
+      'quant' => 1,
       'type' => 'bill'
     ];
     // 'bill' transactions must be approved, and enter pending state.
@@ -172,20 +190,18 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
 
   protected function sendRequest($path, $method = 'get', int $expected_code, string $role = 'acc', string $request_body = '') : Response {
     global $users, $admin_acc_id, $norm_acc_id;
-    $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
-    $request = $psr17Factory->createServerRequest(strtoupper($method), '/'.$path);
     if ($role == 'admin') {
       $acc_id = $admin_acc_id;
     }
     elseif ($role == 'acc') {
       $acc_id = $norm_acc_id; // TODO
     }
+    $request = $this->getRequest($path, $method);
     if (isset($acc_id)) {
-      $request = $request->withHeader('cc-user', $acc_id);
-      $request = $request->withHeader('cc-auth', $users[$acc_id]);
+      $request = $request->withHeader('cc-user', $acc_id)->withHeader('cc-auth', $users[$acc_id]);
     }
     if ($request_body) {
-      $request = $request->withHeader('Content-type', 'application/json');
+      $request = $request->withHeader('Content-Type', 'application/json');
       $request->getBody()->write($request_body);
     }
 
@@ -193,11 +209,24 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     if ($response->getStatusCode() <> $expected_code) {
       $response->getBody()->rewind();
       // Blurt out to terminal to ensure all info is captured.
-      echo "\n Unexpected code ".$response->getStatusCode()." on $path: ".print_r($response->getBody()->getContents(), 1)."\n"; // Seems to be truncated hmph.
+      echo "\n $role got Unexpected code ".$response->getStatusCode()." on $path: ".print_r(json_decode($response->getBody()->getContents()), 1)."\n"; // Seems to be truncated hmph.
       $this->assertEquals($expected_code, $response->getStatusCode());
     }
     $response->getBody()->rewind();
     return $response;
+  }
+
+  private function getRequest($path, $method = 'GET') {
+    $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
+    return $psr17Factory->createServerRequest(strtoupper($method), '/'.$path);
+  }
+
+  protected function checkErrorClass(Response $response, string $err_class) {
+    $response->getBody()->rewind();
+    $err_obj = json_decode($response->getBody()->getContents());
+    $exception = \CreditCommons\RestAPI::reconstructCCException($err_obj);
+    $err_class = '\CreditCommons\Exceptions\\'.$err_class;
+    $this->assertInstanceOf($err_class, $exception);
   }
 
 

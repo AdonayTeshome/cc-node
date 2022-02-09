@@ -13,14 +13,15 @@
     }
   ],
   "repositories": {
-    "cclib": {
-      "type": "vcs",
-      "url": "git@gitlab.com:credit-commons-software-stack/cc-php-lib.git"
+    "credcom-dev": {
+      "type": "path",
+      "url": "/home/matslats/Documents/CreditCommons/credit-commons-software-stack",
+      "options": { "symlink": true }
     }
   },
   "require": {
     "composer/installers": "^1.7",
-    "credit-commons-software-stack/cc-php-lib": "*",
+    "credit-commons-software-stack/cc-php-lib": "@dev",
     "slim/slim": "^3"
   },
   "require-dev": {

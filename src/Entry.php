@@ -1,61 +1,43 @@
 <?php
 namespace CCNode;
 
-use CreditCommons\Entry as CreditCommonsEntry;
+use CreditCommons\BaseEntry;
 use CreditCommons\Account;
-
 
 /**
  * Determine the account types for entries.
  *
  */
-class Entry extends CreditCommonsEntry {
+class Entry extends BaseEntry implements \JsonSerializable {
 
   /**
    * TRUE if this entry was authored locally or downstream.
    * @var bool
    */
-  private $additional;
-
+  private bool $additional;
 
   /**
    * Convert the account names to Account objects, and instantiate the right sub-class.
    *
-   * @param object $row
+   * @param stdClass $data
    *   Could be from client or a flattened Entry
    * @return \CreditCommonsEntry
    */
-  static function create(\stdClass $row) : CreditCommonsEntry {
-    $missing = [];
-    // Basic validation needs to be done all in one place.
-    foreach (['payer', 'payee', 'quant'] as $field_name) {
-      if (empty($row->{$field_name})) {
-        $missing["entries-$key:$field_name"] = '_REQUIRED_';
-      }
-    }
-    if ($missing) {
-      throw new InvalidFieldsViolation(fields: $missing);
-    }
-    $payee = accountStore()->ResolveAddress($row->metadata->{$row->payee} ?? $row->payee, FALSE);
-    $payer = accountStore()->ResolveAddress($row->metadata->{$row->payer} ?? $row->payer, FALSE);
-
+  static function create(\stdClass $data) : BaseEntry {
+    // Convert the payer and payee into Account objects;
     foreach (['payee', 'payer'] as $role) {
-      if ($$role instanceOf AccountRemote) {
-        $row->metadata->{$$role->id} = $$role->givenPath;
+//      $acc_path = $data->{$role};
+//      $given_path = $data->metadata[$acc_path] ?? $acc_path;
+//      $$role = accountStore()->ResolveAddressTolocal($given_path, FALSE);
+      // @todo It seems wrong that we would both read and write the metadata here.
+
+      if ($data->$role instanceOf AccountRemote) {
+        $row->metadata[$data->$role->id] = $data->$role->givenPath;
       }
+      //$data->{$role} = $$role;
     }
-    // Unknown accounts will show up as the balance of trade account.
-
-    $class = static::determineClass($payee, $payer);
-
-    return new $class(
-      $payee,
-      $payer,
-      $row->quant,
-      $row->description,
-      $row->author,
-      $row->metadata
-    );
+    $class = static::determineEntryClass($data->payee, $data->payer);
+    return parent::create($data);
   }
 
   /**
@@ -64,7 +46,7 @@ class Entry extends CreditCommonsEntry {
    * @param Account $acc2
    * @return string
    */
-  static function determineClass(\CreditCommons\Account $acc1, \CreditCommons\Account $acc2) : string {
+  static function determineEntryClass(\CreditCommons\Account $acc1, \CreditCommons\Account $acc2) : string {
     $class_name = 'CCNode\Entry';
     // Now, depending on the classes of the payer and payee
     if ($acc1 instanceOf AccountBranch and $acc2 instanceOf AccountBranch) {
@@ -89,6 +71,33 @@ class Entry extends CreditCommonsEntry {
 
   function isAdditional() : bool {
     return $this->additional;
+  }
+
+  /**
+   * Entries shared locally
+   * if its for a local_request between services
+   * - Account names collapsed to local name
+   * or if its going back to the client
+   * - Account names collapsed to a relative name
+   * - Quant rounded to go back to the client
+   * @return array
+   */
+  public function jsonSerialize() : array {
+    global $orientation;
+    $flat = [
+      'payee' => $this->payee->id,
+      'payer' => $this->payer->id,
+      'author' => $this->author,
+      'quant' => $this->quant,
+      'description' => $this->description,
+      'metadata' => $this->metadata
+    ];
+    // @todo move this to the point before serialization is triggered.
+    if (!$orientation->localRequest) {// going back to client.
+      $flat['payee'] = $this->metadata[$flat['payee']] ?? $flat['payee'];
+      $flat['payer'] = $this->metadata[$flat['payer']] ?? $flat['payer'];
+    }
+    return $flat;
   }
 
 }

@@ -67,6 +67,9 @@ class Remote extends AccountRemote {
     return $all_accounts;
   }
 
+  function getRelPath() {
+    die('Need to calculate the relative path of remote account');
+  }
 
 }
 

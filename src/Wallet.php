@@ -163,6 +163,7 @@ class Wallet {
   }
 
   /**
+   * Get all the tradestats in the system with just one db query.
    * @return array
    */
   private static function getAllLocalTradeStats() : array {
