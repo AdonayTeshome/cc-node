@@ -9,18 +9,19 @@ use CreditCommons\Account;
 class User extends Account {
 
   function __construct(
-    $id,
-    $status,
-    $min,
-    $max,
+    string $id,
+    bool $status,
+    int $min,
+    int $max,
     public bool $admin
   ) {
     parent::__construct($id, $status, $min, $max);
   }
 
   static function create(\stdClass $data) : Account {
+    $data->admin = $data->admin??FALSE;
     static::validateFields($data);
-    return new static($data->id, $data->status, $data->min, $data->max, $data->admin??FALSE);
+    return new static($data->id, $data->status, $data->min, $data->max, $data->admin);
   }
 
 

@@ -70,7 +70,7 @@
   {
     "id": "disabled",
     "label": "Disabled",
-    "summary": "This workflow is not available for new transactions",
+    "summary": "This workflow is not available for new transactions. (Needed for testing.)",
     "active": "0",
     "creation": {
       "by" : ["payer"],
@@ -104,7 +104,7 @@
   {
     "id": "3rdparty",
     "label": "3rdparty transaction",
-    "summary": "Admin creates instantly",
+    "summary": "Admin creates instantly. (Needed for testing.)",
     "active": "1",
     "creation": {
       "by" : ["<admin>"],

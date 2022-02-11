@@ -48,21 +48,15 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
   }
 
   function testAnonEndpoints() {
-    $response = $this->sendRequest('', 'options', 200, 'anon');
-    $this->checks($response, 'application/json');
-    $body = json_decode($response->getBody()->getContents());
+    $body = $this->sendRequest('', 200, 'options', 'anon');
     $this->assertObjectHasAttribute("permittedEndpoints", $body);
     $this->assertObjectNotHasAttribute("accountSummary", $body);
     $this->assertObjectNotHasAttribute("filterTransactions", $body);
-    $response = $this->sendRequest('', 'options', 200);
-    $this->checks($response, 'application/json');
-    $body = json_decode($response->getBody()->getContents());
+    $body = $this->sendRequest('', 200, 'options');
     $this->assertObjectHasAttribute("filterTransactions", $body);
     $this->assertObjectHasAttribute("accountSummary", $body);
 
-    $response = $this->sendRequest('handshake', 'get', 200);
-    // The structure has been checked against the API
-    $nodes = json_decode($response->getBody()->getContents());
+    $nodes = $this->sendRequest('handshake', 200);
     foreach ($nodes as $status_code => $urls) {
       $this->assertIsInteger($status_code / 100);
     }
@@ -70,20 +64,23 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
 
   function testBadPassword() {
     global $norm_acc_id;
+    // This is a comparatively long winded because sendRequest() only uses valid passwords.
     $request = $this->getRequest('trunkwards')
       ->withHeader('cc-user', $norm_acc_id)
       ->withHeader('cc-auth', 'zzz123');
     $response = $this->getApp()->process($request, new Response());
     $this->assertEquals($response->getStatusCode(), 400);
-    $this->checkErrorClass($response, 'AuthViolation');
+    $response->getBody()->rewind();
+    $err_obj = json_decode($response->getBody()->getContents());
+    $exception = \CreditCommons\RestAPI::reconstructCCException($err_obj);
+    $this->assertInstanceOf('CreditCommons\Exceptions\AuthViolation', $exception);
   }
 
   function testAccountNames() {
     global $users;
     $chars = substr(key($users), 0, 2);
-    $response = $this->sendRequest("accounts/$chars", 'get', 400, 'anon'); // AuthViolation
-    $response = $this->sendRequest("accounts/$chars", 'get', 200, 'acc');
-    $results = json_decode($response->getBody()->getContents());
+    $this->sendRequest("accounts/$chars", 'PermissionViolation', 'get', 'anon');
+    $results = $this->sendRequest("accounts/$chars", 200, 'get', 'acc');
     // should be a list of account names including 'a'
     foreach ($results as $acc_id) {
       $this->assertStringStartsWith($chars, $acc_id);
@@ -92,8 +89,7 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
 
   function testWorkflows() {
     // By default this is only accessible for authenticated users.
-    $response = $this->sendRequest('workflows', 'get', 200);
-    $wfs = (array)json_decode($response->getBody()->getContents());
+    $wfs = $this->sendRequest('workflows', 200);
     $this->assertNotEmpty($wfs);
   }
 
@@ -110,19 +106,20 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
       'quant' => 1,
       'type' => '3rdparty'
     ];
-    $response = $this->sendRequest('transaction/new', 'post', 400, 'admin', json_encode($obj));
-    $this->checkErrorClass($response, 'DoesNotExistViolation');
+    $this->sendRequest('transaction/new', 'DoesNotExistViolation', 'post', 'admin', json_encode($obj));
     $obj['payee'] = $payee;
     $obj['quant'] = 999999999;
-    $response = $this->sendRequest('transaction/new', 'post', 400, 'admin', json_encode($obj));
-    // Should show min OR maxLimitViolation
-    $this->checkErrorClass($response, 'TransactionLimitViolation');
+    $this->sendRequest('transaction/new', 'TransactionLimitViolation', 'post', 'admin', json_encode($obj));
+    $obj['quant'] = 0;
+    $this->sendRequest('transaction/new', 'CCViolation', 'post', 'admin', json_encode($obj));
+    unset($obj['quant']);
+    $this->sendRequest('transaction/new', 'InvalidFieldsViolation', 'post', 'admin', json_encode($obj));
     $obj['quant'] = 1;
     $obj['type'] = 'zzzzzz';
-    $response = $this->sendRequest('transaction/new', 'post', 400, 'admin', json_encode($obj));
-    $this->checkErrorClass($response, 'DoesNotExistViolation');
+    $this->sendRequest('transaction/new', 'DoesNotExistViolation', 'post', 'admin', json_encode($obj));
+    $obj['type'] = 'disabled';// this is the name of one of the default workflows, which exists for this test
+    $this->sendRequest('transaction/new', 'DoesNotExistViolation', 'post', 'admin', json_encode($obj));
     $obj['type'] = '3rdparty';
-
     // Now test a valid transaction.
     // This assumes the default workflow is unmodified.
     $obj = [
@@ -133,10 +130,15 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
       'type' => '3rdparty'
     ];
     // 3rdParty transactions are created already complete.
-    $response = $this->sendRequest('transaction/new', 'post', 201, 'admin', json_encode($obj));
-
-    // try a zero value transaction
-    // use disabled/nonexistent workflow
+    $transaction = $this->sendRequest('transaction/new', 'post', 201, 'admin', json_encode($obj));
+    // Check the transaction is written
+    print_r($transaction);
+    $this->assertNotNull($transaction->uuid);
+    $this->assertEquals($payee, $transaction->entries[0]->payee);
+    $this->assertEquals($payer, $transaction->entries[0]->payer);
+    $this->assertEquals('test 3rdparty', $transaction->entries[0]->description);
+    $this->assertEquals('3rdparty', $transaction->type);
+    $this->assertEquals('completed', $transaction->state);
   }
 
   function testTransactionLifecycle() {
@@ -149,14 +151,14 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
       'type' => 'bill'
     ];
     // 'bill' transactions must be approved, and enter pending state.
-    $response = $this->sendRequest('transaction/new', 'post', 200, 'acc', json_encode($obj));
-    $transaction = json_decode($response->getBody()->getContents());
+    $transaction = $this->sendRequest('transaction/new', 200, 'post', 'acc', json_encode($obj));
     $this->assertNotEmpty($transaction->transitions);
     $this->assertContains('pending', $transaction->transitions);
     $this->assertEquals("validated", $transaction->state);
-    $this->sendRequest("transaction/$transaction->uuid/pending", 'patch', 201);
+    // write the transaction
+    $this->sendRequest("transaction/$transaction->uuid/pending", 201, 'patch');
     // Erase
-    $this->sendRequest("transaction/$transaction->uuid/erased", 'patch', 201);
+    $this->sendRequest("transaction/$transaction->uuid/erased", 201, 'patch');
   }
 
   /**
@@ -164,11 +166,9 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
    */
   function __testTransactionFilterRetrieve() {
     // Filter description
-    $response = $this->sendRequest("transaction?description=test%203rdparty", 'get', 200);
-    $uuids = json_decode($response->getBody()->getContents());
+    $uuids = $this->sendRequest("transaction?description=test%203rdparty", 200);
     //We have the results, now fetch and test the first result
-    $response = $this->sendRequest("transaction/".reset($uuids)."/full", 'get', 200);
-    $transaction = json_decode($response->getBody()->getContents());
+    $transaction = $this->sendRequest("transaction/".reset($uuids)."/full", 200);
     $this->assertStringContainsString("test 3rdparty", $transaction->entries[0]->description);
   }
 
@@ -176,19 +176,18 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     global $users, $test_user_id;
     end($users);
     $test_user_id = key($users);
-    $response = $this->sendRequest("account/history/$test_user_id", 'get', 200);
-    $response = $this->sendRequest("account/limits/$test_user_id", 'get', 200);
-    $limits = json_decode($response->getBody()->getContents());
+    $points = $this->sendRequest("account/history/$test_user_id", 200);
+    $limits = $this->sendRequest("account/limits/$test_user_id", 200);
     $this->assertIsObject($limits);
     $this->assertObjectHasAttribute('min', $limits);
     $this->assertObjectHasAttribute('max', $limits);
     $this->assertlessThan(0, $limits->min);
     $this->assertGreaterThan(0, $limits->max);
-    $response = $this->sendRequest("account/summary/$test_user_id", 'get', 200);
+    $summary = $this->sendRequest("account/summary/$test_user_id", 200);
   }
 
 
-  protected function sendRequest($path, $method = 'get', int $expected_code, string $role = 'acc', string $request_body = '') : Response {
+  protected function sendRequest($path, int|string $expected_response, $method = 'get', string $role = 'acc', string $request_body = '') : stdClass|NULL|array {
     global $users, $admin_acc_id, $norm_acc_id;
     if ($role == 'admin') {
       $acc_id = $admin_acc_id;
@@ -206,29 +205,27 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     }
 
     $response = $this->getApp()->process($request, new Response());
-    if ($response->getStatusCode() <> $expected_code) {
-      $response->getBody()->rewind();
-      // Blurt out to terminal to ensure all info is captured.
-      echo "\n $role got Unexpected code ".$response->getStatusCode()." on $path: ".print_r(json_decode($response->getBody()->getContents()), 1)."\n"; // Seems to be truncated hmph.
-      $this->assertEquals($expected_code, $response->getStatusCode());
-    }
     $response->getBody()->rewind();
-    return $response;
+    $contents = json_decode($response->getBody()->getContents());
+    $status_code = $response->getStatusCode();
+    if (is_int($expected_response)) {
+      if ($status_code <> $expected_response) {
+        // Blurt out to terminal to ensure all info is captured.
+        echo "\n $role got unexpected code ".$status_code." on $path: ".print_r($contents, 1); // Seems to be truncated hmph.
+        $this->assertEquals($expected_response, $status_code);
+      }
+    }
+    else {
+      $e = CreditCommons\RestAPI::reconstructCCException($contents);
+      $this->assertInstanceOf("CreditCommons\Exceptions\\$expected_response", $e);
+    }
+    return $contents;
   }
 
   private function getRequest($path, $method = 'GET') {
     $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
     return $psr17Factory->createServerRequest(strtoupper($method), '/'.$path);
   }
-
-  protected function checkErrorClass(Response $response, string $err_class) {
-    $response->getBody()->rewind();
-    $err_obj = json_decode($response->getBody()->getContents());
-    $exception = \CreditCommons\RestAPI::reconstructCCException($err_obj);
-    $err_class = '\CreditCommons\Exceptions\\'.$err_class;
-    $this->assertInstanceOf($err_class, $exception);
-  }
-
 
   /**
    * @return \Slim\App
@@ -243,14 +240,6 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
       $app->add($middleware);
     }
     return $app;
-  }
-
-  private function checks(Response $response, string $mime_type = '') {
-    $this->assertEquals($mime_type, $response->getHeaderLine('Content-Type'));
-    $body = $response->getbody();
-    if ($mime_type) {
-      $this->assertGreaterThan(0, $body->getSize());
-    }
   }
 
   private function checkTransactions(array $all_transactions, array $filtered_uuids, array $conditions) {
