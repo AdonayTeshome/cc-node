@@ -13,10 +13,9 @@
     }
   ],
   "repositories": {
-    "credcom-dev": {
-      "type": "path",
-      "url": "/home/matslats/Documents/CreditCommons/credit-commons-software-stack",
-      "options": { "symlink": true }
+    "ccnode": {
+      "type": "vcs",
+      "url": "git@gitlab.com:credit-commons-software-stack/cc-node.git"
     }
   },
   "require": {

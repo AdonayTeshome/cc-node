@@ -22,7 +22,7 @@ CREATE TABLE entries (
   payee varchar(64) NOT NULL,
   payer varchar(64) NOT NULL,
   description tinytext NOT NULL,
-  quant float NOT NULL,
+  quant int(11) NOT NULL,
   author varchar(32) NOT NULL,
   is_primary int(1) NOT NULL DEFAULT 0,
   metadata text(1024) COMMENT 'serialised array'

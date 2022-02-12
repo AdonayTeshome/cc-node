@@ -60,6 +60,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       . "ORDER BY version DESC "
       . "LIMIT 0, 1";
     $tx = Db::query($q)->fetch_object();
+
     if ($tx) {
       $q = "SELECT payee, payer, description, quant, author, metadata FROM entries "
         . "WHERE txid = $tx->txID "
@@ -375,7 +376,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     if ($w = (new Workflows())->get($this->type)) {
       return $w;
     }
-    throw new UnknownWorkflowViolation(workflow_id: $this->type);
+    throw new DoesNotExistViolation(type: 'workflow', id: $this->type);
   }
 
   /**

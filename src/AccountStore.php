@@ -72,7 +72,7 @@ class AccountStore extends Requester {
         throw new DoesNotExistViolation(type: 'account', id: $name);
       }
       else {
-        throw new \CreditCommons\Exceptions\UnexpectedResultFailure(status_code: $e->getCode(), url: "$this->baseUrl/fetch/$name");
+        throw new CCFailure("AccountStore returned an invalid error code: ".$e->getCode());
       }
     }
     return $this->upcast($result);

@@ -6,19 +6,11 @@ use Slim\Psr7\Response;
 
 /**
  * So far this tests the API functions assuming good results, but doesn't test the error messages.
- * @todo
-    DoesNotExistViolation account
-    DoesNotExistViolation transaction
-    HashMismatchFailure
-    IntermediateledgerViolation
-    InvalidFieldsViolation
-    PermissionViolation
-    UnexpectedResultFailure
-    UnknownWorkflowViolation
-    WorkflowViolation
- *
- *  OfflineFailure Is this testable? Maybe with an invalid url?
- *  try new transaction with existing uuid.
+ * @todo Test transversal Errors.
+ *   - IntermediateledgerViolation
+ *   - HashMismatchFailure
+ *   - OfflineFailure Is this testable? Maybe with an invalid url?\
+ * @todo Invalid paths currently return 404 which isn't in the spec.
  */
 class SingleNodeTest extends \PHPUnit\Framework\TestCase {
 
@@ -62,9 +54,20 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     }
   }
 
-  function testBadPassword() {
+  function testBadLogin() {
     global $norm_acc_id;
     // This is a comparatively long winded because sendRequest() only uses valid passwords.
+    $request = $this->getRequest('trunkwards')
+      ->withHeader('cc-user', 'zzz123')
+      ->withHeader('cc-auth', 'zzz123');
+    $response = $this->getApp()->process($request, new Response());
+    $this->assertEquals($response->getStatusCode(), 400);
+    $response->getBody()->rewind();
+    $err_obj = json_decode($response->getBody()->getContents());
+    $exception = \CreditCommons\RestAPI::reconstructCCException($err_obj);
+    $this->assertInstanceOf('CreditCommons\Exceptions\DoesNotExistViolation', $exception);
+    $this->assertEquals('account', $exception->type);
+
     $request = $this->getRequest('trunkwards')
       ->withHeader('cc-user', $norm_acc_id)
       ->withHeader('cc-auth', 'zzz123');
@@ -74,6 +77,7 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     $err_obj = json_decode($response->getBody()->getContents());
     $exception = \CreditCommons\RestAPI::reconstructCCException($err_obj);
     $this->assertInstanceOf('CreditCommons\Exceptions\AuthViolation', $exception);
+
   }
 
   function testAccountNames() {
@@ -93,34 +97,39 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     $this->assertNotEmpty($wfs);
   }
 
-  function test3rdParty() {
-    global $users;
-    $this->assertGreaterThan('1', count($users));
-    $payee = key($users);
-    next($users);
-    $payer = key($users);
+  function testBadTransactions() {
+    global $norm_acc_id, $admin_acc_id;
     $obj = [
-      'payee' => 'aaaaaa',
-      'payer' => $payer,
+      'payee' => $admin_acc_id,
+      'payer' => $norm_acc_id,
       'description' => 'test 3rdparty',
       'quant' => 1,
       'type' => '3rdparty'
     ];
+    $obj['payee'] = 'aaaaaaaaaaa';
     $this->sendRequest('transaction/new', 'DoesNotExistViolation', 'post', 'admin', json_encode($obj));
     $obj['payee'] = $payee;
     $obj['quant'] = 999999999;
     $this->sendRequest('transaction/new', 'TransactionLimitViolation', 'post', 'admin', json_encode($obj));
     $obj['quant'] = 0;
     $this->sendRequest('transaction/new', 'CCViolation', 'post', 'admin', json_encode($obj));
-    unset($obj['quant']);
-    $this->sendRequest('transaction/new', 'InvalidFieldsViolation', 'post', 'admin', json_encode($obj));
     $obj['quant'] = 1;
     $obj['type'] = 'zzzzzz';
     $this->sendRequest('transaction/new', 'DoesNotExistViolation', 'post', 'admin', json_encode($obj));
     $obj['type'] = 'disabled';// this is the name of one of the default workflows, which exists for this test
     $this->sendRequest('transaction/new', 'DoesNotExistViolation', 'post', 'admin', json_encode($obj));
     $obj['type'] = '3rdparty';
-    // Now test a valid transaction.
+    $this->sendRequest('transaction/new', 'PermissionViolation', 'post', 'anon', json_encode($obj));
+  }
+
+
+
+  function test3rdParty() {
+    global $users;
+    $this->assertGreaterThan('1', count($users));
+    $payee = key($users);
+    next($users);
+    $payer = key($users);
     // This assumes the default workflow is unmodified.
     $obj = [
       'payee' => $payee,
@@ -129,20 +138,30 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
       'quant' => 1,
       'type' => '3rdparty'
     ];
+
+    $this->sendRequest('transaction/new', 'PermissionViolation', 'post', 'anon', json_encode($obj));
     // 3rdParty transactions are created already complete.
-    $transaction = $this->sendRequest('transaction/new', 'post', 201, 'admin', json_encode($obj));
+    $transaction = $this->sendRequest('transaction/new', 201, 'post', 'admin', json_encode($obj));
     // Check the transaction is written
-    print_r($transaction);
     $this->assertNotNull($transaction->uuid);
     $this->assertEquals($payee, $transaction->entries[0]->payee);
     $this->assertEquals($payer, $transaction->entries[0]->payer);
     $this->assertEquals('test 3rdparty', $transaction->entries[0]->description);
     $this->assertEquals('3rdparty', $transaction->type);
     $this->assertEquals('completed', $transaction->state);
+
+    // try to retrieve a transaction that doesn't exist.
+    $error = $this->sendRequest('transaction/ada5b4f0-33a8-4807-90c7-3aa56ae1c741/full', 'DoesNotExistViolation', 'get', 'admin');
+    $this->assertEquals('transaction', $error->type);
+
+    $this->sendRequest('transaction/'.$transaction->uuid.'/full', 200, 'get', 'admin');
   }
 
   function testTransactionLifecycle() {
-    global $users, $norm_acc_id, $admin_acc_id;
+    global $norm_acc_id, $admin_acc_id;
+    // Check the balances first
+    $init_summary = $this->sendRequest("account/summary/$norm_acc_id", 200);
+    $init_points = $this->sendRequest("account/history/$norm_acc_id", 200);
     $obj = [
       'payer' => $admin_acc_id,
       'payee' => $norm_acc_id,
@@ -156,15 +175,40 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     $this->assertContains('pending', $transaction->transitions);
     $this->assertEquals("validated", $transaction->state);
     // write the transaction
+    $this->sendRequest("transaction/$transaction->uuid/pending", 'PermissionViolation', 'patch', 'anon', json_encode($obj));
     $this->sendRequest("transaction/$transaction->uuid/pending", 201, 'patch');
+
+    $pending_summary = $this->sendRequest("account/summary/$norm_acc_id", 200);
+    $this->assertEquals($pending_summary->pending->balance-1, $init_summary->pending->balance);
+    $this->assertEquals($pending_summary->pending->volume-1, $init_summary->pending->volume);
+    $this->assertEquals($pending_summary->pending->gross_in-1, $init_summary->pending->gross_in);
+    $this->assertEquals($pending_summary->pending->gross_out, $init_summary->pending->gross_out);
+    $this->assertEquals($pending_summary->pending->trades-1, $init_summary->pending->trades);
+    // We can't easily test partners unless we clear the db first.
+    // Admin confirms the transaction
+    $this->sendRequest("transaction/$transaction->uuid/completed", 201, 'patch', 'admin');
+    $completed_summary = $this->sendRequest("account/summary/$norm_acc_id", 200);
+    $completed_points = $this->sendRequest("account/history/$norm_acc_id", 200);
+    $this->assertEquals($completed_summary->completed->balance-1, $init_summary->completed->balance);
+    $this->assertEquals($completed_summary->completed->volume-1, $init_summary->completed->volume);
+    $this->assertEquals($completed_summary->completed->gross_in-1, $init_summary->completed->gross_in);
+    $this->assertEquals($completed_summary->completed->gross_out, $init_summary->completed->gross_out);
+    $this->assertEquals($completed_summary->completed->trades-1, $init_summary->completed->trades);
+    $this->assertEquals(count((array)$completed_points) -2, count((array)$init_points));
     // Erase
-    $this->sendRequest("transaction/$transaction->uuid/erased", 201, 'patch');
+    $this->sendRequest("transaction/$transaction->uuid/erased", 201, 'patch', 'admin');
+    $erased_summary = $this->sendRequest("account/summary/$norm_acc_id", 200);
+    $this->assertEquals($erased_summary, $init_summary);
   }
 
   /**
+   * This doesn't work because the middleware ignores the query parameters.
    * @todo wait for an answer to https://github.com/Nyholm/psr7/issues/181
    */
-  function __testTransactionFilterRetrieve() {
+  function testTransactionFilterRetrieve() {
+    $this->sendRequest("transaction", 'PermissionViolation', 'get', 'anon');
+    $uuids = $this->sendRequest("transaction", 200);
+    return;
     // Filter description
     $uuids = $this->sendRequest("transaction?description=test%203rdparty", 200);
     //We have the results, now fetch and test the first result
@@ -176,14 +220,12 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     global $users, $test_user_id;
     end($users);
     $test_user_id = key($users);
-    $points = $this->sendRequest("account/history/$test_user_id", 200);
+    $this->sendRequest("account/history/$test_user_id", 'PermissionViolation', 'get', 'anon');
+    //  Currently there is no per-user access control around limits visibility.
     $limits = $this->sendRequest("account/limits/$test_user_id", 200);
-    $this->assertIsObject($limits);
-    $this->assertObjectHasAttribute('min', $limits);
-    $this->assertObjectHasAttribute('max', $limits);
     $this->assertlessThan(0, $limits->min);
     $this->assertGreaterThan(0, $limits->max);
-    $summary = $this->sendRequest("account/summary/$test_user_id", 200);
+    // account/summary/{acc_id} is already tested
   }
 
 

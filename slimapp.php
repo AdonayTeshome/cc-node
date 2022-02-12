@@ -11,6 +11,7 @@ namespace CCNode;
 
 use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\CCError;
+use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\PermissionViolation;
 use CreditCommons\Exceptions\AuthViolation;
@@ -201,7 +202,7 @@ $app->patch('/transaction/{uuid:'.$uuid_regex.'}/{dest_state}', function (Reques
   // Ensure that transversal transactions are being manipulated only from their
   // end points, not an intermediate ledger
   if (!$orientation->upstreamAccount and !empty($transaction->payer->url) and !empty($transaction->payee->url)) {
-    throw new Exceptions\IntermediateLedgerViolation();
+    throw new IntermediateLedgerViolation();
   }
   $transaction->changeState($args['dest_state']);
   return $response->withStatus(201);
@@ -228,6 +229,7 @@ $app->get('/transaction', function (Request $request, Response $response) {
   // return uuids or entry ids?
   return json_response($response, $uuids, 200);
 });
+
 
 return $app;
 
@@ -317,7 +319,7 @@ function permitted_operations() : array {
  * @global stdClass $user
  * @param Request $request
  * @return void
- * @throws HashMismatchFailure
+ * @throws DoesNotExistViolation|HashMismatchFailure|AuthViolation
  */
 function authenticate(Request $request) : void {
   global $config, $user;
@@ -327,26 +329,19 @@ function authenticate(Request $request) : void {
     $auth = $request->getHeaderLine('cc-auth');
     // Users connect with an API key which can compared directly with the database.
     if ($acc_id) {
-      try {
-        $user = load_account($acc_id);
-      }
-      catch (\CreditCommons\Exceptions\DoesNotExistViolation $e) {
-        // Fallback to anon.
-        return;
-      }
+      $user = load_account($acc_id);
       if ($user instanceOf Remote) {
         // Remote nodes connect with a hash of the connected account, which needs to be compared.
         $query = "SELECT TRUE FROM hash_history WHERE acc = '$account->id' AND hash = '$auth' ORDER BY id DESC LIMIT 0, 1";
         $result = Db::query($query)->fetch_row();
         if ($hash && !$result or !$hash && $result) {
-          throw new HashMismatchFailure(remoteNode: $acc_id);
+          throw new HashMismatchFailure(otherNode: $acc_id);
         }
       }
       elseif (!accountStore()->filter(['chars' => $acc_id, 'auth' => $auth])) {
         //local user with the wrong password
         throw new AuthViolation(acc_id: $acc_id);
       }
-      // Acc_id is neither local nor remote, fallback to anon.
     }
     else {
       // Blank username supplied, fallback to anon
@@ -386,33 +381,47 @@ function accountStore() : AccountStore {
 }
 
 /**
- * Convert all errors into the CC Error format, which includes a field showing
+ * Convert all errors into an stdClass, which includes a field showing
  * which node caused the error
  */
 class Slim3ErrorHandler {
   /**
    * Probably all errors and warnings should include an emergency SMS to admin.
-   * This callback is also used by the ValidationMiddleware
+   * This callback is also used by the ValidationMiddleware.
+   * @note The task is made complicated because the $exception->message property is
+   * protected and is lost during json_encode
    */
   public function __invoke($request, $response, $exception) {
     global $config;
+    $exception_class = explode('\\', get_class($exception));
+    $exception_class = array_pop($exception_class);
     if (!$exception instanceOf CCError) {
-      // isolate only the first exception because the protocol allows only one.
-      $e = new CCFailure(
-        message: $exception->getMessage()?:get_class($exception)
-      );
-      while ($exception = $exception->getPrevious()) {
-        $e = new CCFailure(
-          message: $exception->getMessage()?:get_class($exception)
-        );
+      $code = 500;
+      $exception_class = 'CCFailure';
+      $output = (object)[
+        'message' => $exception->getMessage()?:$exception_class
+      ];
+      // Just show the last error.
+      while ($exception = $exception->getPrevious()) {echo 1;
+        $output = (object)[
+          'message' => $exception->getMessage()?:$exception_class
+        ];
+        //if (get_class($exception) == 'League\OpenAPIValidation\PSR7\Exception\NoResponseCode') break;
       }
-      $exception = $e;
     }
-    $exception->node = $config['node_name'];
-    $exception->class = get_class($exception);
+    elseif (in_array($exception_class, ['CCViolation', 'CCFailure'])) {
+      $output = (object)[
+        'message' => $exception->getMessage()
+      ];
+    }
+    else {
+      $output = (object)($exception);
+    }
+    $output->node = $config['node_name'];
+    $output->class = $exception_class;
     // this bypasses the middleware, so need to do this again.
 	  $response = $response->withHeader('Node-path', absolute_path());
-    return json_response($response, $exception, $exception->getCode());
+    return json_response($response, $output, $code??$exception->getCode());
    }
 }
 

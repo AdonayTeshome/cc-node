@@ -19,12 +19,12 @@ abstract class Record {
   public $status;
 
   /**
-   * @var float|null
+   * @var int|null
    */
   public $min;
 
   /**
-   * @var float|null
+   * @var int|null
    */
   public $max;
 

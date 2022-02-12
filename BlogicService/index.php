@@ -4,6 +4,7 @@ namespace BlogicService;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\App;
+
 /**
  * Business logic service
  */
@@ -65,19 +66,20 @@ function payer_fee(stdClass $entry, $fee) : stdClass {
 
 /**
  *
- * @param float $quant
+ * @param int $quant
  * @param float $fee
- * @return float
+ * @return int
  */
-function calc(float $quant, float $fee) {
+function calc(int $quant, float $fee) : int {
+  // the setting is a fix num of units or a percent.
   preg_match('/([0-9.])(%?)/', $fee, $matches);
   $num = $matches[1];
   $percent = $matches[2];
   if ($percent) {
-    $val = (float)$quant * $num/100;
+    $val = $quant * $num/100;
   }
   else {
-    $val =  (float)$num;
+    $val =  $num;
   }
-  return (float)$val;
+  return floor($val);
 }
