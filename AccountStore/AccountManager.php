@@ -64,7 +64,6 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
    *   True for active, FALSE for Blocked
    */
   function filterByStatus(bool $status) {
-    global $config;
     $this->accounts = array_filter($this->accounts, function ($a) use ($status) {
       return $status == $a->status;
     });
@@ -85,12 +84,12 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
    * View all the accounts in the list.
    *
    * @param string $view_mode
-   *   can be own, full, or name
+   *   can be full, or name
    * @return stdClass[]
    */
-  function view(string $view_mode) : array {
+  function view() : array {
     $results = array_map(
-      function ($a) use ($view_mode) {return $a->view($view_mode);},
+      function ($a) {return $a->view();},
       $this->accounts
     );
     return array_values($results);

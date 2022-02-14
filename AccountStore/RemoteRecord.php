@@ -17,4 +17,9 @@ class RemoteRecord extends Record {
     parent::__construct($data->id, $data->status, $data->min??NULL, $data->max??NULL);
     $this->url = $url;
   }
+
+
+  function view() {
+    return $this;
+  }
 }

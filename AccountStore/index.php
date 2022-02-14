@@ -7,40 +7,32 @@ use Slim\Exception\NotFoundException;
 use Slim\App;
 
 /**
- * AccountStore service
- *
- * Service providing information about accountholders. This implementation is
- * very primitive:
- * - It stores data in a single json file
- * - Allows default values and overriding of defaults.
- * - Allows filtering of users on status, name, and whetther the accounts are local or pointers to trunkward or leafward ledgers.
- * Normally this service would be replaced by a wrapper around an existing system of accounts.
+ * AccountStore service. For reference only
+ * Normally this service would be replaced by a wrapper around the main user database.
+ * This implementation uses a simple json file to store the users.
  */
 
-ini_set('display_errors', 1);
-$config = parse_ini_file('accountstore.ini');
 require_once '../vendor/autoload.php';
 $app = new App();
 
 $app->get('/filter/full', function (Request $request, Response $response, $args) {
   $accounts = account_store_filter($request->getQueryParams());
-  $result = $accounts->view('full'); // array
+  $result = $accounts->view(); // array
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
 });
 
 $app->get('/filter', function (Request $request, Response $response, $args) {
   $accounts = account_store_filter($request->getQueryParams());
-  $result = $accounts->view('name'); // array
+  $result = array_keys($accounts->accounts); // array
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
 });
 
 $app->get('/{acc_id}', function (Request $request, Response $response, $args) {
-  // View_mode can be either name, full, own (with null for default values)
   $accounts = new AccountManager();
   if ($accounts->has($args['acc_id'])) {
-    $account = $accounts[$args['acc_id']]->view('full');
+    $account = $accounts[$args['acc_id']]->view();
     $response->getBody()->write(json_encode($account));
   }
   else{

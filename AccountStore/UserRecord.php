@@ -13,6 +13,10 @@ class UserRecord extends Record {
    */
   public $key;
 
+  /**
+   * Whether this user is an admin
+   * @var bool
+   */
   public $admin;
 
   function __construct(\stdClass $data) {
@@ -30,11 +34,9 @@ class UserRecord extends Record {
   }
 
 
-  function view($mode) {
-    $result = parent::view($mode);
-    if ($mode <> 'own') {
-      unset($result->key);
-    }
+  function view() {
+    $result = clone($this);
+    unset($result->key);
     return $result;
   }
 }

@@ -11,27 +11,22 @@ abstract class Record {
    * The unique name of the account
    * @var string
    */
-  public $id;
+  public string $id;
 
   /**
    * @var bool
    */
-  public $status;
+  public bool $status;
 
   /**
    * @var int|null
    */
-  public $min;
+  public int $min;
 
   /**
    * @var int|null
    */
-  public $max;
-
-  /**
-   * @var array
-   */
-  private $overridableFields = ['min', 'max'];
+  public int $max;
 
   /**
    *
@@ -53,48 +48,11 @@ abstract class Record {
    * @param \stdClass $new_data
    */
   function set(\stdClass $new_data) {
-    if (isset($new_data->status)) {
-      $this->status = (bool)$new_data->status;
-    }
-    foreach ($this->overridableFields as $fname) {
-      if (isset($new_data->{$fname})) {
-        // We can't send null values from form input so empty string means null i.e. revert to default.
-        $val = $new_data->{$fname} == '' ? NULL : $new_data->{$fname};
-        $this->{$fname} = $val;
-      }
-    }
+    $this->status = (bool)$new_data->status;
+    $this->min = (int)$new_data->min;
+    $this->max = (int)$new_data->max;
   }
 
-  function overridden() {
-    $overridden = new \stdClass();
-    foreach ($this->overridableFields as $fname) {
-      if (!is_null($this->{$fname})) {
-        $overridden->{$fname} = $this->{$fname};
-      }
-    }
-    return $overridden;
-  }
-
-  function view($mode) {
-    global $config;
-    if ($mode == 'own') {
-      $ret = $this;
-    }
-    if ($mode == 'name') {
-      $ret = $this->id;
-    }
-    if ($mode == 'full') {
-      $full = clone($this);
-      if (is_null($this->max)) {
-        $full->max = $config['default_max'];
-      }
-      if (is_null($this->min)) {
-        $full->min = $config['default_min'];
-      }
-      $ret = $full;
-    }
-
-    return $ret;
-  }
+  abstract function view();
 
 }
