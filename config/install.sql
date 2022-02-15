@@ -1,13 +1,14 @@
 CREATE TABLE transactions (
-  id int(11) NOT NULL,
-  uuid varchar(40) NOT NULL,
-  version int(2) NOT NULL DEFAULT 1,
-  type varchar(16) NOT NULL,
-  scribe varchar(64) NOT NULL comment 'The account which wrote this version of the transaction.',
-  state enum('pending', 'completed', 'erased', 'timedout') NOT NULL,
-  payee_hash varchar(40) DEFAULT NULL comment '128 is for debugging, hashes will 40 chars',
-  payer_hash varchar(40) DEFAULT NULL comment '128 is for debugging, hashes will 40 chars',
-  written DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  id int(11) NOT NULL comment 'Internal transaction id',
+  uuid varchar(40) NOT NULL comment 'Universal transaction id',
+  version int(2) NOT NULL DEFAULT 1 comment 'Transaction version number',
+  type varchar(16) NOT NULL comment 'Workflow id',
+  scribe varchar(64) NOT NULL comment 'User which wrote this version.',
+  state enum('validated', 'pending', 'completed', 'erased', 'timedout') NOT NULL,
+  payee_hash varchar(40) DEFAULT NULL comment 'Hash (remote accounts only)',
+  payer_hash varchar(40) DEFAULT NULL comment 'Hash (remote accounts only)',
+  created DATETIME,
+  updated DATETIME
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 ALTER TABLE transactions
@@ -34,15 +35,6 @@ ALTER TABLE entries
 ALTER TABLE entries
   MODIFY id int(11) NOT NULL AUTO_INCREMENT;
 
-CREATE TABLE temp (
-  uuid varchar(40) NOT NULL,
-  serialized MEDIUMBLOB NOT NULL,
-  written DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'to be cleared by cron'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='for initiated and validated transactions';
-
-ALTER TABLE temp
-  ADD PRIMARY KEY (uuid);
-
 # A list of hashes from which to validate against incoming requests
 DROP VIEW IF EXISTS hash_history;
 CREATE ALGORITHM = UNDEFINED VIEW hash_history AS
@@ -53,7 +45,6 @@ UNION
   SELECT t.id, e.payee as acc, t.payee_hash as hash
     FROM transactions t JOIN entries e on t.id = e.txid and e.is_primary = 1
     WHERE payee_hash <> '';
-
 
 # This view helps filters out superannuated transactions.
 DROP VIEW IF EXISTS versions;
@@ -76,7 +67,8 @@ CREATE ALGORITHM = UNDEFINED VIEW transaction_index AS
       0 AS expenditure,
       + e.quant AS diff,
       e.quant AS volume,
-      t.written,
+      t.created,
+      t.updated,
       e.is_primary
   FROM transactions t
     INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver
@@ -94,7 +86,8 @@ UNION
       e.quant AS expenditure,
       - e.quant AS diff,
       e.quant AS volume,
-      t.written,
+      t.created,
+      t.updated,
       e.is_primary
   FROM transactions t
     INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver

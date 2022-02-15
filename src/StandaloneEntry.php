@@ -6,7 +6,7 @@ use CCNode\Db;
 /**
  * Transaction entry in a flat format.
  */
-class FlatEntry extends \CreditCommons\FlatEntry {
+class StandaloneEntry extends \CreditCommons\StandaloneEntry {
 
 
   /**

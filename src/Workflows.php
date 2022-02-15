@@ -80,8 +80,8 @@ class Workflows extends \CreditCommons\Workflows {
         $abs_path = '/'.implode('/', array_reverse($trunkwards_nodes));
       }
       else{
-        // @todo how do we get the current node name here? Do we need it?
-        $abs_path = '<trunk>';
+        global $config;
+        $abs_path = $config['node_name'];
       }
       $trunkwards_tree[$abs_path] = $local_workflows;
     }

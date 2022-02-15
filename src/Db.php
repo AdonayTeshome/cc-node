@@ -1,6 +1,7 @@
 <?php
 
 namespace CCNode;
+use CreditCommons\Exceptions\CCFailure;
 
 class Db {
 
@@ -36,7 +37,7 @@ class Db {
     $connection = static::connect();
     $result = $connection->query($query);
     if ($error = static::error()) {
-     trigger_error($error, E_USER_ERROR);
+      throw new CCFailure('Database error:' . $error .": ".$query);
     }
     if (strtoupper(substr($query, 0, 6)) == 'INSERT') {
       return $connection->insert_id;

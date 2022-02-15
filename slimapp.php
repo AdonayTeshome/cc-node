@@ -21,7 +21,7 @@ use CreditCommons\RestAPI;
 use CreditCommons\Account;
 use CCNode\Accounts\BoT;
 use CCNode\Workflows;
-use CCNode\FlatEntry;
+use CCNode\StandaloneEntry;
 use CCNode\NewTransaction;
 
 use Psr\Http\Message\ResponseInterface as Response;
@@ -90,10 +90,12 @@ $app->options('/', function (Request $request, Response $response) {
   check_permission($request, 'permittedEndpoints');
   return json_response($response, permitted_operations());
 });
+
 // @todo this isn't documented or implemented???
 $app->get('/trunkwards', function (Request $request, Response $response) {
-  check_permission($request, 'trunkwardsNodes');
-  return json_response($response, RestAPI::getTrunkwardsNodeNames(API_calls()), 200);
+  check_permission($request, 'trunkwardNodes');
+  $node_names = API_calls()->getTrunkwardNodeNames();
+  return json_response($response, $node_names, 200);
 });
 
 $app->get('/workflows', function (Request $request, Response $response) {
@@ -154,7 +156,7 @@ $app->get('/account/history/{acc_path}', function (Request $request, Response $r
 });
 
 // Create a new transaction
-$app->post('/transaction/new', function (Request $request, Response $response) {
+$app->post('/transaction', function (Request $request, Response $response) {
   global $orientation, $user;
   check_permission($request, 'newTransaction');
   $request->getBody()->rewind(); // ValidationMiddleware leaves this at the end.
@@ -168,7 +170,7 @@ $app->post('/transaction/new', function (Request $request, Response $response) {
   $workflow = (new Workflows())->get($transaction->type);
   if ($workflow->creation->confirm) {
     // Send the transaction back to the user to confirm.
-    $transaction->writeToTemp();
+    $transaction->saveNewVersion();
     $status_code = 200;
   }
   else {
@@ -180,14 +182,14 @@ $app->post('/transaction/new', function (Request $request, Response $response) {
   return json_response($response, $transaction, $status_code);
 });
 
-$app->post('/transaction/new/relay', function (Request $request, Response $response) {
+$app->post('/transaction/relay', function (Request $request, Response $response) {
   global $orientation;
   check_permission($request, 'relayTransaction');
   $request->getBody()->rewind(); // ValidationMiddleware leaves this at the end.
   $data = json_decode($request->getBody()->read());
   $transaction = TransversalTransaction::createFromUpstream($data);
   $transaction->buildValidate();
-  $transaction->writeToTemp();
+  $transaction->saveNewVersion();
   $orientation->responseMode = TRUE;
   return json_response($response, $transaction, 201);
 });
@@ -212,7 +214,7 @@ $app->get('/transaction/{uuid:'.$uuid_regex.'}/{format}', function (Request $req
   global $orientation;
   check_permission($request, 'getTransaction');
   if ($args['format'] == 'entry') {
-    $result = FlatEntry::loadByUuid($args['uuid']);
+    $result = StandaloneEntry::loadByUuid($args['uuid']);
   }
   else {// format = full
     $result = Transaction::loadByUuid($args['uuid']);
@@ -290,13 +292,16 @@ function check_permission(Request $request, string $operationId) {
 function permitted_operations() : array {
   global $user;
   $data = CreditCommonsInterface::OPERATIONS;
+  $has_BoT = (bool)API_calls();
   $permitted[] = 'permittedEndpoints';
   if ($user->id <> '<anon>') {
     $permitted[] = 'handshake';
     $permitted[] = 'workflows';
     if (!$user instanceof BoT) {
       // This is the default privacy setting; leafward nodes are private to trunkward nodes
-      $permitted[] = 'trunkwardsNodes';
+      if ($has_BoT) {
+        $permitted[] = 'trunkwardNodes';
+      }
       $permitted[] = 'accountHistory';
       $permitted[] = 'accountLimits';
       $permitted[] = 'accountNameAutocomplete';
@@ -397,17 +402,19 @@ class Slim3ErrorHandler {
     $exception_class = array_pop($exception_class);
     if (!$exception instanceOf CCError) {
       $code = 500;
+      $trace = $exception->getTrace(); //experimental;
       $exception_class = 'CCFailure';
       $output = (object)[
         'message' => $exception->getMessage()?:$exception_class
       ];
       // Just show the last error.
-      while ($exception = $exception->getPrevious()) {echo 1;
+      while ($exception = $exception->getPrevious()) {
         $output = (object)[
           'message' => $exception->getMessage()?:$exception_class
         ];
         //if (get_class($exception) == 'League\OpenAPIValidation\PSR7\Exception\NoResponseCode') break;
       }
+      $output->trace = $trace;
     }
     elseif (in_array($exception_class, ['CCViolation', 'CCFailure'])) {
       $output = (object)[
@@ -438,7 +445,7 @@ function json_response(Response $response, $body, int $code = 200) : Response {
     throw new CCFailure('Illegal value passed to json_response()');
   }
   $response->getBody()->write(json_encode($body, JSON_UNESCAPED_UNICODE));
-  return $response->withHeader('Content-Type', 'application/json')->withStatus($code);
+  return $response->withStatus($code)->withHeader('Content-Type', 'application/json');
 }
 
 /**

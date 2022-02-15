@@ -13,10 +13,8 @@ class Wallet {
   //Also possible: partners_global
   const TRADE_STATS = ['entries', 'partners_local', 'trades', 'gross_in', 'gross_out', 'balance', 'volume'];
 
-
    /**
-    *
-    * @param string $id
+    * @param Account $account
     */
   function __construct(Account $account) {
     $this->account = $account;
@@ -36,50 +34,51 @@ class Wallet {
    * @return array
    *   Balances keyed by timestamp, oldest first
    *
+   * @note It uses the transaction updated time, not the created time
    * @todo URGENT this reads all versions transactions as different transactions
    */
   function getHistory($samples = 0) : array {
     global $config;
-
-    $chart = [];
+    $points = [];
     Db::query("SET @csum := 0");
-    $query = "SELECT written, (@csum := @csum + diff) as balance FROM transaction_index WHERE uid1 = '$this->id' ORDER BY written ASC";
+    $query = "SELECT updated, (@csum := @csum + diff) as balance FROM transaction_index WHERE uid1 = '$this->id' ORDER BY updated ASC";
     $result = Db::query($query);
     // database is storing timestamps as 'Y-m-d H:i:s.0'
     // make a first point at zero balance 1 sec before the first balance.
-    $t = $result->fetch_object();
-    $start_sec = (new \DateTime($t->written))->modify('-1 second');
-    // 2022-02-02 23:39:56.000000
-    $points[$start_sec->format('Y-m-d H:i:s')] = 0;
-    $points[$t->written] = round($t->balance, $config['decimal_places']);
-    while($t = $result->fetch_object()) {
-      $points[$t->written] = round($t->balance, $config['decimal_places']);
-    }
-
-    if ($samples === 0){
-      $times = $values = [];
-      // Make two values for each one in the keys and values.
-      foreach ($points as $time => $bal) {
-        $secs = strtotime($time);
-        $times[] = date("Y-m-d H:i:s", $secs);
-        $times[] = date("Y-m-d H:i:s", $secs+1);
-        $values[] = $bal;
-        $values[] = $bal;
+    if ($t = $result->fetch_object()) {
+      $start_sec = (new \DateTime($t->updated))->modify('-1 second');
+      // 2022-02-02 23:39:56.000000
+      $points[$start_sec->format('Y-m-d H:i:s')] = 0;
+      $points[$t->updated] = round($t->balance, $config['decimal_places']);
+      while($t = $result->fetch_object()) {
+        $points[$t->updated] = round($t->balance, $config['decimal_places']);
       }
-      // Now slide the arrays against each other to create steps.
-      array_shift($times);
-      array_pop($values);
-      unset($points);
-      $points = array_combine($times, $values);
-    }
-    elseif($samples) {
-      //
-    }
-    if (!$samples and $points) {
-      // Finish the line from the last transaction until now.
-      $points[date("Y-m-d H:i:s")] = end($points); //this date format corresponds to the mysql DATETIME
-      // Note that since the first point is ALWAYS the first transaction in this
-      // implementation, we don't create a create a point for initial 0 balance.
+
+      if ($samples === 0){
+        $times = $values = [];
+        // Make two values for each one in the keys and values.
+        foreach ($points as $time => $bal) {
+          $secs = strtotime($time);
+          $times[] = date("Y-m-d H:i:s", $secs);
+          $times[] = date("Y-m-d H:i:s", $secs+1);
+          $values[] = $bal;
+          $values[] = $bal;
+        }
+        // Now slide the arrays against each other to create steps.
+        array_shift($times);
+        array_pop($values);
+        unset($points);
+        $points = array_combine($times, $values);
+      }
+      elseif($samples) {
+        //
+      }
+      if (!$samples and $points) {
+        // Finish the line from the last transaction until now.
+        $points[date("Y-m-d H:i:s")] = end($points); //this date format corresponds to the mysql DATETIME
+        // Note that since the first point is ALWAYS the first transaction in this
+        // implementation, we don't create a create a point for initial 0 balance.
+      }
     }
     return $points;
   }

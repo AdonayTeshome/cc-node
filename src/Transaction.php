@@ -16,7 +16,6 @@ use CreditCommons\TransactionInterface;
 use CreditCommons\BaseTransaction;
 use CreditCommons\Account;
 use CreditCommons\TransversalEntry;
-use CreditCommons\Exceptions\UnknownWorkflowViolation;
 
 class Transaction extends BaseTransaction implements \JsonSerializable {
 
@@ -30,6 +29,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     global $user;
     $data->author = $user->id;
     $data->state = TransactionInterface::STATE_INITIATED;
+    $data->entries[0]->primary = 1;
     $data->entries = static::createEntries($data->entries, $user);
     $class = static::determineTransactionClass($data->entries);
     return $class::create($data);
@@ -55,56 +55,30 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    */
   static function loadByUuid($uuid) : Transaction {
     global $orientation;
-    $q = "SELECT id as txID, uuid, version, type, state FROM transactions "
+    $q = "SELECT id as txID, uuid, created, updated, version, type, state FROM transactions "
       . "WHERE uuid = '$uuid' "
       . "ORDER BY version DESC "
       . "LIMIT 0, 1";
     $tx = Db::query($q)->fetch_object();
+    if (!$tx) {
+      throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
+    }
 
-    if ($tx) {
-      $q = "SELECT payee, payer, description, quant, author, metadata FROM entries "
-        . "WHERE txid = $tx->txID "
-        . "ORDER BY id ASC";
-      $result = Db::query($q);
-      while ($row = $result->fetch_object()) {
-        $row->metadata = unserialize($row->metadata);
-        $entry_rows[] = $row;
-      }
-      $tx->entries = static::createEntries($entry_rows);
-      $class = static::determineTransactionClass($tx->entries);
-      // All these values should be validated, so no need to use static::create
-      $transaction = $class::create($tx);
+    $q = "SELECT payee, payer, description, quant, author, metadata FROM entries "
+      . "WHERE txid = $tx->txID "
+      . "ORDER BY id ASC";
+    $result = Db::query($q);
+    while ($row = $result->fetch_object()) {
+      $row->metadata = unserialize($row->metadata);
+      $entry_rows[] = $row;
     }
-    else {
-      // No saved transaction exists, so check the temp table
-      require_once __DIR__.'/Entry.php';// I don't think this is necessary any more.
-      $result = Db::query("SELECT serialized FROM temp WHERE uuid = '$uuid'");
-      if ($stored = $result->fetch_object() and $string = $stored->serialized) {
-        $transaction = unserialize($string);
-      }
-      else {
-        throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
-      }
-      // Tell the node if these accounts imply coordination with other (downstream) ledgers
-      $orientation->addAccount($transaction->entries[0]->payee);
-      $orientation->addAccount($transaction->entries[0]->payer);
-    }
+    $tx->entries = static::createEntries($entry_rows);
+    $class = static::determineTransactionClass($tx->entries);
+    // All these values should be validated, so no need to use static::create
+    $transaction = $class::create($tx);
+
     return $transaction;
   }
-
-  /**
-   * Write the serialized transaction to the temp table.
-   * @return bool
-   *   TRUE on success
-   */
-  function writeToTemp() {
-    //version is 0 until is it written in the main transactions table.
-    $data = Db::connect()->real_escape_string(serialize($this));
-    $q = "INSERT INTO temp (uuid, serialized) VALUES ('$this->uuid', '$data')";
-    $result = Db::query($q);
-    return (bool)$result;
-  }
-
 
   /**
    * Call the business logic, append entries.
@@ -185,24 +159,29 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    */
   public function saveNewVersion() {
     global $user;
+    $now = date("Y-m-d H:i:s");
     $this->version++;
-    // The datestamp is added automatically
-    $q = "INSERT INTO transactions (uuid, version, type, state, scribe) "
-    . "VALUES ('$this->uuid', $this->version, '$this->type', '$this->state', '$user->id')";
+    if ($this->version < 2) {
+      $this->created = $now;
+    }
+    $this->updated = $now;
+
+    $q = "INSERT INTO transactions (uuid, version, type, state, scribe, created, updated) "
+    . "VALUES ('$this->uuid', $this->version, '$this->type', '$this->state', '$user->id', '$this->created', '$this->updated')";
     $new_id = Db::query($q);
     $this->writeEntries($new_id);
   }
 
-  protected function writeEntries($new_txid) {
+  protected function writeEntries($new_txid) : void{
     if ($this->txID) {// this transaction has already been written in an earlier state
       $q = "UPDATE entries set txid = $new_txid WHERE txid = $this->txID";
       Db::query($q);
     }
     else {// this is the first time the transaction is written properly
+      reset($this->entries)->primary = TRUE;
       foreach ($this->entries as $entry) {
         $this->insertEntry($new_txid, $entry);
       }
-      Db::query("DELETE FROM temp WHERE uuid = '$this->uuid'");
     }
   }
 
@@ -215,7 +194,6 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * @note No database errors are anticipated.
    */
   private function insertEntry(int $txid, Entry $entry) : int {
-    static $primary = 1;
     foreach (['payee', 'payer'] as $role) {
       $$role = $entry->{$role}->id;
       if ($entry->{$role} instanceof RemoteAccount) {
@@ -224,9 +202,9 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     }
     $metadata = serialize($entry->metadata);
     $desc = Db::connect()->real_escape_string($entry->description);
+    $primary = $entry->primary??0;
     $q = "INSERT INTO entries (txid, payee, payer, quant, description, author, metadata, is_primary) "
       . "VALUES ($txid, '$payee', '$payer', '$entry->quant', '$desc', '$entry->author', '$metadata', '$primary')";
-    $primary = 0;
     if ($this->id = Db::query($q)) {
       return (bool)$this->id;
     }
@@ -281,6 +259,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * they don't exist, as such, in the db.
    */
   static function filter(array $params) : array {
+    global $user;
     extract($params);
     // Get only the latest version of each row in the transactions table.
     $query = "SELECT e.id, t.uuid FROM transactions t "
@@ -321,14 +300,17 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     }
     if (isset($before)) {
       $date = date("Y-m-d H:i:s", strtotime($before));
-      $conditions[]  = "written < '$date'";
+      $conditions[]  = "updated < '$date'";
     }
     if (isset($after)) {
       $date = date("Y-m-d H:i:s", strtotime($after));
-      $conditions[]  = "written > '$date'";
+      $conditions[]  = "updated > '$date'";
     }
     if (isset($state)) {
       $conditions[]  = "state = '$state'";
+      if ($state == 'validated') {
+        $conditions[]  = "author = '$user->id'";
+      }
     }
     if (isset($type)) {
       $conditions[]  = "type = '$type'";
@@ -360,6 +342,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     global $user;
     return [
       'uuid' => $this->uuid,
+      'updated' => $this->updated,
       'state' => $this->state,
       'type' => $this->type,
       'version' => $this->version,

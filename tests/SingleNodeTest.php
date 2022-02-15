@@ -11,6 +11,8 @@ use Slim\Psr7\Response;
  *   - HashMismatchFailure
  *   - OfflineFailure Is this testable? Maybe with an invalid url?\
  * @todo Invalid paths currently return 404 which isn't in the spec.
+ *
+ * @todo check that the Node header is present in responses. (can't remember what that is used for)
  */
 class SingleNodeTest extends \PHPUnit\Framework\TestCase {
 
@@ -107,19 +109,19 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
       'type' => '3rdparty'
     ];
     $obj['payee'] = 'aaaaaaaaaaa';
-    $this->sendRequest('transaction/new', 'DoesNotExistViolation', 'post', 'admin', json_encode($obj));
-    $obj['payee'] = $payee;
+    $this->sendRequest('transaction', 'DoesNotExistViolation', 'post', 'admin', json_encode($obj));
+    $obj['payee'] = $admin_acc_id;
     $obj['quant'] = 999999999;
-    $this->sendRequest('transaction/new', 'TransactionLimitViolation', 'post', 'admin', json_encode($obj));
+    $this->sendRequest('transaction', 'TransactionLimitViolation', 'post', 'admin', json_encode($obj));
     $obj['quant'] = 0;
-    $this->sendRequest('transaction/new', 'CCViolation', 'post', 'admin', json_encode($obj));
+    $this->sendRequest('transaction', 'CCViolation', 'post', 'admin', json_encode($obj));
     $obj['quant'] = 1;
     $obj['type'] = 'zzzzzz';
-    $this->sendRequest('transaction/new', 'DoesNotExistViolation', 'post', 'admin', json_encode($obj));
+    $this->sendRequest('transaction', 'DoesNotExistViolation', 'post', 'admin', json_encode($obj));
     $obj['type'] = 'disabled';// this is the name of one of the default workflows, which exists for this test
-    $this->sendRequest('transaction/new', 'DoesNotExistViolation', 'post', 'admin', json_encode($obj));
+    $this->sendRequest('transaction', 'DoesNotExistViolation', 'post', 'admin', json_encode($obj));
     $obj['type'] = '3rdparty';
-    $this->sendRequest('transaction/new', 'PermissionViolation', 'post', 'anon', json_encode($obj));
+    $this->sendRequest('transaction', 'PermissionViolation', 'post', 'anon', json_encode($obj));
   }
 
 
@@ -138,10 +140,10 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
       'quant' => 1,
       'type' => '3rdparty'
     ];
+    $this->sendRequest('transaction', 'PermissionViolation', 'post', 'anon', json_encode($obj));
 
-    $this->sendRequest('transaction/new', 'PermissionViolation', 'post', 'anon', json_encode($obj));
-    // 3rdParty transactions are created already complete.
-    $transaction = $this->sendRequest('transaction/new', 201, 'post', 'admin', json_encode($obj));
+    // Default 3rdParty workflow saves transactions immemdiately in completed state.
+    $transaction = $this->sendRequest('transaction', 201, 'post', 'admin', json_encode($obj));
     // Check the transaction is written
     $this->assertNotNull($transaction->uuid);
     $this->assertEquals($payee, $transaction->entries[0]->payee);
@@ -170,7 +172,7 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
       'type' => 'bill'
     ];
     // 'bill' transactions must be approved, and enter pending state.
-    $transaction = $this->sendRequest('transaction/new', 200, 'post', 'acc', json_encode($obj));
+    $transaction = $this->sendRequest('transaction', 200, 'post', 'acc', json_encode($obj));
     $this->assertNotEmpty($transaction->transitions);
     $this->assertContains('pending', $transaction->transitions);
     $this->assertEquals("validated", $transaction->state);
