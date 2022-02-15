@@ -176,6 +176,7 @@ $app->post('/transaction', function (Request $request, Response $response) {
   else {
     // Write the transaction immediately to its 'creation' state
     $transaction->state = $workflow->creation->state;
+    $transaction->version = 0;
     $transaction->saveNewVersion();
     $status_code = 201;
   }

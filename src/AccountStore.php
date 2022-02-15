@@ -72,7 +72,7 @@ class AccountStore extends Requester {
         throw new DoesNotExistViolation(type: 'account', id: $name);
       }
       else {
-        throw new CCFailure("AccountStore returned an invalid error code: ".$e->getCode());
+        throw new CCFailure("AccountStore returned an invalid error code looking for $name: ".$e->getCode());
       }
     }
     return $this->upcast($result);

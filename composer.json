@@ -13,9 +13,9 @@
     }
   ],
   "repositories": {
-    "ccnode": {
+    "cclib": {
       "type": "vcs",
-      "url": "git@gitlab.com:credit-commons-software-stack/cc-node.git"
+      "url": "git@gitlab.com:credit-commons-software-stack/cc-php-lib.git"
     }
   },
   "require": {

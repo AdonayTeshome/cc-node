@@ -35,18 +35,21 @@ class Wallet {
    *   Balances keyed by timestamp, oldest first
    *
    * @note It uses the transaction updated time, not the created time
-   * @todo URGENT this reads all versions transactions as different transactions
+   * @todo URGENT this reads all versions of transactions as separate transactions
    */
   function getHistory($samples = 0) : array {
     global $config;
     $points = [];
     Db::query("SET @csum := 0");
-    $query = "SELECT updated, (@csum := @csum + diff) as balance FROM transaction_index WHERE uid1 = '$this->id' ORDER BY updated ASC";
+    $query = "SELECT updated, (@csum := @csum + diff) as balance "
+      . "FROM transaction_index "
+      . "WHERE uid1 = '$this->id' "
+      . "ORDER BY updated ASC";
     $result = Db::query($query);
-    // database is storing timestamps as 'Y-m-d H:i:s.0'
+    // Database is storing timestamps as 'Y-m-d H:i:s.0'
     // make a first point at zero balance 1 sec before the first balance.
     if ($t = $result->fetch_object()) {
-      $start_sec = (new \DateTime($t->updated))->modify('-1 second');
+      $start_sec = (new \DateTime($t->updated))->modify('-5 seconds');
       // 2022-02-02 23:39:56.000000
       $points[$start_sec->format('Y-m-d H:i:s')] = 0;
       $points[$t->updated] = round($t->balance, $config['decimal_places']);
@@ -54,7 +57,7 @@ class Wallet {
         $points[$t->updated] = round($t->balance, $config['decimal_places']);
       }
 
-      if ($samples === 0){
+      if ($samples === 0) {
         $times = $values = [];
         // Make two values for each one in the keys and values.
         foreach ($points as $time => $bal) {

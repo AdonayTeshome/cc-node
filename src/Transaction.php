@@ -54,7 +54,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * @return \Transaction
    */
   static function loadByUuid($uuid) : Transaction {
-    global $orientation;
+    global $orientation, $user;
     $q = "SELECT id as txID, uuid, created, updated, version, type, state FROM transactions "
       . "WHERE uuid = '$uuid' "
       . "ORDER BY version DESC "
@@ -63,12 +63,18 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     if (!$tx) {
       throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
     }
-
     $q = "SELECT payee, payer, description, quant, author, metadata FROM entries "
       . "WHERE txid = $tx->txID "
       . "ORDER BY id ASC";
     $result = Db::query($q);
+    if ($result->num_rows < 1) {
+      throw new CCFailure("Database entries table has no rows for $uuid");
+    }
     while ($row = $result->fetch_object()) {
+      if ($tx->state == 'validated' and $row->author <> $user->id and !$user->admin) {
+        // deny the transaction exists to all but its author and admins
+        throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
+      }
       $row->metadata = unserialize($row->metadata);
       $entry_rows[] = $row;
     }
@@ -166,9 +172,12 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     }
     $this->updated = $now;
 
-    $q = "INSERT INTO transactions (uuid, version, type, state, scribe, created, updated) "
+    $query = "INSERT INTO transactions (uuid, version, type, state, scribe, created, updated) "
     . "VALUES ('$this->uuid', $this->version, '$this->type', '$this->state', '$user->id', '$this->created', '$this->updated')";
-    $new_id = Db::query($q);
+    $success = Db::query($query);
+
+    $connection = \CCNode\Db::connect();
+    $new_id = $connection->query("SELECT LAST_INSERT_ID() as id")->fetch_object()->id;
     $this->writeEntries($new_id);
   }
 
@@ -306,11 +315,15 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       $date = date("Y-m-d H:i:s", strtotime($after));
       $conditions[]  = "updated > '$date'";
     }
-    if (isset($state)) {
+    if (isset($state) and $state <> 'validated') {
       $conditions[]  = "state = '$state'";
-      if ($state == 'validated') {
-        $conditions[]  = "author = '$user->id'";
-      }
+    }
+    if (isset($state) and $state == 'validated') {
+      // only the author can see transactions in the validated state.
+      $conditions[]  = "(state = '$state' and author = '$user->id')";
+    }
+    else {
+      $conditions[] = 'version > 0';
     }
     if (isset($type)) {
       $conditions[]  = "type = '$type'";

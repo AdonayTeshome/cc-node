@@ -33,7 +33,7 @@ class Db {
    * @param string $query The query string
    * @return mixed The result of the mysqli::query() function
    */
-  public static function query(string $query) {
+  public static function query(string $query) : \mysqli_result|bool {
     $connection = static::connect();
     $result = $connection->query($query);
     if ($error = static::error()) {
