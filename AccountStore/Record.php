@@ -28,14 +28,7 @@ abstract class Record {
    */
   public int $max;
 
-  /**
-   *
-   * @param string $id
-   * @param bool $status
-   * @param type $min
-   * @param type $max
-   */
-  function __construct(string $id, bool $status, $min = NULL, $max = NULL) {
+  function __construct(string $id, bool $status, int $min, int $max) {
     $this->id = $id;
     $this->status = $status;
     $this->min = $min;

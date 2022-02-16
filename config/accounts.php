@@ -76,32 +76,47 @@ $accs = editable_accounts();
           <tr>
             <th title = "Wallet id, must be unique on this node">Name</th>
             <th title = "Password-like string">API Key</th>
-            <th title = "Minimum/Maximium balance (override default @todo)">Min/Max</th>
+            <th title = "Minimum/Maximium balance REQUIRED">Min/Max</th>
             <th title = "Checked if this account has admin privileges">Admin</th>
             <th title = "Account is active or blocked">Enabled</th>
           </tr>
         </thead>
         <tbody>
         <?php
-      $users = array_filter($accs, function($a){return !empty($a->key);});
-      foreach ($users as $id => $acc) : ?>
-      <tr>
-        <th title = "Wallet id, must be unique on this node"><?php print $id;?><!--<input type="hidden" name="user[<?php print $id;?>][id]" value = "<?php print $id;?>">--></th>
-        <td title = "Password-like string"><input name="user[<?php print $id;?>][key]" value="<?php print $acc->key;?>" size = "6"></td>
-        <?php print minmax_cell('td','user['.$id.']', $acc); ?>
-        <td title = "Checked if this account has admin privileges"><input name="user[<?php print $id;?>][admin]" type="checkbox" value = "1" <?php print !empty($acc->admin)?'checked':'';?>></td>
-        <td title = "Account is active or blocked">
-          <input type="checkbox" name="user[<?php print $id ?>][status]" value = 1 <?php if ($acc->status) print ' checked'?> />
-        </td>
-      </tr>
-      <?php endforeach; ?>
-      <tr>
-          <td title = "Wallet id, must be unique on this node"><input name="user[new][id]" size = "8" placeholder = "new_acc_id"></td>
-          <td title = "Password-like string"><input name="user[new][key]" size = "8"></td>
-          <?php print minmax_cell('td', 'user[new]'); ?>
-          <td title = "Checked if this account has admin privileges"><input name="user[new][admin]" type="checkbox" value = "1" ></td>
-          <td title = "Account is active or blocked"></td>
-        </tr>
+        $users = array_filter($accs, function($a){return !empty($a->key);});
+        foreach ($users as $id => $acc) : ?>
+          <tr>
+            <th title = "Wallet id, must be unique on this node">
+              <?php print $id;?><!--<input type="hidden" name="user[<?php print $id;?>][id]" value = "<?php print $id;?>">-->
+            </th>
+            <td title = "Password-like string">
+              <input name="user[<?php print $id;?>][key]" value="<?php print $acc->key;?>" size = "6">
+            </td>
+            <?php print minmax_cell('td','user['.$id.']', $acc); ?>
+            <td title = "Checked if this account has admin privileges">
+              <input name="user[<?php print $id;?>][admin]" type="checkbox" value = "1" <?php print !empty($acc->admin)?'checked':'';?>>
+            </td>
+            <td title = "Account is active or blocked">
+              <input type="checkbox" name="user[<?php print $id ?>][status]" value = 1 <?php if ($acc->status) print ' checked'?> />
+            </td>
+          </tr>
+          <?php endforeach; ?>
+          <tr>
+            <td title = "Wallet id, must be unique on this node">
+              <input name="user[new][id]" size = "8" placeholder = "new_acc_id">
+            </td>
+            <td title = "Password-like string">
+              <input name="user[new][key]" size = "8">
+            </td>
+            <?php print minmax_cell('td', 'user[new]'); ?>
+            <td title = "Checked if this account has admin privileges">
+              <input name="user[new][admin]" type="checkbox" value = "1" >
+            </td>
+            <td title = "Account is active or blocked">
+              <input name="user[new][status]" type="checkbox" value = 1 checked />
+            </td>
+          </tr>
+        </tbody>
       </table>
 <!--
       <h2>Leafward nodes</h2>
@@ -234,9 +249,9 @@ function status_cell($tag, $type, $acc = NULL) {
 }
 
 function minmax_cell($tag, $type, $acc = NULL) {
-  ?><<?php print $tag; ?> title = "Min/max balance (override default @todo)">
-    <input name="<?php print $type; ?>[min]" type="number" min="-999999" max="0" size="4" value="<?php print $acc?$acc->min:'';?>" />
-    <input name="<?php print $type; ?>[max]" type="number" max="999999" min="0" size="4"  value="<?php print $acc?$acc->max:'';?>" />
+  ?><<?php print $tag; ?> title = "Min/max balance REQUIRED">
+    <input name="<?php print $type; ?>[min]" type="number" min="-999999" max="0" size="4" placeholder = "<0" value="<?php print $acc?$acc->min:'-100';?>" />
+    <input name="<?php print $type; ?>[max]" type="number" max="999999" min="0" size="4"  placeholder = ">0" value="<?php print $acc?$acc->max:'100';?>" />
   </<?php print $tag; ?>><?php
 }
 
