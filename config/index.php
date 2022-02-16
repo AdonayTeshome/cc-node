@@ -7,7 +7,6 @@ require_once '../vendor/autoload.php';
 ini_set('display_errors', 1);
 
 const NODE_INI_FILE = '../node.ini';
-const ACC_STORAGE_INI_FILE  = '../AccountStore/accountstore.ini';
 $node_conf = parse_ini_file(NODE_INI_FILE);
 $errs = [];
 if (!empty($_SERVER['QUERY_STRING'])){
@@ -29,21 +28,11 @@ if ($_POST) {
   if (empty($_POST['db']['user'])) {
     $errs[] = "Database user required";
   }
-  if (empty($_POST['acc']['default_max'])) {
-    $_POST['acc']['default_max'] = 0;
-  }
-  if (empty($_POST['acc']['default_min'])) {
-    $_POST['acc']['default_min'] = 0;
-  }
-
   $values = $_POST;
 
   if (!$errs) {
     require './writeini.php';
-    $acc = $values['acc'];
-    unset($values['acc']);
     replaceIni($values, NODE_INI_FILE);
-    replaceIni($acc, ACC_STORAGE_INI_FILE);
     $connection = new mysqli('localhost', $values['db']['user'], $values['db']['pass']);
     $connection->query("DROP DATABASE ".$values['db']['name']);
     $connection->query("CREATE DATABASE ".$values['db']['name']);
