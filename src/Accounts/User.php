@@ -2,11 +2,13 @@
 
 namespace CCNode\Accounts;
 use CreditCommons\Account;
+use CCNode\Accounts\AccountSummaryTrait;
 
 /**
  * Class representing a member of the ledger
  */
 class User extends Account {
+  use AccountSummaryTrait;
 
   function __construct(
     string $id,
@@ -24,14 +26,13 @@ class User extends Account {
     return new static($data->id, $data->status, $data->min, $data->max, $data->admin);
   }
 
-
-  static function AnonAccount() {
-    $obj = ['id' => '<anon>', 'max' => 0, 'min' => 0, 'status' => 1];
-    return static::create((object)$obj);
-  }
-
   function isAdmin() : bool {
     return $this->admin;
+  }
+
+  // Can this go in the base class?
+  function getRelPath() : string {
+    return $this->id;
   }
 
 

@@ -8,11 +8,10 @@ use Slim\App;
 /**
  * Business logic service
  */
-
-$config = parse_ini_file('blogic.ini');
 require_once '../vendor/autoload.php';
 $app = new App();
 
+$config = parse_ini_file('blogic.ini');
 $app->post('/append/{type}', function (Request $request, Response $response, $args) {
   global $config;
   $type = $args['type']; // Not used here, but could be handy

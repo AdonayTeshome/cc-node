@@ -13,7 +13,7 @@ class Orientation {
   public $downstreamAccount;
   public $upstreamAccount;
   public $localRequest;
-  private $trunkwardsAccount = NULL;
+  public $trunkwardsAccount = NULL;
 
   /**
    * FALSE for request, TRUE for response mode
@@ -47,26 +47,6 @@ class Orientation {
     }
   }
 
-
-  function orientToTrunk() : bool {
-    if ($this->trunkwardsAccount) {
-      $this->downstreamAccount = $this->trunkwardsAccount;
-    }
-    return isset($this->trunkwardsAccount);
-  }
-
-  function isUpstreamBranch() {
-    if ($this->trunkwardsAccount) {
-      if ($ups = $this->upstreamAccount) {
-        if ($ups->id <> $this->trunkwardsAccount->id)
-          return TRUE;
-      }
-      else {
-        return TRUE;
-      }
-    }
-  }
-
   /**
    * Ledger orientation functions. Used for converting transactions to send.
    */
@@ -78,8 +58,8 @@ class Orientation {
     return $this->upstreamAccount && $this->responseMode && !$this->localRequest;
   }
 
-  // return TRUE, FALSE
-  function goingTrunkwards() {
+
+  function goingTrunkwards() : bool {
     return $this->trunkwardsAccount and (
       $this->downstreamAccount == $this->trunkwardsAccount && !$this->responseMode
       or
@@ -109,7 +89,7 @@ class Orientation {
   function handshake() : array {
     global $config;
     $results = [];
-    $active_accounts = AccountStore()->filter(['status' => 1, 'class' => 'remote'], TRUE);
+    $active_accounts = AccountStore()->filter(['status' => 1, 'class' => 'Remote'], TRUE);
     foreach ($active_accounts as $account) {
       if ($account instanceof Remote) {
         //Make sure we load the remote version by giving a path longer than 1 part.

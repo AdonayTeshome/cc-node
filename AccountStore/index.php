@@ -6,12 +6,12 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Exception\NotFoundException;
 use Slim\App;
 
+
 /**
  * AccountStore service. For reference only
  * Normally this service would be replaced by a wrapper around the main user database.
  * This implementation uses a simple json file to store the users.
  */
-
 require_once '../vendor/autoload.php';
 $app = new App();
 
@@ -55,10 +55,10 @@ function account_store_filter($params) : AccountManager {
     //prevents getting a list of all users with a given auth string.
     $accounts->filterByAuth($params['auth']);
   }
-  if (!empty($params['status'])) {
+  if (isset($params['status'])) {
     $accounts->filterByStatus((bool)$params['status']);
   }
-  if (!empty($params['local'])) {
+  if (isset($params['local'])) {
     $accounts->filterByLocal((bool)$params['local']);
   }
   return $accounts;

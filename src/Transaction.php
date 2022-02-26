@@ -115,8 +115,8 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     }
     foreach ($this->sum() as $acc_id => $info) {
       $account = load_account($acc_id);
-      $ledgerAccountInfo = (new Wallet($account))->getTradeStats();
-      $projected = $ledgerAccountInfo['pending']['balance'] + $info->diff;
+      $ledgerAccountInfo = $account->getAccountSummary();
+      $projected = $ledgerAccountInfo->pending->balance + $info->diff;
       if ($projected > $this->payee->max) {
         throw new MaxLimitViolation(acc_id: $acc_id, limit: $this->payee->max, projected: $projected);
       }

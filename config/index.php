@@ -1,5 +1,4 @@
 <?php
-
 if (!is_dir('../vendor')) {
   die("Don't forget to run composer update...");
 }
@@ -46,7 +45,7 @@ if ($_POST) {
     print "Do check that the db has been created and then congratulations; the node should now be installed.<br />";
   }
 }
-$values = $node_conf + parse_ini_file(ACC_STORAGE_INI_FILE);
+$values = $node_conf;
 
 // the following form is used once in set up
 ?><!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">
@@ -79,15 +78,6 @@ $values = $node_conf + parse_ini_file(ACC_STORAGE_INI_FILE);
         <br />Db name <input name = "db[name]" value = "<?php print $values['db']['name']; ?>">
         <br />Db user <input name = "db[user]" value = "<?php print $values['db']['user']; ?>">
         <br /><span title="Password is not required for the moment">Db pass <input name = "db[pass]" value = "<?php print $values['db']['pass']; ?>"></span>
-      </p>
-
-
-      <h2>Default values for new accounts</h2>
-      <p>Max limit: <input name="acc[default_max]" type="number" min="1" max="1000000" size="3" value="<?php print $values['default_max']; ?>" />
-      <br />Min limit: <input name="acc[default_min]" type="number" max="0" min="-1000000" size="3" value="<?php print $values['default_min']; ?>" />
-      <p>Accounts are created as:<br />
-         <input type="radio" name= "acc[default_status]" value = "1"<?php if (!empty($values['default_status'])) print ' checked'; ?> />Enabled<br />
-         <input type="radio" name= "acc[default_status]" value = "0"<?php if (empty($values['default_status'])) print ' checked'; ?> />Disabled
       </p>
       <input type="submit" value="(Re)Install database">
     </form>

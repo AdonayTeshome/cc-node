@@ -5,14 +5,13 @@ use League\OpenAPIValidation\PSR15\SlimAdapter;
 use Slim\Psr7\Response;
 
 /**
- * So far this tests the API functions assuming good results, but doesn't test the error messages.
+ * Tests the API functions of a node without touching remote nodes.
  * @todo Test transversal Errors.
  *   - IntermediateledgerViolation
  *   - HashMismatchFailure
- *   - OfflineFailure Is this testable? Maybe with an invalid url?\
+ *   - UnavailableNodeFailure Is this testable? Maybe with an invalid url?\
  * @todo Invalid paths currently return 404 which isn't in the spec.
  *
- * @todo check that the Node header is present in responses. (can't remember what that is used for)
  */
 class SingleNodeTest extends \PHPUnit\Framework\TestCase {
 
@@ -21,12 +20,12 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     // Get some user data directly from the accountStore
     // NB the accountstore should deny requests from outside this server.
     $config = parse_ini_file(__DIR__.'/../node.ini');
-    // Augment the user objects with the key.
-    $accounts = array_filter(
+    // Just get local user accounts, not remote node accounts.
+    $local_accounts = array_filter(
       (array)json_decode(file_get_contents('AccountStore/store.json')),
-      function($u) {return $u->status && $u->key;}
+      function($u) {return $u->status && isset($u->key);}
     );
-    foreach ($accounts as $a) {
+    foreach ($local_accounts as $a) {
       if ($a->admin) {
         $admin_acc_ids[] = $a->id;
       }
@@ -85,8 +84,8 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
   function testAccountNames() {
     global $norm_acc_ids, $admin_acc_ids;
     $chars = substr(reset($admin_acc_ids), 0, 2);
-    $this->sendRequest("accounts/$chars", 'PermissionViolation', '<anon>');
-    $results = $this->sendRequest("accounts/$chars", 200, reset($norm_acc_ids));
+    $this->sendRequest("accounts/filter/$chars", 'PermissionViolation', '<anon>');
+    $results = $this->sendRequest("accounts/filter/$chars", 200, reset($norm_acc_ids));
     // should be a list of account names including 'a'
     foreach ($results as $acc_id) {
       $this->assertStringStartsWith($chars, $acc_id);
@@ -205,15 +204,16 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     // We can't easily test partners unless we clear the db first.
     // Admin confirms the transaction
     $this->sendRequest("transaction/$transaction->uuid/completed", 201, $admin, 'patch');
-    sleep(2);
     $completed_summary = $this->sendRequest("account/summary/$payee", 200, $payee);
     $this->assertEquals($completed_summary->completed->balance-1, $init_summary->completed->balance);
     $this->assertEquals($completed_summary->completed->volume-1, $init_summary->completed->volume);
     $this->assertEquals($completed_summary->completed->gross_in-1, $init_summary->completed->gross_in);
     $this->assertEquals($completed_summary->completed->gross_out, $init_summary->completed->gross_out);
     $this->assertEquals($completed_summary->completed->trades-1, $init_summary->completed->trades);
+    sleep(2);// so the last point on account history doesn't override the previous transaction
     $completed_points = (array)$this->sendRequest("account/history/$payee", 200, $payee);
-    $this->assertEquals(count($completed_points) -2, count($init_points));
+    $expected_points  = count($completed_points) -2 + count($transaction->entries);
+    $this->assertEquals($expected_points, count($init_points));
     // Erase
     $this->sendRequest("transaction/$transaction->uuid/erased", 201, $admin, 'patch');
     $erased_summary = $this->sendRequest("account/summary/$payee", 200, $payee);
@@ -238,7 +238,7 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     $this->assertStringContainsString("test 3rdparty", $transaction->entries[0]->description);
   }
 
-  function testStats() {
+  function testAccountSummaries() {
     global $norm_acc_ids;
     $user1 = reset($norm_acc_ids);
     $this->sendRequest("account/history/$user1", 'PermissionViolation', '<anon>');
@@ -247,6 +247,8 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     $this->assertlessThan(0, $limits->min);
     $this->assertGreaterThan(0, $limits->max);
     // account/summary/{acc_id} is already tested
+    $this->sendRequest("accounts/summary", 'PermissionViolation', '<anon>');
+    $this->sendRequest("accounts/summary", 200, $user1);
   }
 
 

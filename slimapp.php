@@ -2,15 +2,12 @@
 /**
  * Reference implementation of a credit commons node
  *
- *
  * @todo find a way to notify the user if the trunkward node is offline.
- * @todo all calls to RestAPI() must be wrapped in try{}
  *
  */
 namespace CCNode;
 
 use CreditCommons\Exceptions\CCFailure;
-use CreditCommons\Exceptions\CCError;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\PermissionViolation;
@@ -19,11 +16,13 @@ use CreditCommons\CreditCommonsInterface;
 use CreditCommons\AccountRemote;
 use CreditCommons\RestAPI;
 use CreditCommons\Account;
+use CCNode\Slim3ErrorHandler;
+use CCNode\AddressResolver;
 use CCNode\Accounts\BoT;
+use CCNode\Accounts\User;
 use CCNode\Workflows;
 use CCNode\StandaloneEntry;
 use CCNode\NewTransaction;
-
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\App;
@@ -58,26 +57,17 @@ $config = parse_ini_file('./node.ini');
 
 $app = new App();
 $c = $app->getContainer();
-$c['errorHandler'] = function ($c) {
+$getErrorHandler = function ($c) {
   return new Slim3ErrorHandler();
 };
-$c['phpErrorHandler'] = function ($c) {
-  return new Slim3ErrorHandler();
-};
-
-/**
- * Middleware to add the name of the current node to every response header.
- */
-$app->add(function ($request, $response, $next) {
-  global $config;
-  $response = $next($request, $response);
-	return $response->withHeader('Node-path', absolute_path());
-});
+$c['errorHandler'] = $getErrorHandler;
+$c['phpErrorHandler'] = $getErrorHandler;
 
 /**
  * Default HTML page. (Not part of the API)
  */
 $app->get('/', function (Request $request, Response $response) {
+  return 'dddddd';
   $response->getBody()->write('It works!');
   return $response->withHeader('Content-Type', 'text/html');
 });
@@ -110,7 +100,7 @@ $app->get('/handshake', function (Request $request, Response $response) {
   return json_response($response, $orientation->handshake());
 });
 
-$app->get('/accounts[/{fragment}]', function (Request $request, Response $response, $args) {
+$app->get('/accounts/filter[/{fragment}]', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountNameAutocomplete');
   $params = $request->getQueryParams();
   $remote_names = [];
@@ -130,14 +120,41 @@ $app->get('/account/limits/{acc_id}', function (Request $request, Response $resp
   return json_response($response, (object)['min' => $account->min, 'max' => $account->max]);
 });
 
-
-$app->get('/account/summary/{acc_path}', function (Request $request, Response $response, $args) {
-  global $orientation;
+$app->get('/account/summary/{acc_id:.*$}', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountSummary');
   $params = $request->getQueryParams();
-  $account = accountStore()->fetch($args['acc_path']);
-  $result = (new Wallet($account))->getTradeStats();
-  $orientation->responseMode = TRUE;
+  $given_path = urldecode($args['acc_id']);
+
+  list($account, $rel_path) = AddressResolver::create()->resolveToLocalAccountName($given_path, TRUE);
+  if (empty($rel_path)) {
+    // Local account.
+    $result = $account->getAccountSummary();
+  }
+  else {// Forward the request
+    // Take the first part off the given path
+    $path_parts = explode('/', $given_path);
+    array_shift($path_parts);
+    $result = API_calls($account)->getAccountSummary(implode('/', $path_parts));
+  }
+
+  $response->getBody()->write(json_encode($result));
+  return $response->withHeader('Content-Type', 'application/json');
+});
+
+$app->get('/accounts/summary[/{path:.*$}]', function (Request $request, Response $response, $args) {
+  if (isset($args['path'])) {
+    // Forward the request
+    check_permission($request, 'accountSummary');
+    $given_path = urldecode($args['path']);
+    list($account, $relative_path) = AddressResolver::create()->resolveToLocalAccountName($given_path, TRUE);
+    $result = API_calls($account)->getAccountSummaries(explode('/', $given_path));
+  }
+  else {
+    // Local accounts
+    check_permission($request, 'accountSummary');
+    // Get all the non-blocked accounts on this node
+    $result = Accounts\User::getAccountSummaries();
+  }
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
 });
@@ -148,7 +165,7 @@ $app->get('/account/history/{acc_path}', function (Request $request, Response $r
   check_permission($request, 'accountHistory');
   $params = $request->getQueryParams();
   $account = accountStore()->fetch($args['acc_path']);
-  $result = (new Wallet($account))->getHistory($params['samples']??0);
+  $result = $account->getHistory($params['samples']??0);
 
   $orientation->responseMode = TRUE;
   $response->getBody()->write(json_encode($result));
@@ -233,7 +250,6 @@ $app->get('/transaction', function (Request $request, Response $response) {
   return json_response($response, $uuids, 200);
 });
 
-
 return $app;
 
 /**
@@ -252,23 +268,22 @@ function load_account(string $id) : Account {
   static $fetched = [];
   if (!isset($fetched[$id])) {
     if ($id == '<anon>') {
-      $fetched[$id] = \CCNode\Accounts\User::AnonAccount();
+      $fetched[$id] = accountStore()->anonAccount();
     }
     elseif ($id and $acc = accountStore()->fetch($id)) {
       $fetched[$id] = $acc;
     }
     else {
-      throw new \DoesNotExistViolation(type: account, id: $id);
+      throw new \DoesNotExistViolation(type: 'account', id: $id);
     }
   }
   return $fetched[$id];
 }
 
 function check_permission(Request $request, string $operationId) {
-  authenticate($request); // This sets $user
   global $user, $orientation;
+  authenticate($request); // This sets $user
   $orientation = new Orientation();
-
   $permitted = \CCNode\permitted_operations();
   if (!in_array($operationId, array_keys($permitted))) {
     throw new PermissionViolation(
@@ -332,15 +347,13 @@ function authenticate(Request $request) : void {
   $user = load_account('<anon>'); // Anon
   if ($request->hasHeader('cc-user') and $request->hasHeader('cc-auth')) {
     $acc_id = $request->getHeaderLine('cc-user');
-    $auth = $request->getHeaderLine('cc-auth');
     // Users connect with an API key which can compared directly with the database.
     if ($acc_id) {
+      $auth = $request->getHeaderLine('cc-auth');
+      if ($auth == 'null')$auth = '';// Don't know why null is returned as a string.
       $user = load_account($acc_id);
-      if ($user instanceOf Remote) {
-        // Remote nodes connect with a hash of the connected account, which needs to be compared.
-        $query = "SELECT TRUE FROM hash_history WHERE acc = '$account->id' AND hash = '$auth' ORDER BY id DESC LIMIT 0, 1";
-        $result = Db::query($query)->fetch_row();
-        if ($hash && !$result or !$hash && $result) {
+      if ($user instanceOf AccountRemote) {
+        if (!compare_hashes($acc_id, $auth)) {
           throw new HashMismatchFailure(otherNode: $acc_id);
         }
       }
@@ -355,6 +368,25 @@ function authenticate(Request $request) : void {
   }
   else {
     // No attempt to authenticate, fallback to anon
+  }
+}
+
+function compare_hashes(string $acc_id, string $auth) : bool {
+   // this is not super secure...
+  if (empty($auth)) {
+    $query = "SELECT TRUE FROM hash_history "
+      . "WHERE acc = '$acc_id'"
+      . "LIMIT 0, 1";
+    $result = Db::query($query)->fetch_object();
+    return $result == FALSE;
+  }
+  else {
+    // Remote nodes connect with a hash of the connected account, which needs to be compared.
+    $query = "SELECT TRUE FROM hash_history WHERE acc = '$acc_id' AND hash = '$auth' ORDER BY id DESC LIMIT 0, 1";
+    $result = Db::query($query)->fetch_object();
+    print_r($result);
+    die($auth);
+    return (bool)$result;// temp
   }
 }
 
@@ -382,55 +414,11 @@ function API_calls(AccountRemote $account = NULL) {
  * Get the library of functions for accessing ledger accounts.
  */
 function accountStore() : AccountStore {
-  global $config;
-  return new AccountStore($config['account_store_url']);
-}
-
-/**
- * Convert all errors into an stdClass, which includes a field showing
- * which node caused the error
- */
-class Slim3ErrorHandler {
-  /**
-   * Probably all errors and warnings should include an emergency SMS to admin.
-   * This callback is also used by the ValidationMiddleware.
-   * @note The task is made complicated because the $exception->message property is
-   * protected and is lost during json_encode
-   */
-  public function __invoke($request, $response, $exception) {
-    global $config;
-    $exception_class = explode('\\', get_class($exception));
-    $exception_class = array_pop($exception_class);
-    if (!$exception instanceOf CCError) {
-      $code = 500;
-      $trace = $exception->getTrace(); //experimental;
-      $exception_class = 'CCFailure';
-      $output = (object)[
-        'message' => $exception->getMessage()?:$exception_class
-      ];
-      // Just show the last error.
-      while ($exception = $exception->getPrevious()) {
-        $output = (object)[
-          'message' => $exception->getMessage()?:$exception_class
-        ];
-        //if (get_class($exception) == 'League\OpenAPIValidation\PSR7\Exception\NoResponseCode') break;
-      }
-      $output->trace = $trace;
-    }
-    elseif (in_array($exception_class, ['CCViolation', 'CCFailure'])) {
-      $output = (object)[
-        'message' => $exception->getMessage()
-      ];
-    }
-    else {
-      $output = (object)($exception);
-    }
-    $output->node = $config['node_name'];
-    $output->class = $exception_class;
-    // this bypasses the middleware, so need to do this again.
-	  $response = $response->withHeader('Node-path', absolute_path());
-    return json_response($response, $output, $code??$exception->getCode());
-   }
+  static $accountStore;
+  if (!isset($accountStore)) {
+    $accountStore = AccountStore::create();
+  }
+  return $accountStore;
 }
 
 /**
@@ -446,24 +434,6 @@ function json_response(Response $response, $body, int $code = 200) : Response {
     throw new CCFailure('Illegal value passed to json_response()');
   }
   $response->getBody()->write(json_encode($body, JSON_UNESCAPED_UNICODE));
-  return $response->withStatus($code)->withHeader('Content-Type', 'application/json');
-}
-
-/**
- * Get the path of the trunkwards node and append the current node name
- * @global array $config
- * @return string
- *   The absolute path from trunkwards to leafwards
- *
- * @todo this MUST be cached somewhere before multilevel deployment
- */
-function absolute_path() : string {
-  global $config;
-  // for now we'll just use the BoT account name, This will serve for a 2 level
-  // tree, but in future we'll need to cache somwehere the response header from each BOT request.
-  if (!empty($config['bot']['acc_id'])) {
-    $path[] = $config['bot']['acc_id'];
-  }
-  $path[] = $config['node_name'];
-  return implode('/', $path);
+  return $response->withStatus($code)
+    ->withHeader('Content-Type', 'application/json');
 }

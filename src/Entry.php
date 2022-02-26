@@ -26,11 +26,6 @@ class Entry extends BaseEntry implements \JsonSerializable {
   static function create(\stdClass $data) : BaseEntry {
     // Convert the payer and payee into Account objects;
     foreach (['payee', 'payer'] as $role) {
-//      $acc_path = $data->{$role};
-//      $given_path = $data->metadata[$acc_path] ?? $acc_path;
-//      $$role = accountStore()->ResolveAddressTolocal($given_path, FALSE);
-      // @todo It seems wrong that we would both read and write the metadata here.
-
       if ($data->$role instanceOf AccountRemote) {
         $row->metadata[$data->$role->id] = $data->$role->givenPath;
       }

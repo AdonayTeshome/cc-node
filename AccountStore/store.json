@@ -5,17 +5,8 @@
         "id": "admin",
         "created": 1637489309,
         "status": true,
-        "min": "-1000",
-        "max": "1000"
-    },
-    "bob": {
-        "key": "123",
-        "admin": false,
-        "id": "bob",
-        "created": 1637489309,
-        "status": true,
-        "min": null,
-        "max": null
+        "min": "-500",
+        "max": "500"
     },
     "alice": {
         "key": "123",
@@ -23,7 +14,16 @@
         "id": "alice",
         "created": 1637489309,
         "status": true,
-        "min": null,
-        "max": null
+        "min": -100,
+        "max": 100
+    },
+    "bob": {
+        "key": "123",
+        "admin": false,
+        "id": "bob",
+        "created": 1637489309,
+        "status": true,
+        "min": -100,
+        "max": 100
     }
 }

@@ -1,6 +1,7 @@
 <?php
 
 namespace CCNode\Accounts;
+
 use CreditCommons\AccountRemote;
 use CreditCommons\RestAPI;
 use CCNode\Db;
@@ -30,7 +31,7 @@ class Remote extends AccountRemote {
 
   public function API() : RestAPI {
     global $config;
-    return new RestAPI($this->url, $config['node_name'], $this->getLastHash);
+    return new RestAPI($this->url, $config['node_name'], $this->getLastHash());
   }
 
   /**
@@ -39,35 +40,31 @@ class Remote extends AccountRemote {
 
   public function getHistory($samples = 0) : array {
     // N.B. Branchward nodes may refuse permission
-    return API_calls($this)->getHistory($this->transversalPath, $samples);
+    return $this->API()->getHistory($this->transversalPath, $samples);
   }
 
   /**
    * {@inheritDoc}
    */
-  function getTradeStats() : array {
+  function getAccountSummary() : array {
     // N.B. Branchward nodes may refuse permission
-    return API_calls($this)->getStats($this->givenPath);
+    return $this->API()->getStats($this->givenPath);
   }
 
 
   /**
    * {@inheritDoc}
+   * @todo this functions returns a slightly different format on branchwards and trunkwards accounts.
    */
-  static function getAllTradeStats(bool $details = TRUE) : array {
-    $all_accounts = parent::getAllTradeStats($details);
-    $map = API_calls($this)->accounts($details, TRUE);
-    if ($details) {
-      $all_accounts[$this->id]->parents = $map;
-    }
-    else {
-      $all_accounts[$this->id] = $map;
-    }
-
+  static function getAccountSummaries() : array {
+    $all_accounts = parent::getAccountSummaries();
+    $map = $this->API()->accounts([], TRUE);
+    // Add this node's summaries to the trunkwards data
+    $all_accounts[$this->id]->parents = $map;
     return $all_accounts;
   }
 
-  function getRelPath() {
+  function getRelPath() : string {
     die('Need to calculate the relative path of remote account');
   }
 
