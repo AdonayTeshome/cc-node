@@ -29,7 +29,7 @@ paths:
                 $ref: "#/components/schemas/Account"
         "404":
           description: The account doesn't exist.
-  "/filter/{full}":
+  "/filter/full":
     get:
       summary: Filter account objects
       operationId: filterAccount
@@ -65,10 +65,9 @@ paths:
           content:
             "application/json":
               schema:
-                # Can be ids or full account objects
                 type: array
                 items:
-                  type: string
+                  $ref: "#/components/schemas/Account"
   "/filter":
     get:
       summary: Filter account names
@@ -132,15 +131,6 @@ components:
           example: false
         url:
           type: string
-          description: The credit commons remote ledger url
+          description: The credit commons remote ledger URL
+          required: false
           example: http://cc.example.com
-        ip:
-          type: string
-          description: The credit commons remote ledger ip
-          example: 127.0.0.1
-        rate:
-          type: string
-          description: The exchange rate relative to the parent's accuouting unit (BoT
-            account only?)
-          example: 1
-

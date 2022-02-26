@@ -5,8 +5,6 @@
 
 declare(strict_types=1);
 
-chdir(dirname(__FILE__));
-
 ini_set('display_errors', '1');
 
 $config = parse_ini_file('./node.ini');

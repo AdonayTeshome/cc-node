@@ -1,8 +1,6 @@
 <?php
 
-use League\OpenAPIValidation\PSR15\ValidationMiddlewareBuilder;
-use League\OpenAPIValidation\PSR15\SlimAdapter;
-use Slim\Psr7\Response;
+namespace CCNode\tests;
 
 /**
  * Tests the API functions of a node without touching remote nodes.
@@ -13,7 +11,10 @@ use Slim\Psr7\Response;
  * @todo Invalid paths currently return 404 which isn't in the spec.
  *
  */
-class SingleNodeTest extends \PHPUnit\Framework\TestCase {
+class SingleNodeTest extends TestBase{
+
+  const SLIM_PATH = 'slimapp.php';
+  const API_FILE_PATH = 'vendor/credit-commons-software-stack/cc-php-lib/docs/credit-commons-openapi-3.0.yml';
 
   public static function setUpBeforeClass(): void {
     global $config, $users, $admin_acc_ids, $norm_acc_ids;
@@ -42,7 +43,7 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
 
   function testEndpoints() {
     global $norm_acc_ids;
-    $options = $this->sendRequest('', 200, '<anon>', 'options');
+    $options = $this->sendRequest('', 200, '', 'options');
     $this->assertObjectHasAttribute("permittedEndpoints", $options);
     $this->assertObjectNotHasAttribute("accountSummary", $options);
     $this->assertObjectNotHasAttribute("filterTransactions", $options);
@@ -84,7 +85,7 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
   function testAccountNames() {
     global $norm_acc_ids, $admin_acc_ids;
     $chars = substr(reset($admin_acc_ids), 0, 2);
-    $this->sendRequest("accounts/filter/$chars", 'PermissionViolation', '<anon>');
+    $this->sendRequest("accounts/filter/$chars", 'PermissionViolation');
     $results = $this->sendRequest("accounts/filter/$chars", 200, reset($norm_acc_ids));
     // should be a list of account names including 'a'
     foreach ($results as $acc_id) {
@@ -122,7 +123,7 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     $obj['type'] = 'disabled';// this is the name of one of the default workflows, which exists for this test
     $this->sendRequest('transaction', 'DoesNotExistViolation', $admin, 'post', json_encode($obj));
     $obj['type'] = '3rdparty';
-    $this->sendRequest('transaction', 'PermissionViolation', '<anon>', 'post', json_encode($obj));
+    $this->sendRequest('transaction', 'PermissionViolation', '', 'post', json_encode($obj));
   }
 
   function test3rdParty() {
@@ -139,7 +140,7 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
       'quant' => 1,
       'type' => '3rdparty'
     ];
-    $this->sendRequest('transaction', 'PermissionViolation', '<anon>', 'post', json_encode($obj));
+    $this->sendRequest('transaction', 'PermissionViolation', '', 'post', json_encode($obj));
     // Default 3rdParty workflow saves transactions immemdiately in completed state.
     $transaction = $this->sendRequest('transaction', 201, $admin, 'post', json_encode($obj));
     sleep(2);// this is so as not to confuse the history chart, which is indexed by seconds.
@@ -192,7 +193,7 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
     $this->sendRequest("transaction/$transaction->uuid/full", 200, $admin);
 
     // write the transaction
-    $this->sendRequest("transaction/$transaction->uuid/pending", 'PermissionViolation', '<anon>', 'patch', json_encode($obj));
+    $this->sendRequest("transaction/$transaction->uuid/pending", 'PermissionViolation', '', 'patch', json_encode($obj));
     $this->sendRequest("transaction/$transaction->uuid/pending", 201, $payee, 'patch');
 
     $pending_summary = $this->sendRequest("account/summary/$payee", 200, $payee);
@@ -228,79 +229,29 @@ class SingleNodeTest extends \PHPUnit\Framework\TestCase {
    */
   function testTransactionFilterRetrieve() {
     global $norm_acc_ids;
-    $this->sendRequest("transaction", 'PermissionViolation', '<anon>');
+    $this->sendRequest("transaction", 'PermissionViolation', '');
     $uuids = $this->sendRequest("transaction", 200, reset($norm_acc_ids));
     return;
     // Filter description
-    $uuids = $this->sendRequest("transaction?description=test%203rdparty", 200, '<anon>');
+    $uuids = $this->sendRequest("transaction?description=test%203rdparty", 200, '');
     //We have the results, now fetch and test the first result
-    $transaction = $this->sendRequest("transaction/".reset($uuids)."/full", 200, '<anon>');
+    $transaction = $this->sendRequest("transaction/".reset($uuids)."/full", 200, '');
     $this->assertStringContainsString("test 3rdparty", $transaction->entries[0]->description);
   }
 
   function testAccountSummaries() {
     global $norm_acc_ids;
     $user1 = reset($norm_acc_ids);
-    $this->sendRequest("account/history/$user1", 'PermissionViolation', '<anon>');
+    $this->sendRequest("account/history/$user1", 'PermissionViolation', '');
     //  Currently there is no per-user access control around limits visibility.
     $limits = $this->sendRequest("account/limits/$user1", 200, $user1);
     $this->assertlessThan(0, $limits->min);
     $this->assertGreaterThan(0, $limits->max);
     // account/summary/{acc_id} is already tested
-    $this->sendRequest("accounts/summary", 'PermissionViolation', '<anon>');
+    $this->sendRequest("accounts/summary", 'PermissionViolation', '');
     $this->sendRequest("accounts/summary", 200, $user1);
   }
 
-
-  protected function sendRequest($path, int|string $expected_response, string $acc_id, string $method = 'get', string $request_body = '') : stdClass|NULL|array {
-    global $users, $admin_acc_ids, $norm_acc_ids;
-    $request = $this->getRequest($path, $method);
-    if ($acc_id <> '<anon>') {
-      $request = $request->withHeader('cc-user', $acc_id)->withHeader('cc-auth', $users[$acc_id]);
-    }
-    if ($request_body) {
-      $request = $request->withHeader('Content-Type', 'application/json');
-      $request->getBody()->write($request_body);
-    }
-
-    $response = $this->getApp()->process($request, new Response());
-    $response->getBody()->rewind();
-    $contents = json_decode($response->getBody()->getContents());
-    $status_code = $response->getStatusCode();
-    if (is_int($expected_response)) {
-      if ($status_code <> $expected_response) {
-        // Blurt out to terminal to ensure all info is captured.
-        echo "\n $acc_id got unexpected code ".$status_code." on $path: ".print_r($contents, 1); // Seems to be truncated hmph.
-        $this->assertEquals($expected_response, $status_code);
-      }
-    }
-    else {
-      //print_r($contents);
-      $e = CreditCommons\RestAPI::reconstructCCException($contents);
-      $this->assertInstanceOf("CreditCommons\Exceptions\\$expected_response", $e);
-    }
-    return $contents;
-  }
-
-  private function getRequest($path, $method = 'GET') {
-    $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
-    return $psr17Factory->createServerRequest(strtoupper($method), '/'.$path);
-  }
-
-  /**
-   * @return \Slim\App
-   */
-  protected function getApp(): \Slim\App {
-    static $app;
-    if (!$app) {
-      $app = require_once __DIR__.'/../slimapp.php';
-      $spec = __DIR__.'/../vendor/credit-commons-software-stack/cc-php-lib/docs/credit-commons-openapi-3.0.yml';
-      $psr15Middleware = (new ValidationMiddlewareBuilder)->fromYaml(file_get_contents($spec))->getValidationMiddleware();
-      $middleware = new SlimAdapter($psr15Middleware);
-      $app->add($middleware);
-    }
-    return $app;
-  }
 
   private function checkTransactions(array $all_transactions, array $filtered_uuids, array $conditions) {
     foreach ($all_transactions as $t) {

@@ -19,7 +19,6 @@ use CreditCommons\Account;
 use CCNode\Slim3ErrorHandler;
 use CCNode\AddressResolver;
 use CCNode\Accounts\BoT;
-use CCNode\Accounts\User;
 use CCNode\Workflows;
 use CCNode\StandaloneEntry;
 use CCNode\NewTransaction;

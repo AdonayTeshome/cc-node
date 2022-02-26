@@ -1,5 +1,7 @@
 <?php
 
+namespace CCNode\tests;
+
 use CCNode\AccountStore;
 use CCNode\AddressResolver;
 use CCNode\Accounts\Branch;
@@ -7,19 +9,16 @@ use CCNode\Accounts\User;
 use CCNode\Accounts\BoT;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 
-chdir(dirname(__FILE__));
 /**
- * It's difficult to isolate this test because it depends on a working
- * AccountStore which in turn calls the accountstore service at a url, and
- * expects globals $config['bot']['acc_id'] and $user.
+ * Test for the AddressResolver Class
  */
 class AddressResolverTest extends \PHPUnit\Framework\TestCase {
 
   public static function setUpBeforeClass(): void {
     global $config, $addressResolver, $user, $local_accounts, $branch_accounts, $trunkwards_account, $node_name;
-    require_once __DIR__.'/../src/AccountStore.php';
     $config = parse_ini_file(__DIR__.'/../node.ini');
     $node_name = $config['node_name'];
+    require_once __DIR__.'/../src/AccountStore.php';
     $accountStore = AccountStore::create();
     // For now set the user to anon. There are no permissions checks but
     // sometimes the addressresolves depends on whether the user is the BoT
@@ -115,7 +114,6 @@ class AddressResolverTest extends \PHPUnit\Framework\TestCase {
     }
     $this->assertEquals($expected, $account->id, 'Resolved name is wrong');
     $this->assertEquals($expected_path, $relative_path, 'Relative path is wrong');
-
   }
 
 }

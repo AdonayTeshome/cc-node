@@ -4,7 +4,6 @@ namespace CCNode;
 use CCNode\AccountStore;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 
-
 /**
  * Convert all errors into an stdClass, which includes a field showing
  * which node caused the error.
@@ -17,6 +16,7 @@ use CreditCommons\Exceptions\DoesNotExistViolation;
  * It is never necessary to name the trunk node.
  * Meanwhile on node c to reach node d account e, you could pass anything from a/b/c/d/e to just d/e
  *
+ * @todo try to move this into the library.
  */
 class AddressResolver {
 
@@ -35,7 +35,6 @@ class AddressResolver {
     return new static(AccountStore::create());
   }
   /**
-   *
    *
    * @global type $user
    * @param string $given_acc_path

@@ -38,6 +38,7 @@
   "autoload": {
     "psr-4": {
       "CCNode\\": "src",
+      "CCNode\\Tests\\": "tests",
       "AccountStore\\": "AccountStore",
       "BlogicService\\": "BlogicService"
     }
