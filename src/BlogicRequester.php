@@ -17,21 +17,18 @@ class BlogicRequester extends Requester {
    * @return array
    */
   function appendto(Transaction $transaction) : array {
-    $additional = $this
+    $entries = $this
       ->setBody($transaction->entries[0])
       ->setMethod('post')
-      ->request(200, 'append/'.$transaction->type);
+      ->request(200, $transaction->type);
+
+    // Upcast the payer and payees
+    foreach ($entries as $entry) {
+      $entry->payee = accountStore()->fetch($entry->payee);
+      $entry->payer = accountStore()->fetch($entry->payer);
+      $additional[] = Entry::create($entry)->additional();
+    }
     return $additional;
   }
 
-  /**
-   * Get a list of the Blogic rules.
-   *
-   * @param bool $full
-   */
-  function getRules(bool $full = TRUE) : array {
-    $this->options[RequestOptions::QUERY] = ['full' => (int)$full];
-    list (, $rules) = $this->request(200, 'rules');
-    return (array)$rules;
-  }
 }

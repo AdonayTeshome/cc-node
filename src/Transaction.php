@@ -63,7 +63,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     if (!$tx) {
       throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
     }
-    $q = "SELECT payee, payer, description, quant, author, metadata FROM entries "
+    $q = "SELECT payee, payer, description, quant, author, metadata, is_primary FROM entries "
       . "WHERE txid = $tx->txID "
       . "ORDER BY id ASC";
     $result = Db::query($q);
@@ -71,9 +71,10 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       throw new CCFailure("Database entries table has no rows for $uuid");
     }
     while ($row = $result->fetch_object()) {
-      if ($tx->state == 'validated' and $row->author <> $user->id and !$user->admin) {
+      if ($tx->state == 'validated' and $row->author <> $user->id and !$user->admin and $row->is_primary) {
         // deny the transaction exists to all but its author and admins
-        throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
+        // Note this is a bit misleading but permission error has fields that we can't populate from here.
+        throw new CCViolation('This transaction has not yet been confirmed by its creator');
       }
       $row->metadata = unserialize($row->metadata);
       $entry_rows[] = $row;
@@ -107,10 +108,8 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     }
     // Add fees, etc by calling on the blogic service
     if ($config['blogic_service_url']) {
-      $fees = (new BlogicRequester($config['blogic_service_url']))->appendTo($this);
-      // @todo. Validate these since they came from another microservice
-      foreach ($fees as $row) {
-        $this->entries[] = Entry::create($row)->additional();
+      if ($fees = (new BlogicRequester($config['blogic_service_url']))->appendTo($this)) {
+        $this->entries = array_merge($this->entries, $fees);
       }
     }
     foreach ($this->sum() as $acc_id => $info) {

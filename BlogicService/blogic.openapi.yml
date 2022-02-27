@@ -9,12 +9,19 @@ info:
   license:
     name: GNU GPL
 paths:
-  /append:
+  /{type}:
     post:
       summary: Retrieve any dependent transactions according to business logic
       operationId: appendEntries
+      parameters:
+        - name: type
+          in: path
+          description: The transaction type (workflow id)
+          required: true
+          schema:
+            type: string
       requestBody:
-        $ref: '../vendor/credit-commons-software-stack/cc-php-lib/docs/credit-commons-openapi-3.0.yml#components/requestBodies/Transaction'
+        $ref: '#/components/requestBodies/Transaction'
         description: the originating entry
         required: true
       responses:
@@ -25,6 +32,21 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '../vendor/credit-commons-software-stack/cc-php-lib/docs/credit-commons-openapi-3.0.yml#/components/schemas/Entry'
-
-
+                  $ref: 'https://gitlab.com/credit-commons-software-stack/cc-php-lib/-/raw/master/docs/credit-commons-openapi-3.0.yml#/components/schemas/Entry'
+components:
+  requestBodies:
+    Transaction:
+      type: object
+      description: A not-yet built transaction object.
+      required:
+        - type
+        - entries
+      properties:
+        type:
+          description: The id of the transaction workflow. Blogic often depends on this.
+          type: string
+          example: 3rdparty
+        entries:
+          type: array
+          items:
+            $ref: "https://gitlab.com/credit-commons-software-stack/cc-php-lib/-/raw/master/docs/credit-commons-openapi-3.0.yml#/components/schemas/Entry'"

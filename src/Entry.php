@@ -29,7 +29,6 @@ class Entry extends BaseEntry implements \JsonSerializable {
       if ($data->$role instanceOf AccountRemote) {
         $row->metadata[$data->$role->id] = $data->$role->givenPath;
       }
-      //$data->{$role} = $$role;
     }
     $class = static::determineEntryClass($data->payee, $data->payer);
     return parent::create($data);
@@ -41,7 +40,7 @@ class Entry extends BaseEntry implements \JsonSerializable {
    * @param Account $acc2
    * @return string
    */
-  static function determineEntryClass(\CreditCommons\Account $acc1, \CreditCommons\Account $acc2) : string {
+  static function determineEntryClass(Account $acc1, Account $acc2) : string {
     $class_name = 'CCNode\Entry';
     // Now, depending on the classes of the payer and payee
     if ($acc1 instanceOf AccountBranch and $acc2 instanceOf AccountBranch) {

@@ -165,7 +165,6 @@ $app->get('/account/history/{acc_path}', function (Request $request, Response $r
   $params = $request->getQueryParams();
   $account = accountStore()->fetch($args['acc_path']);
   $result = $account->getHistory($params['samples']??0);
-
   $orientation->responseMode = TRUE;
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');

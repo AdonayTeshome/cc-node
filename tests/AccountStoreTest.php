@@ -9,7 +9,7 @@ chdir(__DIR__.'/../AccountStore');
  *
  * @note Query args don't work. Must wait for an answer to https://github.com/Nyholm/psr7/issues/181
  */
-class AccountStore extends TestBase  {
+class AccountStoreTest extends TestBase  {
 
   const SLIM_PATH = 'AccountStore/slimapp.php';
   const API_FILE_PATH = 'AccountStore/accountstore.openapi.yml';

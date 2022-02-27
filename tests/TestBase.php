@@ -5,8 +5,9 @@ namespace CCNode\Tests;
 use League\OpenAPIValidation\PSR15\ValidationMiddlewareBuilder;
 use League\OpenAPIValidation\PSR15\SlimAdapter;
 use Slim\Psr7\Response;
+use PHPUnit\Framework\TestCase;
 
-class TestBase extends \PHPUnit\Framework\TestCase {
+class TestBase extends TestCase {
 
   protected $users = [];//todo
 
@@ -35,13 +36,13 @@ class TestBase extends \PHPUnit\Framework\TestCase {
     }
     else {
       //print_r($contents);
-      $e = CreditCommons\RestAPI::reconstructCCException($contents);
+      $e = \CreditCommons\RestAPI::reconstructCCException($contents);
       $this->assertInstanceOf("CreditCommons\Exceptions\\$expected_response", $e);
     }
     return $contents;
   }
 
-  private function getRequest($path, $method = 'GET') {
+  protected function getRequest($path, $method = 'GET') {
     $psr17Factory = new \Nyholm\Psr7\Factory\Psr17Factory();
     return $psr17Factory->createServerRequest(strtoupper($method), '/'.$path);
   }

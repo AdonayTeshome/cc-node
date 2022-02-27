@@ -37,7 +37,7 @@ class TradeStats extends BaseStats {
       $this->gross_in += $diff;
     }
     else {
-      $this->gross_out += $diff;
+      $this->gross_out -= $diff;
     }
     if ($isPrimary) {
       $this->trades++;

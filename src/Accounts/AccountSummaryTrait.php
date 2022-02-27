@@ -42,7 +42,6 @@ trait AccountSummaryTrait {
       while($t = $result->fetch_object()) {
         $points[$t->updated] = round($t->balance, $config['decimal_places']);
       }
-
       if ($samples === 0) {
         // the raw data would show diagonal lines
       }
@@ -71,6 +70,12 @@ trait AccountSummaryTrait {
         // Note that since the first point is ALWAYS the first transaction in this
         // implementation, we don't create a create a point for initial 0 balance.
       }
+    }
+    else {
+      // Make a start and end point.
+      // NB the start time of one year is arbitrary and should be determined by config
+      $points[date("Y-m-d H:i:s", strtotime('-1 year'))] = 0;// Because the first transaction adds 2 points
+      $points[date("Y-m-d H:i:s")] = 0;// Because the first transaction adds 2 points
     }
     return $points;
   }

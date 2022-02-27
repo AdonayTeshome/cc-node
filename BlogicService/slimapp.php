@@ -7,23 +7,30 @@ use Slim\App;
 
 /**
  * Business logic service
+ * @note the fee will need formatting to go into the description string.
  */
-$app = new App();
-
+global $config;
 $config = parse_ini_file('blogic.ini');
-$app->post('/append/{type}', function (Request $request, Response $response, $args) {
+
+$app = new App();
+$app->post('/{type}', function (Request $request, Response $response, $args) {
   global $config;
   $type = $args['type']; // Not used here, but could be handy
   $content = $request->getBody();
   $entry  = json_decode($content);
   $additional = [];
-  if ($config['payee_fee']) {
+  if (!empty($config['payee_fee'])) {
     $additional[] = payee_fee($entry, $config['payer_fee']);
   }
-  if ($config['payer_fee']) {
+  if (!empty($config['payer_fee'])) {
     $additional[] = payer_fee($entry, $config['payer_fee']);
   }
-  $response->getBody()->write(json_encode($additional));
+  $additional = array_filter(
+    $additional,
+    function($e) {return $e->payer <> $e->payee;}
+  );
+
+  $response->getBody()->write(json_encode(array_values($additional)));
   return $response->withHeader('Content-Type', 'application/json');;
 });
 
@@ -32,10 +39,10 @@ return $app;
 /**
  * Charge the payee.
  */
-function payee_fee(stdClass $entry, $fee) : stdClass {
+function payee_fee(\stdClass $entry, $fee) : \stdClass {
   global $config;
   // Might want to author with the authenticaed account rather than $fees account
-  $fee = calc($entry->quant, $fee);
+  $fee = floor(calc($entry->quant, $fee));
   return (object)[
     'payer' => $entry->payee,
     'payee' => $config['fees_account'],
@@ -48,9 +55,9 @@ function payee_fee(stdClass $entry, $fee) : stdClass {
 /**
  * Charge the payer.
  */
-function payer_fee(stdClass $entry, $fee) : stdClass {
+function payer_fee(\stdClass $entry, $fee) : \stdClass {
   global $config;
-  $fee = calc($entry->quant, $fee);
+  $fee = floor(calc($entry->quant, $fee));
   // Might want to author with the authenticated account rather than $fees account
   return (object)[
     'payer' => $entry->payer,
@@ -67,7 +74,7 @@ function payer_fee(stdClass $entry, $fee) : stdClass {
  * @param float $fee
  * @return int
  */
-function calc(int $quant, float $fee) : int {
+function calc(int $quant, string $fee) : float {
   // the setting is a fix num of units or a percent.
   preg_match('/([0-9.])(%?)/', $fee, $matches);
   $num = $matches[1];
@@ -78,5 +85,5 @@ function calc(int $quant, float $fee) : int {
   else {
     $val =  $num;
   }
-  return floor($val);
+  return $val;
 }

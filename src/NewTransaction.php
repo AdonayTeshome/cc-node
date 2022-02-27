@@ -32,6 +32,7 @@ class NewTransaction extends BaseNewTransaction{
       'payer' => $data->payer,
       'quant' => $data->quant,
       'description' => $data->description,
+      'metadata' => $data->metadata
     ]];
   }
 

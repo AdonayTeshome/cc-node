@@ -132,5 +132,4 @@ components:
         url:
           type: string
           description: The credit commons remote ledger URL
-          required: false
           example: http://cc.example.com

@@ -1,6 +1,6 @@
 <?php
 
-namespace CCNode\tests;
+namespace CCNode\Tests;
 
 use CCNode\AccountStore;
 use CCNode\AddressResolver;
@@ -18,7 +18,7 @@ class AddressResolverTest extends \PHPUnit\Framework\TestCase {
     global $config, $addressResolver, $user, $local_accounts, $branch_accounts, $trunkwards_account, $node_name;
     $config = parse_ini_file(__DIR__.'/../node.ini');
     $node_name = $config['node_name'];
-    require_once __DIR__.'/../src/AccountStore.php';
+    //require_once __DIR__.'/../src/AccountStore.php';
     $accountStore = AccountStore::create();
     // For now set the user to anon. There are no permissions checks but
     // sometimes the addressresolves depends on whether the user is the BoT

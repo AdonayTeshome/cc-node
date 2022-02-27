@@ -1,6 +1,7 @@
 <?php
 
-namespace CCNode\tests;
+namespace CCNode\Tests;
+use Slim\Psr7\Response;
 
 /**
  * Tests the API functions of a node without touching remote nodes.
@@ -11,7 +12,7 @@ namespace CCNode\tests;
  * @todo Invalid paths currently return 404 which isn't in the spec.
  *
  */
-class SingleNodeTest extends TestBase{
+class SingleNodeTest extends TestBase {
 
   const SLIM_PATH = 'slimapp.php';
   const API_FILE_PATH = 'vendor/credit-commons-software-stack/cc-php-lib/docs/credit-commons-openapi-3.0.yml';
@@ -108,7 +109,8 @@ class SingleNodeTest extends TestBase{
       'payer' => reset($norm_acc_ids),
       'description' => 'test 3rdparty',
       'quant' => 1,
-      'type' => '3rdparty'
+      'type' => '3rdparty',
+      'metadata' => ['foo' => 'bar']
     ];
     $obj['payee'] = 'aaaaaaaaaaa';
     $this->sendRequest('transaction', 'DoesNotExistViolation', $admin, 'post', json_encode($obj));
@@ -138,7 +140,8 @@ class SingleNodeTest extends TestBase{
       'payer' => $payer,
       'description' => 'test 3rdparty',
       'quant' => 1,
-      'type' => '3rdparty'
+      'type' => '3rdparty',
+      'metadata' => ['foo' => 'bar']
     ];
     $this->sendRequest('transaction', 'PermissionViolation', '', 'post', json_encode($obj));
     // Default 3rdParty workflow saves transactions immemdiately in completed state.
@@ -152,6 +155,9 @@ class SingleNodeTest extends TestBase{
     $this->assertEquals('3rdparty', $transaction->type);
     $this->assertEquals('completed', $transaction->state);
     $this->assertEquals('1', $transaction->version);
+    $this->assertIsObject($transaction->entries[0]->metadata);
+    // easier to work with arrays
+    $this->assertEquals(['foo' => 'bar'], (array)$transaction->entries[0]->metadata);
 
     // try to retrieve a transaction that doesn't exist.
     $error = $this->sendRequest('transaction/ada5b4f0-33a8-4807-90c7-3aa56ae1c741/full', 'DoesNotExistViolation', $admin);
@@ -172,15 +178,14 @@ class SingleNodeTest extends TestBase{
     // Check the balances first
     $init_summary = $this->sendRequest("account/summary/$payee", 200, $payee);
     $init_points = (array)$this->sendRequest("account/history/$payee", 200, $payee);
-    if (count($init_points) == 0) {
-      $init_points[0] = 0;// Because the first transaction adds 2 points
-    }
+    $this->assertNotEmpty($init_points);
     $obj = [
       'payee' => $payee,
       'payer' => $payer,
       'description' => 'test bill',
-      'quant' => 1,
-      'type' => 'bill'
+      'quant' => 10,
+      'type' => 'bill',
+      'metadata' => ['foo' => 'bar']
     ];
     // 'bill' transactions must be approved, and enter pending state.
     $transaction = $this->sendRequest('transaction', 200, $payee, 'post', json_encode($obj));
@@ -189,7 +194,7 @@ class SingleNodeTest extends TestBase{
     $this->assertEquals("validated", $transaction->state);
     $this->assertEquals('0', $transaction->version);
     // check that nobody else can see this transaction
-    $this->sendRequest("transaction/$transaction->uuid/full", 'DoesNotExistViolation', $payer);
+    $this->sendRequest("transaction/$transaction->uuid/full", 'CCViolation', $payer);
     $this->sendRequest("transaction/$transaction->uuid/full", 200, $admin);
 
     // write the transaction
@@ -197,24 +202,60 @@ class SingleNodeTest extends TestBase{
     $this->sendRequest("transaction/$transaction->uuid/pending", 201, $payee, 'patch');
 
     $pending_summary = $this->sendRequest("account/summary/$payee", 200, $payee);
-    $this->assertEquals($pending_summary->pending->balance-1, $init_summary->pending->balance);
-    $this->assertEquals($pending_summary->pending->volume-1, $init_summary->pending->volume);
-    $this->assertEquals($pending_summary->pending->gross_in-1, $init_summary->pending->gross_in);
-    $this->assertEquals($pending_summary->pending->gross_out, $init_summary->pending->gross_out);
-    $this->assertEquals($pending_summary->pending->trades-1, $init_summary->pending->trades);
+    // Get the amount of the transaction, including fees.
+    list($income, $expenditure) = $this->transactionDiff($transaction, $payee);
+    echo "\n$income, $expenditure";
+    $this->assertEquals(
+      $pending_summary->pending->balance,
+      $init_summary->pending->balance + $income - $expenditure
+    );
+    $this->assertEquals(
+      $pending_summary->pending->volume,
+      $init_summary->pending->volume + $income + $expenditure
+    );
+    $this->assertEquals(
+      $pending_summary->pending->gross_in,
+      $init_summary->pending->gross_in + $income
+    );
+    $this->assertEquals(
+      $pending_summary->pending->gross_out,
+      $init_summary->pending->gross_out + $expenditure
+    );
+    $this->assertEquals(
+      $pending_summary->pending->trades,
+      $init_summary->pending->trades + 1
+    );
+    $this->assertEquals(
+      $pending_summary->completed->balance,
+      $init_summary->completed->balance
+    );
     // We can't easily test partners unless we clear the db first.
     // Admin confirms the transaction
     $this->sendRequest("transaction/$transaction->uuid/completed", 201, $admin, 'patch');
     $completed_summary = $this->sendRequest("account/summary/$payee", 200, $payee);
-    $this->assertEquals($completed_summary->completed->balance-1, $init_summary->completed->balance);
-    $this->assertEquals($completed_summary->completed->volume-1, $init_summary->completed->volume);
-    $this->assertEquals($completed_summary->completed->gross_in-1, $init_summary->completed->gross_in);
-    $this->assertEquals($completed_summary->completed->gross_out, $init_summary->completed->gross_out);
-    $this->assertEquals($completed_summary->completed->trades-1, $init_summary->completed->trades);
+    $this->assertEquals(
+      $completed_summary->completed->balance,
+      $init_summary->completed->balance + $income - $expenditure
+    );
+    $this->assertEquals(
+      $completed_summary->completed->volume,
+      $init_summary->completed->volume + $income + $expenditure
+    );
+    $this->assertEquals(
+      $completed_summary->completed->gross_in,
+      $init_summary->completed->gross_in + $income
+    );
+    $this->assertEquals(
+      $completed_summary->completed->gross_out,
+      $init_summary->completed->gross_out + $expenditure
+    );
+    $this->assertEquals(
+      $completed_summary->completed->trades,
+      $init_summary->completed->trades +1
+    );
     sleep(2);// so the last point on account history doesn't override the previous transaction
     $completed_points = (array)$this->sendRequest("account/history/$payee", 200, $payee);
-    $expected_points  = count($completed_points) -2 + count($transaction->entries);
-    $this->assertEquals($expected_points, count($init_points));
+    $this->assertEquals(count($completed_points), count($init_points) +1);
     // Erase
     $this->sendRequest("transaction/$transaction->uuid/erased", 201, $admin, 'patch');
     $erased_summary = $this->sendRequest("account/summary/$payee", 200, $payee);
@@ -252,13 +293,14 @@ class SingleNodeTest extends TestBase{
     $this->sendRequest("accounts/summary", 200, $user1);
   }
 
-
   private function checkTransactions(array $all_transactions, array $filtered_uuids, array $conditions) {
     foreach ($all_transactions as $t) {
       $pass = FALSE;
       foreach ($conditions as $key => $value) {
         $pass = $t->{$key} == $value;
-        if (!$pass) break;
+        if (!$pass) {
+          break;
+        }
       }
       if ($pass) {
         $uuids[] = $t->uuid;
@@ -267,4 +309,12 @@ class SingleNodeTest extends TestBase{
     $this->assertEquals($uuids, $filtered_uuids);
   }
 
+  private function transactionDiff($transaction, string $payee) : array {
+    $income = $expenditure = 0;
+    foreach ($transaction->entries as $e) {
+      if ($e->payee == $payee) $income += $e->quant;
+      elseif ($e->payer == $payee) $expenditure += $e->quant;
+    }
+    return [$income, $expenditure];
+  }
 }
