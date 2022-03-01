@@ -31,13 +31,16 @@ class TestBase extends TestCase {
       if ($status_code <> $expected_response) {
         // Blurt out to terminal to ensure all info is captured.
         echo "\n $acc_id got unexpected code ".$status_code." on $path: ".print_r($contents, 1); // Seems to be truncated hmph.
-        $this->assertEquals($expected_response, $status_code);
+        $this->assertEquals($expected_response, $status_code); // always fails.
       }
     }
-    else {
-      //print_r($contents);
+    elseif ($contents) {
       $e = \CreditCommons\RestAPI::reconstructCCException($contents);
-      $this->assertInstanceOf("CreditCommons\Exceptions\\$expected_response", $e);
+      $class = "CreditCommons\Exceptions\\$expected_response";
+      $this->assertInstanceOf($class, $e);
+      if (!$e instanceOf $class) {
+        throw $e;
+      }
     }
     return $contents;
   }

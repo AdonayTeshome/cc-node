@@ -8,7 +8,8 @@ use Slim\Psr7\Response;
  * @todo Test transversal Errors.
  *   - IntermediateledgerViolation
  *   - HashMismatchFailure
- *   - UnavailableNodeFailure Is this testable? Maybe with an invalid url?\
+ *   - UnavailableNodeFailure Is this testable? Maybe with an invalid url?
+ *   - Try to trade with a Remote account.
  * @todo Invalid paths currently return 404 which isn't in the spec.
  *
  */
@@ -53,9 +54,6 @@ class SingleNodeTest extends TestBase {
     $this->assertObjectHasAttribute("accountSummary", $options);
 
     $nodes = $this->sendRequest('handshake', 200, reset($norm_acc_ids));
-    foreach ($nodes as $status_code => $urls) {
-      $this->assertIsInteger($status_code / 100);
-    }
   }
 
   function testBadLogin() {
@@ -160,10 +158,10 @@ class SingleNodeTest extends TestBase {
     $this->assertEquals(['foo' => 'bar'], (array)$transaction->entries[0]->metadata);
 
     // try to retrieve a transaction that doesn't exist.
-    $error = $this->sendRequest('transaction/ada5b4f0-33a8-4807-90c7-3aa56ae1c741/full', 'DoesNotExistViolation', $admin);
+    $error = $this->sendRequest('transaction/full/ada5b4f0-33a8-4807-90c7-3aa56ae1c741', 'DoesNotExistViolation', $admin);
     $this->assertEquals('transaction', $error->type);
 
-    $this->sendRequest('transaction/'.$transaction->uuid.'/full', 200, $admin);
+    $this->sendRequest('transaction/full/'.$transaction->uuid.'', 200, $admin);
   }
 
   function testTransactionLifecycle() {
@@ -194,8 +192,8 @@ class SingleNodeTest extends TestBase {
     $this->assertEquals("validated", $transaction->state);
     $this->assertEquals('0', $transaction->version);
     // check that nobody else can see this transaction
-    $this->sendRequest("transaction/$transaction->uuid/full", 'CCViolation', $payer);
-    $this->sendRequest("transaction/$transaction->uuid/full", 200, $admin);
+    $this->sendRequest("transaction/full/$transaction->uuid", 'CCViolation', $payer);
+    $this->sendRequest("transaction/full/$transaction->uuid", 200, $admin);
 
     // write the transaction
     $this->sendRequest("transaction/$transaction->uuid/pending", 'PermissionViolation', '', 'patch', json_encode($obj));
@@ -270,13 +268,19 @@ class SingleNodeTest extends TestBase {
    */
   function testTransactionFilterRetrieve() {
     global $norm_acc_ids;
-    $this->sendRequest("transaction", 'PermissionViolation', '');
-    $uuids = $this->sendRequest("transaction", 200, reset($norm_acc_ids));
+    $norm_user = reset($norm_acc_ids);
+    $this->sendRequest("transaction/full", 'PermissionViolation', '');
+    $results = $this->sendRequest("transaction/full", 200, $norm_user);
+    $first_uuid = reset($results)->uuid;
+    $this->sendRequest("transaction/full/$first_uuid", 'PermissionViolation', '');
+    $this->sendRequest("transaction/full/$first_uuid", 200, $norm_user);
+    $this->sendRequest("transaction/entry/$first_uuid", 200, $norm_user);
+
     return;
     // Filter description
-    $uuids = $this->sendRequest("transaction?description=test%203rdparty", 200, '');
+    $uuids = $this->sendRequest("transaction?description=test%203rdparty", 200, $norm_user);
     //We have the results, now fetch and test the first result
-    $transaction = $this->sendRequest("transaction/".reset($uuids)."/full", 200, '');
+    $transaction = $this->sendRequest("transaction/full/$first_uuid", 200, $norm_user);
     $this->assertStringContainsString("test 3rdparty", $transaction->entries[0]->description);
   }
 
@@ -289,8 +293,9 @@ class SingleNodeTest extends TestBase {
     $this->assertlessThan(0, $limits->min);
     $this->assertGreaterThan(0, $limits->max);
     // account/summary/{acc_id} is already tested
-    $this->sendRequest("accounts/summary", 'PermissionViolation', '');
-    $this->sendRequest("accounts/summary", 200, $user1);
+    // OpenAPI doesn't allow optional parameters
+    $this->sendRequest("account/summary", 'PermissionViolation', '');
+    $this->sendRequest("account/summary", 200, $user1);
   }
 
   private function checkTransactions(array $all_transactions, array $filtered_uuids, array $conditions) {

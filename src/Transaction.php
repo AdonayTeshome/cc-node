@@ -256,12 +256,9 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
   /**
    * @param array $params
    *   valid keys: state, payer, payee, involving, type, before, after, description, format
-   * @param string $format
-   *   the name of the transaction format to return. entry, full, or uuid
    *
-   * @return []
-   *   Depending on 'format': full gives normal transactions with entries indexed
-   *   by uuid; uuid gives a list of uuids; 'entry' gives a list of Extended entries
+   * @return string[]
+   *   A list of transaction uuids
    *
    * @note It is not possible to filter by signatures needed or signed because
    * they don't exist, as such, in the db.
@@ -272,6 +269,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     // Get only the latest version of each row in the transactions table.
     $query = "SELECT e.id, t.uuid FROM transactions t "
       . "INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver "
+      // Means we get one result for each entry, so we use array_unique at the end.
       . "LEFT JOIN entries e ON t.id = e.txid";
     if (isset($payer)) {
       if ($col = strpos($payer, '/')) {
@@ -314,16 +312,24 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       $date = date("Y-m-d H:i:s", strtotime($after));
       $conditions[]  = "updated > '$date'";
     }
-    if (isset($state) and $state <> 'validated') {
-      $conditions[]  = "state = '$state'";
+    if (isset($states)){
+      $states = explode(',', $states);
+      if (in_array('validated', $states)) {
+        // only the author can see transactions in the validated state.
+        $conditions[]  = "(state = '$state' and author = '$user->id')";
+      }
+      else {
+        // transactions with version 0 are validated but not confirmed by their creator.
+        // They don't really exist and could be deleted, and can only be seen by their creator.
+        $conditions[] = 't.version > 0';
+      }
+      if (!in_array('erased', $states)) {
+        $conditions[] = "state <> 'erased'";
+      }
+      foreach ($states as $s) {$strings[] = "'".$s."'";}
+      $conditions[] = "state in (".implode(',', $strings).")";
     }
-    if (isset($state) and $state == 'validated') {
-      // only the author can see transactions in the validated state.
-      $conditions[]  = "(state = '$state' and author = '$user->id')";
-    }
-    else {
-      $conditions[] = 'version > 0';
-    }
+
     if (isset($type)) {
       $conditions[]  = "type = '$type'";
     }
@@ -336,9 +342,9 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     $query_result = Db::query($query);
     $results = [];
     while ($row = $query_result->fetch_object()) {
-      $results[$row->id] = $row->uuid;
+      $results[] = $row->uuid;
     }
-    return $results;
+    return array_values(array_unique($results));
   }
 
   /**

@@ -63,7 +63,6 @@ class AddressResolver {
 
     $parts = explode('/', $given_acc_path);
     if ($acc_id = $this->relativeToThisNode($parts)) {
-
       // $parts has been reduced to the branchward path.
       if ($this->accountStore->has($acc_id)) {
         return [$this->accountStore->fetch($acc_id), implode('/', $parts)];
@@ -81,7 +80,7 @@ class AddressResolver {
     }
     if (reset($path_parts) == $this->nodeName) {
       array_shift($path_parts);
-      return array_pop($path_parts);
+      return array_shift($path_parts);
     }
     if ($this->accountStore->has(reset($path_parts))) {
       return array_shift($path_parts);
@@ -91,7 +90,7 @@ class AddressResolver {
     if ($pos !== NULL) {
       if (isset($path_parts[$pos+1]) and $path_parts[$pos+1] == $this->nodeName) {
         $path_parts = array_slice($path_parts, $pos+2);
-        return array_shift($path_parts);
+        return (string)array_shift($path_parts);
       }
     }
     return FALSE;

@@ -2,16 +2,11 @@
 namespace CCNode;
 
 use CCNode\Db;
-use CCNode\AccountStore;
 
 /**
  * Transaction entry in a flat format.
  */
 class StandaloneEntry extends \CreditCommons\StandaloneEntry {
-
-  function __create() {
-    $this->accountStore = AccountStore::create();
-  }
 
   /**
    * @param string $uuid
@@ -44,12 +39,23 @@ class StandaloneEntry extends \CreditCommons\StandaloneEntry {
     $entries = [];
     foreach (Db::query($query)->fetch_all(MYSQLI_ASSOC) as $row) {
       $data = (object)$row;
-      $data->payee = $this->accountStore->fetch($data->payee)->getRelPath();
-      $data->payer = $this->accountStore->fetch($data->payer)->getRelPath();
+      $data->payee = accountStore()->fetch($data->payee)->getRelPath();
+      $data->payer = accountStore()->fetch($data->payer)->getRelPath();
       // @todo Get the full paths from the metadata
       $data->metadata = unserialize($data->metadata);
-      $data->version = (int)$data->version;
-      $entries[] = new static($data->payer, $data->payee, $data->description, $data->quant, $data->type, $data->uuid, $data->author, $data->state, $data->version);
+      $entries[$data->id] = new static(
+        $data->uuid,
+        $data->payer,
+        $data->payee,
+        $data->quant,
+        $data->type,
+        $data->author,
+        $data->state,
+        $data->created,
+        $data->updated,
+        $data->description,
+        $data->metadata
+      );
     }
     return $entries;
   }

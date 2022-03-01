@@ -2,7 +2,9 @@
 
 namespace CCNode;
 use CreditCommons\Account;
-use Accounts\Remote;
+use CCNode\Accounts\Remote;
+use CreditCommons\Exceptions\UnavailableNodeFailure;
+use CreditCommons\Exceptions\HashMismatchFailure;
 
 
 /**
@@ -87,14 +89,24 @@ class Orientation {
    *   Linked nodes keyed by response_code.
    */
   function handshake() : array {
-    global $config;
+    global $config, $user;
     $results = [];
-    $active_accounts = AccountStore()->filter(['status' => 1, 'class' => 'Remote'], TRUE);
-    foreach ($active_accounts as $account) {
-      if ($account instanceof Remote) {
-        //Make sure we load the remote version by giving a path longer than 1 part.
-        list($code) = $account->API()->handshake();
-        $results[$code][] = $account->id;
+    if ($user instanceOf Accounts\User) {
+      $remote_accounts = AccountStore()->filter(['status' => 1, 'local' => 0], TRUE);
+      foreach ($remote_accounts as $acc) {
+        try {
+          $acc->API()->handshake();
+          $results[$acc->id] = 'ok';
+        }
+        catch (UnavailableNodeFailure $e) {
+          $results[$acc->id] = 'UnavailableNodeFailure';
+        }
+        catch (HashMismatchFailure $e) {
+          $results[$acc->id] = 'HashMismatchFailure';
+        }
+        catch(\Exception $e) {
+          die(get_class($e));
+        }
       }
     }
     return $results;

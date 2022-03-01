@@ -119,11 +119,19 @@ $app->get('/account/limits/{acc_id}', function (Request $request, Response $resp
   return json_response($response, (object)['min' => $account->min, 'max' => $account->max]);
 });
 
+  // Open api requrest that every path argument is filled, so
+$app->get('/account/summary', function (Request $request, Response $response, $args) {
+  check_permission($request, 'accountSummary');
+  $result = Accounts\User::getAccountSummaries();
+  $response->getBody()->write(json_encode($result));
+  return $response->withHeader('Content-Type', 'application/json');
+});
+
 $app->get('/account/summary/{acc_id:.*$}', function (Request $request, Response $response, $args) {
+  global $node_name;
   check_permission($request, 'accountSummary');
   $params = $request->getQueryParams();
   $given_path = urldecode($args['acc_id']);
-
   list($account, $rel_path) = AddressResolver::create()->resolveToLocalAccountName($given_path, TRUE);
   if (empty($rel_path)) {
     // Local account.
@@ -135,29 +143,9 @@ $app->get('/account/summary/{acc_id:.*$}', function (Request $request, Response 
     array_shift($path_parts);
     $result = API_calls($account)->getAccountSummary(implode('/', $path_parts));
   }
-
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
 });
-
-$app->get('/accounts/summary[/{path:.*$}]', function (Request $request, Response $response, $args) {
-  if (isset($args['path'])) {
-    // Forward the request
-    check_permission($request, 'accountSummary');
-    $given_path = urldecode($args['path']);
-    list($account, $relative_path) = AddressResolver::create()->resolveToLocalAccountName($given_path, TRUE);
-    $result = API_calls($account)->getAccountSummaries(explode('/', $given_path));
-  }
-  else {
-    // Local accounts
-    check_permission($request, 'accountSummary');
-    // Get all the non-blocked accounts on this node
-    $result = Accounts\User::getAccountSummaries();
-  }
-  $response->getBody()->write(json_encode($result));
-  return $response->withHeader('Content-Type', 'application/json');
-});
-
 
 $app->get('/account/history/{acc_path}', function (Request $request, Response $response, $args) {
   global $orientation;
@@ -168,6 +156,38 @@ $app->get('/account/history/{acc_path}', function (Request $request, Response $r
   $orientation->responseMode = TRUE;
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
+});
+
+
+$uuid_regex = '[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-\b[0-9a-f]{12}';
+// Retrieve one transaction
+$app->get('/transaction/{format}/{uuid:'.$uuid_regex.'}', function (Request $request, Response $response, $args) {
+  global $orientation;
+  check_permission($request, 'getTransaction');
+  if ($args['format'] == 'entry') {
+    $result = array_values(StandaloneEntry::loadByUuid($args['uuid']));
+  }
+  else {// format = full (default)
+    $result = Transaction::loadByUuid($args['uuid']);
+  }
+  $orientation->responseMode = TRUE;
+  return json_response($response, $result, 200);
+});
+
+// Filter transactions
+$app->get('/transaction/{format}', function (Request $request, Response $response, $args) {
+  check_permission($request, 'filterTransactions');
+  $params = $request->getQueryParams();
+  $uuids = Transaction::filter($params);// keyed by entries
+  if ($args['format'] == 'entry') {
+    $results = StandaloneEntry::load(array_keys($uuids));
+  }
+  else {
+    foreach (array_unique($uuids) as $uuid) {
+      $results[$uuid] = Transaction::loadByUuid($uuid);
+    }
+  }
+  return json_response($response, array_values($results), 200);
 });
 
 // Create a new transaction
@@ -210,8 +230,6 @@ $app->post('/transaction/relay', function (Request $request, Response $response)
   return json_response($response, $transaction, 201);
 });
 
-$uuid_regex = '[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-\b[0-9a-f]{12}';
-
 $app->patch('/transaction/{uuid:'.$uuid_regex.'}/{dest_state}', function (Request $request, Response $response, $args) {
   check_permission($request, 'stateChange');
   global $orientation;
@@ -224,28 +242,6 @@ $app->patch('/transaction/{uuid:'.$uuid_regex.'}/{dest_state}', function (Reques
   }
   $transaction->changeState($args['dest_state']);
   return $response->withStatus(201);
-});
-// Retrieve one transaction
-$app->get('/transaction/{uuid:'.$uuid_regex.'}/{format}', function (Request $request, Response $response, $args) {
-  global $orientation;
-  check_permission($request, 'getTransaction');
-  if ($args['format'] == 'entry') {
-    $result = StandaloneEntry::loadByUuid($args['uuid']);
-  }
-  else {// format = full
-    $result = Transaction::loadByUuid($args['uuid']);
-  }
-  $orientation->responseMode = TRUE;
-  return json_response($response, $result, 200);
-});
-
-$app->get('/transaction', function (Request $request, Response $response) {
-  global $orientation;
-  check_permission($request, 'filterTransactions');
-  $params = $request->getQueryParams();
-  $uuids = Transaction::filter($params);
-  // return uuids or entry ids?
-  return json_response($response, $uuids, 200);
 });
 
 return $app;
@@ -279,13 +275,19 @@ function load_account(string $id) : Account {
 }
 
 function check_permission(Request $request, string $operationId) {
-  global $user, $orientation;
+  global $user, $config;
   authenticate($request); // This sets $user
-  $orientation = new Orientation();
   $permitted = \CCNode\permitted_operations();
   if (!in_array($operationId, array_keys($permitted))) {
+    if ($user->id == $config['bot']['acc_id']) {
+      $user_id = '<trunk>';
+    }
+    elseif ($user->id) {
+      $user_id = $user->id;
+    }
+    else $user_id = '<anon>';
     throw new PermissionViolation(
-      acc_id: $user->id?:'<anon>',
+      acc_id: $user_id,
       method: $request->getMethod(),
       endpoint: $request->getRequestTarget()
     );
@@ -341,7 +343,7 @@ function permitted_operations() : array {
  * @throws DoesNotExistViolation|HashMismatchFailure|AuthViolation
  */
 function authenticate(Request $request) : void {
-  global $config, $user;
+  global $config, $user, $orientation;
   $user = load_account('<anon>'); // Anon
   if ($request->hasHeader('cc-user') and $request->hasHeader('cc-auth')) {
     $acc_id = $request->getHeaderLine('cc-user');
@@ -359,6 +361,9 @@ function authenticate(Request $request) : void {
         //local user with the wrong password
         throw new AuthViolation(acc_id: $acc_id);
       }
+      // login successful.
+      // Todo orientation is only needed during transaction processing.
+      $orientation = new Orientation();
     }
     else {
       // Blank username supplied, fallback to anon
