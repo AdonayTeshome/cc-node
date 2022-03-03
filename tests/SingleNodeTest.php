@@ -18,54 +18,32 @@ class SingleNodeTest extends TestBase {
   const SLIM_PATH = 'slimapp.php';
   const API_FILE_PATH = 'vendor/credit-commons-software-stack/cc-php-lib/docs/credit-commons-openapi-3.0.yml';
 
+  function __construct() {
+    parent::__construct();
+    $this->loadAccounts('AccountStore/');
+  }
+
+
   public static function setUpBeforeClass(): void {
-    global $config, $passwords, $admin_acc_ids, $norm_acc_ids, $trunkwards_id, $branch_acc_ids;
+    global $config;
     // Get some user data directly from the accountStore
     // NB the accountstore should deny requests from outside this server.
     $config = parse_ini_file(__DIR__.'/../node.ini');
-    // get accounts directly from file, so we have the passwords
-    $accounts = (array)json_decode(file_get_contents('AccountStore/store.json'));
-    foreach ($accounts as $acc) {
-      if ($acc->status){
-        if (!empty($acc->key)) {
-          $passwords[$acc->id] = $acc->key;
-          if ($acc->admin) {
-            $admin_acc_ids[] = $acc->id;
-          }
-          else {
-            $norm_acc_ids[] = $acc->id;
-          }
-        }
-        elseif (!empty($acc->url)) {
-          if (!empty($config['bot']['acc_id']) and $acc->id == $config['bot']['acc_id']) {
-            $trunkwards_id = $acc->id;
-          }
-          else {
-            $branch_acc_ids[] = $acc->id;
-          }
-        }
-      }
-    }
-    if (empty($norm_acc_ids) || empty($admin_acc_ids)) {
-      die("Testing requires both admin and non-admin accounts in store.json");
-    }
   }
 
   function testEndpoints() {
-    global $norm_acc_ids;
     $options = $this->sendRequest('', 200, '', 'options');
     $this->assertObjectHasAttribute("permittedEndpoints", $options);
     $this->assertObjectNotHasAttribute("accountSummary", $options);
     $this->assertObjectNotHasAttribute("filterTransactions", $options);
-    $options = $this->sendRequest('', 200, reset($norm_acc_ids), 'options');
+    $options = $this->sendRequest('', 200, reset($this->normalAccIds), 'options');
     $this->assertObjectHasAttribute("filterTransactions", $options);
     $this->assertObjectHasAttribute("accountSummary", $options);
 
-    $nodes = $this->sendRequest('handshake', 200, reset($norm_acc_ids));
+    $nodes = $this->sendRequest('handshake', 200, reset($this->normalAccIds));
   }
 
   function testBadLogin() {
-    global $norm_acc_ids;
     // This is a comparatively long winded because sendRequest() only uses valid passwords.
     $request = $this->getRequest('absolutepath')
       ->withHeader('cc-user', 'zzz123')
@@ -79,7 +57,7 @@ class SingleNodeTest extends TestBase {
     $this->assertEquals('account', $exception->type);
 
     $request = $this->getRequest('absolutepath')
-      ->withHeader('cc-user', reset($norm_acc_ids))
+      ->withHeader('cc-user', reset($this->normalAccIds))
       ->withHeader('cc-auth', 'zzz123');
     $response = $this->getApp()->process($request, new Response());
     $this->assertEquals(400, $response->getStatusCode());
@@ -90,10 +68,9 @@ class SingleNodeTest extends TestBase {
   }
 
   function testAccountNames() {
-    global $norm_acc_ids, $admin_acc_ids;
-    $chars = substr(reset($admin_acc_ids), 0, 2);
+    $chars = substr(reset($this->adminAccIds), 0, 2);
     $this->sendRequest("accounts/filter/$chars", 'PermissionViolation');
-    $results = $this->sendRequest("accounts/filter/$chars", 200, reset($norm_acc_ids));
+    $results = $this->sendRequest("accounts/filter/$chars", 200, reset($this->normalAccIds));
     // should be a list of account names including 'a'
     foreach ($results as $acc_id) {
       $this->assertStringStartsWith($chars, $acc_id);
@@ -101,18 +78,16 @@ class SingleNodeTest extends TestBase {
   }
 
   function testWorkflows() {
-    global $norm_acc_ids;
     // By default this is only accessible for authenticated users.
-    $wfs = $this->sendRequest('workflows', 200, reset($norm_acc_ids));
+    $wfs = $this->sendRequest('workflows', 200, reset($this->normalAccIds));
     $this->assertNotEmpty($wfs);
   }
 
   function testBadTransactions() {
-    global $norm_acc_ids, $admin_acc_ids;
-    $admin = reset($admin_acc_ids);
+    $admin = reset($this->adminAccIds);
     $obj = [
-      'payee' => reset($admin_acc_ids),
-      'payer' => reset($norm_acc_ids),
+      'payee' => reset($this->adminAccIds),
+      'payer' => reset($this->normalAccIds),
       'description' => 'test 3rdparty',
       'quant' => 1,
       'type' => '3rdparty',
@@ -120,7 +95,7 @@ class SingleNodeTest extends TestBase {
     ];
     $obj['payee'] = 'aaaaaaaaaaa';
     $this->sendRequest('transaction', 'DoesNotExistViolation', $admin, 'post', json_encode($obj));
-    $obj['payee'] = reset($admin_acc_ids);
+    $obj['payee'] = reset($this->adminAccIds);
     $obj['quant'] = 999999999;
     $this->sendRequest('transaction', 'TransactionLimitViolation', $admin, 'post', json_encode($obj));
     $obj['quant'] = 0;
@@ -135,11 +110,10 @@ class SingleNodeTest extends TestBase {
   }
 
   function test3rdParty() {
-    global $norm_acc_ids, $admin_acc_ids, $passwords;
-    $this->assertGreaterThan('1', count($norm_acc_ids));
-    $admin = reset($admin_acc_ids);
-    $payee = reset($norm_acc_ids);
-    $payer = next($norm_acc_ids);
+    $this->assertGreaterThan('1', count($this->normalAccIds));
+    $admin = reset($this->adminAccIds);
+    $payee = reset($this->normalAccIds);
+    $payer = next($this->normalAccIds);
     // This assumes the default workflow is unmodified.
     $obj = [
       'payee' => $payee,
@@ -173,10 +147,9 @@ class SingleNodeTest extends TestBase {
   }
 
   function testTransactionLifecycle() {
-    global $norm_acc_ids, $admin_acc_ids;
-    $admin = reset($admin_acc_ids);
-    $payer = reset($norm_acc_ids);
-    $payee = next($norm_acc_ids);
+    $admin = reset($this->adminAccIds);
+    $payer = reset($this->normalAccIds);
+    $payee = next($this->normalAccIds);
     if (!$payer) {
       print "Skipped testTransactionLifecycle. More than one non-admin user required";
       return;
@@ -265,7 +238,7 @@ class SingleNodeTest extends TestBase {
     $this->assertEquals(count($completed_points), count($init_points) +1);
 
     // Filtering.
-    $norm_user = reset($norm_acc_ids);
+    $norm_user = reset($this->normalAccIds);
     $this->sendRequest("transaction/full", 'PermissionViolation', '');
     $results = $this->sendRequest("transaction/full", 200, $norm_user);
     $first_uuid = reset($results)->uuid;
@@ -310,8 +283,7 @@ class SingleNodeTest extends TestBase {
   }
 
   function testAccountSummaries() {
-    global $norm_acc_ids;
-    $user1 = reset($norm_acc_ids);
+    $user1 = reset($this->normalAccIds);
     $this->sendRequest("account/history/$user1", 'PermissionViolation', '');
     //  Currently there is no per-user access control around limits visibility.
     $limits = $this->sendRequest("account/limits/$user1", 200, $user1);
@@ -324,13 +296,13 @@ class SingleNodeTest extends TestBase {
   }
 
   function testTrunkwards() {
-    global $trunkwards_id, $norm_acc_ids, $config;
-    if (empty($trunkwards_id)) {
+    global $config;
+    if (empty($this->trunkwardsId)) {
       $this->assertEquals(1, 1);
       return;
     }
     $this->sendRequest("absolutepath", 'PermissionViolation', '');
-    $nodes = $this->sendRequest("absolutepath", 200, reset($norm_acc_ids));
+    $nodes = $this->sendRequest("absolutepath", 200, reset($this->normalAccIds));
     $this->assertGreaterThan(1, count($nodes), 'Absolute path did not return more than one node: '.reset($nodes));
     $this->assertEquals($config['node_name'], end($nodes), 'Absolute path does not end with the current node.');
   }

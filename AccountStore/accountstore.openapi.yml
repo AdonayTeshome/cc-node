@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   version: 1.0.0
   title: "Credit commons: AccountStore service"
-  description: Internal API called by Credit Commons reference implementation for managing accounts and balance limits. This API does not specify case-sensitivity.
+  description: Internal API called by Credit Commons reference implementation for managing accounts and balance limits. This API does not specify case-sensitivity. No authentication methods are supplied as this service is assumed to be running locally and access should be restricted that way.
   contact:
     name: Matthew Slater
     url: https://matslats.net/contact
@@ -36,7 +36,7 @@ paths:
       description: Filter accounts, and return full account objects
       parameters:
         - name: chars
-          in: path
+          in: query
           description: the string or fragment to check against account names.
           required: false
           schema:
@@ -44,12 +44,6 @@ paths:
         - name: status
           in: query
           description: Filter for active (true) or blocked (false) accounts
-          required: false
-          schema:
-            type: boolean
-        - name: auth
-          in: query
-          description: The account's auth key. (Must be used in conjunction with name for login)
           required: false
           schema:
             type: boolean
@@ -75,7 +69,7 @@ paths:
       description: Filter accounts, and return a list of names
       parameters:
         - name: chars
-          in: path
+          in: query
           description: the string or fragment to check against account names.
           required: false
           schema:
@@ -83,12 +77,6 @@ paths:
         - name: status
           in: query
           description: Filter for active (true) or blocked (false) accounts
-          required: false
-          schema:
-            type: boolean
-        - name: auth
-          in: query
-          description: The account's auth key. (Must be used in conjunction with name for login)
           required: false
           schema:
             type: boolean
@@ -107,6 +95,28 @@ paths:
                 type: array
                 items:
                   type: string
+  "/creds/{name}/{auth}":
+    get:
+      summary: check the username and password for normal accounts.
+      operationId: checkCreds
+      parameters:
+        - name: name
+          in: path
+          description: The account name.
+          required: true
+          schema:
+            type: string
+        - name: auth
+          in: path
+          description: The account's auth key
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Credentials matched
+        "400":
+          description: Failed to log in.
 components:
   schemas:
     Account:

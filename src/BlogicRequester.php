@@ -23,6 +23,7 @@ class BlogicRequester extends Requester {
       ->request(200, $transaction->type);
 
     // Upcast the payer and payees
+    $additional = [];
     foreach ($entries as $entry) {
       $entry->payee = accountStore()->fetch($entry->payee);
       $entry->payer = accountStore()->fetch($entry->payer);

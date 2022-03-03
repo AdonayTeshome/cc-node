@@ -9,6 +9,13 @@ use PHPUnit\Framework\TestCase;
 
 class TestBase extends TestCase {
 
+  protected $rawAccounts = [];
+  protected $adminAccIds = [];
+  protected $normalAccIds = [];
+  protected $branchAccIds = [];
+  protected $blockedAccIds = [];
+  protected $trunkwardsId = '';
+
   /**
    * Passwords, keyed by user
    * @var array
@@ -16,7 +23,6 @@ class TestBase extends TestCase {
   protected $passwords = [];//todo
 
   protected function sendRequest($path, int|string $expected_response, string $acc_id = '', string $method = 'get', string $request_body = '') : \stdClass|NULL|array {
-    global $passwords;
     if ($query = strstr($path, '?')) {
       $path = strstr($path, '?', TRUE);
       parse_str(substr($query, 1), $params);
@@ -28,7 +34,7 @@ class TestBase extends TestCase {
     }
     if ($acc_id) {
       $request = $request->withHeader('cc-user', $acc_id)
-        ->withHeader('cc-auth', $passwords[$acc_id]);
+        ->withHeader('cc-auth', $this->passwords[$acc_id]);
     }
     if ($request_body) {
       $request = $request->withHeader('Content-Type', 'application/json');
@@ -43,16 +49,13 @@ class TestBase extends TestCase {
       if ($status_code <> $expected_response) {
         // Blurt out to terminal to ensure all info is captured.
         echo "\n $acc_id got unexpected code ".$status_code." on $path: ".print_r($contents, 1); // Seems to be truncated hmph.
-        $this->assertEquals($expected_response, $status_code); // always fails.
       }
+      $this->assertEquals($expected_response, $status_code);
     }
     elseif ($contents) {
       $e = \CreditCommons\RestAPI::reconstructCCException($contents);
       $class = "CreditCommons\Exceptions\\$expected_response";
       $this->assertInstanceOf($class, $e);
-      if (!$e instanceOf $class) {
-        throw $e;
-      }
     }
     return $contents;
   }
@@ -85,5 +88,36 @@ class TestBase extends TestCase {
     return $app;
   }
 
+
+  function loadAccounts($relative_path = '') {
+    $this->rawAccounts = (array)json_decode(file_get_contents($relative_path .'store.json'));
+    foreach ($this->rawAccounts as $acc) {
+      if ($acc->status){
+        if (!empty($acc->key)) {
+          $this->passwords[$acc->id] = $acc->key;
+          if ($acc->admin) {
+            $this->adminAccIds[] = $acc->id;
+          }
+          else {
+            $this->normalAccIds[] = $acc->id;
+          }
+        }
+        elseif (!empty($acc->url)) {
+          if (!empty($config['bot']['acc_id']) and $acc->id == $config['bot']['acc_id']) {
+            $this->trunkwardsId = $acc->id;
+          }
+          else {
+            $this->branchAccIds[] = $acc->id;
+          }
+        }
+      }
+      else {
+        $this->blockedAccIds[] = $acc->id;
+      }
+    }
+    if (empty($this->normalAccIds) || empty($this->adminAccIds)) {
+      die("Testing requires both admin and non-admin accounts in store.json");
+    }
+  }
 
 }

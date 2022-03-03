@@ -366,7 +366,7 @@ function authenticate(Request $request) : void {
           throw new HashMismatchFailure(otherNode: $acc_id);
         }
       }
-      elseif (!accountStore()->filter(['chars' => $acc_id, 'auth' => $auth])) {
+      elseif (!accountStore()->checkCredentials($acc_id, $auth)) {
         //local user with the wrong password
         throw new AuthViolation(acc_id: $acc_id);
       }

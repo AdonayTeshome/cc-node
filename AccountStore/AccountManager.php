@@ -55,7 +55,7 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
    */
   function filterByName(string $string) {
     $this->accounts = array_filter($this->accounts, function ($a) use ($string) {
-      return is_int(stripos($a->id, $string));
+      return stripos($a->id, $string) !== FALSE;
     });
   }
 
@@ -75,9 +75,10 @@ class AccountManager implements \Iterator, \ArrayAccess, \Countable {
    */
   function filterByLocal(bool $local) {
     $class = $local ? 'AccountStore\UserRecord' : 'AccountStore\RemoteRecord';
-    $this->accounts = array_filter($this->accounts, function ($a) use ($class) {
-      return $a instanceof $class;
-    });
+    $this->accounts = array_filter(
+      $this->accounts,
+      function ($a) use ($class) {return $a instanceof $class;}
+    );
   }
 
   /**

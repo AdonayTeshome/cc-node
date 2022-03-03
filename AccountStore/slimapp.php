@@ -6,7 +6,6 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Exception\NotFoundException;
 use Slim\App;
 
-
 /**
  * AccountStore service. For reference only
  * Normally this service would be replaced by a wrapper around the main user database.
@@ -14,17 +13,25 @@ use Slim\App;
  */
 $app = new App();
 
+$app->get('/creds/{name}/{auth}', function (Request $request, Response $response, $args) {
+  $accounts = new AccountManager();
+  $name = $args['name'];
+  $auth = $args['auth'];
+  if ($accounts[$name]->key == $auth) {
+    return $response->withStatus(200);
+  }
+  return $response->withStatus(400);
+});
+
 $app->get('/filter/full', function (Request $request, Response $response, $args) {
   $accounts = account_store_filter($request->getQueryParams());
-  $result = $accounts->view(); // array
-  $response->getBody()->write(json_encode($result));
+  $response->getBody()->write(json_encode($accounts->view(), JSON_UNESCAPED_UNICODE));
   return $response->withHeader('Content-Type', 'application/json');
 });
 
 $app->get('/filter', function (Request $request, Response $response, $args) {
   $accounts = account_store_filter($request->getQueryParams());
-  $result = array_keys($accounts->accounts); // array
-  $response->getBody()->write(json_encode($result));
+  $response->getBody()->write(json_encode(array_keys($accounts->accounts), JSON_UNESCAPED_UNICODE));
   return $response->withHeader('Content-Type', 'application/json');
 });
 
@@ -55,10 +62,12 @@ function account_store_filter($params) : AccountManager {
     $accounts->filterByAuth($params['auth']);
   }
   if (isset($params['status'])) {
-    $accounts->filterByStatus((bool)$params['status']);
+    $status = $params['status'] == 'true' ? TRUE : FALSE;
+    $accounts->filterByStatus($status);
   }
   if (isset($params['local'])) {
-    $accounts->filterByLocal((bool)$params['local']);
+    $local = $params['local'] == 'true' ? TRUE : FALSE;
+    $accounts->filterByLocal($local);
   }
   return $accounts;
 }

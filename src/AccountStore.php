@@ -2,14 +2,15 @@
 
 namespace CCNode;
 
+use CCNode\Accounts\User;
+use CCNode\Accounts\BoT;
 use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Requester;
+use CreditCommons\Account;
 use GuzzleHttp\RequestOptions;
 use GuzzleHttp\Client;
-use CreditCommons\Account;
-use CCNode\Accounts\User;
-use CCNode\Accounts\BoT;
+use GuzzleHttp\Exception\ClientException;
 
 /**
  * Handle requests & responses from the ledger to the accountStore.
@@ -34,6 +35,17 @@ class AccountStore extends Requester {
     return new static($config['account_store_url']);
   }
 
+  function checkCredentials($name, $pass) : bool {
+    try {
+      $this->localRequest("creds/$name/$pass");
+    }
+    catch(ClientException $e) {
+      // this would be a 400 error
+      return FALSE;
+    }
+    return TRUE;
+  }
+
   /**
    * Filter on the account names.
    *
@@ -51,7 +63,9 @@ class AccountStore extends Requester {
       $path .= '/full';
     }
     // Ensure only known filters are passed
-    $filters = array_intersect_key($filters, array_flip(['status', 'local', 'chars', 'auth']));
+    $filters = array_intersect_key($filters, array_flip(['status', 'local', 'chars']));
+    $filters['local'] = $filters['local']?'true':'false';
+    $filters['status'] = $filters['status']?'true':'false';
     $this->options[RequestOptions::QUERY] = $filters;
     $results = (array)$this->localRequest($path);
     if ($full) {
@@ -181,5 +195,6 @@ class AccountStore extends Requester {
     $obj = ['id' => '<anon>', 'max' => 0, 'min' => 0, 'status' => 1];
     return User::create((object)$obj);
   }
+
 
 }
