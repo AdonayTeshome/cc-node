@@ -66,7 +66,6 @@ $c['phpErrorHandler'] = $getErrorHandler;
  * Default HTML page. (Not part of the API)
  */
 $app->get('/', function (Request $request, Response $response) {
-  return 'dddddd';
   $response->getBody()->write('It works!');
   return $response->withHeader('Content-Type', 'text/html');
 });
@@ -78,13 +77,6 @@ $app->options('/', function (Request $request, Response $response) {
   // No access control
   check_permission($request, 'permittedEndpoints');
   return json_response($response, permitted_operations());
-});
-
-// @todo this isn't documented or implemented???
-$app->get('/trunkwards', function (Request $request, Response $response) {
-  check_permission($request, 'trunkwardNodes');
-  $node_names = API_calls()->getTrunkwardNodeNames();
-  return json_response($response, $node_names, 200);
 });
 
 $app->get('/workflows', function (Request $request, Response $response) {
@@ -99,21 +91,40 @@ $app->get('/handshake', function (Request $request, Response $response) {
   return json_response($response, $orientation->handshake());
 });
 
-$app->get('/accounts/filter[/{fragment}]', function (Request $request, Response $response, $args) {
+$app->get('/absolutepath', function (Request $request, Response $response) {
+  global $config;
+  $node_names[] = $config['node_name'];
+  check_permission($request, 'absolutePath');
+  if ($trunkwards = API_calls()) {
+    $node_names = array_merge($trunkwards->getAbsolutePath(), $node_names);
+  }
+  return json_response($response, $node_names, 200);
+});
+
+$app->get('/accounts/filter[/{fragment:.*$}]', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountNameAutocomplete');
   $params = $request->getQueryParams();
   $remote_names = [];
-  if (!empty($config['bot']['acc_id'])) {// $orientation might be cleaner
+  $path = explode('/', $args['fragment']);
+  $fragment = array_pop($path);
+  if ($path and !empty($config['bot']['acc_id'])) {
     //@todo pass this to the parent ledger
     throw new CCFailure(message: 'accounts/{fragment} not implemented for ledger tree.');
-    $remote_names = API_calls()->accounts(@$args['fragment'], TRUE);
+    $names = API_calls()->accounts(@$args['fragment'], TRUE);
     // @todo Also we may want to query child ledgers.
   }
-  $local_names = accountStore()->filter(['chars' => @$args['fragment'], 'status' => TRUE, 'local' => TRUE], FALSE);
-  return json_response($response, array_slice(array_merge($local_names, $remote_names), 0, $params['limit']??10));
+  elseif (empty($path)) {
+    $params = ['chars' => @$args['fragment'], 'status' => TRUE, 'local' => TRUE];
+    $names = accountStore()->filter($params, FALSE);
+  }
+  else {
+    throw new NotFoundException($request, $response);
+  }
+  $paged = array_slice($names, 0, $params['limit']??10);
+  return json_response($response, $paged);
 });
 
-$app->get('/account/limits/{acc_id}', function (Request $request, Response $response, $args) {
+$app->get('/account/limits/{acc_id:.*$}', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountHistory');
   $account = accountStore()->fetch($args['acc_id']);
   return json_response($response, (object)['min' => $account->min, 'max' => $account->max]);
@@ -147,13 +158,11 @@ $app->get('/account/summary/{acc_id:.*$}', function (Request $request, Response 
   return $response->withHeader('Content-Type', 'application/json');
 });
 
-$app->get('/account/history/{acc_path}', function (Request $request, Response $response, $args) {
-  global $orientation;
+$app->get('/account/history/{acc_path:.*$}', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountHistory');
   $params = $request->getQueryParams();
   $account = accountStore()->fetch($args['acc_path']);
   $result = $account->getHistory($params['samples']??0);
-  $orientation->responseMode = TRUE;
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
 });
@@ -178,13 +187,16 @@ $app->get('/transaction/{format}/{uuid:'.$uuid_regex.'}', function (Request $req
 $app->get('/transaction/{format}', function (Request $request, Response $response, $args) {
   check_permission($request, 'filterTransactions');
   $params = $request->getQueryParams();
-  $uuids = Transaction::filter($params);// keyed by entries
-  if ($args['format'] == 'entry') {
-    $results = StandaloneEntry::load(array_keys($uuids));
-  }
-  else {
-    foreach (array_unique($uuids) as $uuid) {
-      $results[$uuid] = Transaction::loadByUuid($uuid);
+  $results = [];
+  if ($uuids = Transaction::filter($params)) {// keyed by entries and $args['format'] == 'entry') {
+    if ($args['format'] == 'entry') {
+      $results = StandaloneEntry::load(array_keys($uuids));
+    }
+    else {
+      $results = [];
+      foreach (array_unique($uuids) as $uuid) {
+        $results[$uuid] = Transaction::loadByUuid($uuid);
+      }
     }
   }
   return json_response($response, array_values($results), 200);
@@ -201,7 +213,7 @@ $app->post('/transaction', function (Request $request, Response $response) {
   $transaction = Transaction::createFromUpstream($data); // in state 'init'
   // Validate the transaction in its workflow's 'creation' state
   $transaction->buildValidate();
-  $orientation->responseMode = TRUE;
+  $orientation->responseMode = TRUE;// todo put this in buildvalidate
   $workflow = (new Workflows())->get($transaction->type);
   if ($workflow->creation->confirm) {
     // Send the transaction back to the user to confirm.
@@ -225,8 +237,8 @@ $app->post('/transaction/relay', function (Request $request, Response $response)
   $data = json_decode($request->getBody()->read());
   $transaction = TransversalTransaction::createFromUpstream($data);
   $transaction->buildValidate();
-  $transaction->saveNewVersion();
   $orientation->responseMode = TRUE;
+  $transaction->saveNewVersion();
   return json_response($response, $transaction, 201);
 });
 
@@ -306,18 +318,15 @@ function check_permission(Request $request, string $operationId) {
  *   A list of the api method names the current user can access.
  */
 function permitted_operations() : array {
-  global $user;
+  global $user, $config;
   $data = CreditCommonsInterface::OPERATIONS;
-  $has_BoT = (bool)API_calls();
   $permitted[] = 'permittedEndpoints';
   if ($user->id <> '<anon>') {
     $permitted[] = 'handshake';
     $permitted[] = 'workflows';
     if (!$user instanceof BoT) {
       // This is the default privacy setting; leafward nodes are private to trunkward nodes
-      if ($has_BoT) {
-        $permitted[] = 'trunkwardNodes';
-      }
+      $permitted[] = 'absolutePath';
       $permitted[] = 'accountHistory';
       $permitted[] = 'accountLimits';
       $permitted[] = 'accountNameAutocomplete';

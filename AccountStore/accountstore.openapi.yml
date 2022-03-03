@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   version: 1.0.0
   title: "Credit commons: AccountStore service"
-  description: Internal API called by Credit Commons reference implementation for managing accounts and balance limits.
+  description: Internal API called by Credit Commons reference implementation for managing accounts and balance limits. This API does not specify case-sensitivity.
   contact:
     name: Matthew Slater
     url: https://matslats.net/contact

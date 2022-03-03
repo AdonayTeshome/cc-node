@@ -9,14 +9,26 @@ use PHPUnit\Framework\TestCase;
 
 class TestBase extends TestCase {
 
-  protected $users = [];//todo
+  /**
+   * Passwords, keyed by user
+   * @var array
+   */
+  protected $passwords = [];//todo
 
   protected function sendRequest($path, int|string $expected_response, string $acc_id = '', string $method = 'get', string $request_body = '') : \stdClass|NULL|array {
-    global $users;
+    global $passwords;
+    if ($query = strstr($path, '?')) {
+      $path = strstr($path, '?', TRUE);
+      parse_str(substr($query, 1), $params);
+    }
+
     $request = $this->getRequest($path, $method);
+    if (isset($params)) {
+      $request = $request->withQueryParams($params);
+    }
     if ($acc_id) {
       $request = $request->withHeader('cc-user', $acc_id)
-        ->withHeader('cc-auth', $users[$acc_id]);
+        ->withHeader('cc-auth', $passwords[$acc_id]);
     }
     if ($request_body) {
       $request = $request->withHeader('Content-Type', 'application/json');

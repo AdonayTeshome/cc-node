@@ -26,7 +26,7 @@ class StandaloneEntry extends \CreditCommons\StandaloneEntry {
   }
 
   /**
-   * Load a flat entry from the database.
+   * Load a flat entry from the database, returning items in the order given.
    *
    * @param array $entry_ids
    * @return \static[]
@@ -57,7 +57,10 @@ class StandaloneEntry extends \CreditCommons\StandaloneEntry {
         $data->metadata
       );
     }
-    return $entries;
+    foreach($entry_ids as $id) {
+      $sorted[$id] = $entries[$id];
+    }
+    return $sorted;
   }
 
 }

@@ -9,7 +9,7 @@ use Slim\Psr7\Response;
  *   - IntermediateledgerViolation
  *   - HashMismatchFailure
  *   - UnavailableNodeFailure Is this testable? Maybe with an invalid url?
- *   - Try to trade with a Remote account.
+ *   - Try to trade directly with a Remote account.
  * @todo Invalid paths currently return 404 which isn't in the spec.
  *
  */
@@ -19,24 +19,32 @@ class SingleNodeTest extends TestBase {
   const API_FILE_PATH = 'vendor/credit-commons-software-stack/cc-php-lib/docs/credit-commons-openapi-3.0.yml';
 
   public static function setUpBeforeClass(): void {
-    global $config, $users, $admin_acc_ids, $norm_acc_ids;
+    global $config, $passwords, $admin_acc_ids, $norm_acc_ids, $trunkwards_id, $branch_acc_ids;
     // Get some user data directly from the accountStore
     // NB the accountstore should deny requests from outside this server.
     $config = parse_ini_file(__DIR__.'/../node.ini');
-    // Just get local user accounts, not remote node accounts.
-    $local_accounts = array_filter(
-      (array)json_decode(file_get_contents('AccountStore/store.json')),
-      function($u) {return $u->status && isset($u->key);}
-    );
-    foreach ($local_accounts as $a) {
-      if ($a->admin) {
-        $admin_acc_ids[] = $a->id;
+    // get accounts directly from file, so we have the passwords
+    $accounts = (array)json_decode(file_get_contents('AccountStore/store.json'));
+    foreach ($accounts as $acc) {
+      if ($acc->status){
+        if (!empty($acc->key)) {
+          $passwords[$acc->id] = $acc->key;
+          if ($acc->admin) {
+            $admin_acc_ids[] = $acc->id;
+          }
+          else {
+            $norm_acc_ids[] = $acc->id;
+          }
+        }
+        elseif (!empty($acc->url)) {
+          if (!empty($config['bot']['acc_id']) and $acc->id == $config['bot']['acc_id']) {
+            $trunkwards_id = $acc->id;
+          }
+          else {
+            $branch_acc_ids[] = $acc->id;
+          }
+        }
       }
-      else {
-        $norm_acc_ids[] = $a->id;
-      }
-      // what if there is no admin? what if no normies.
-      $users[$a->id] = $a->key;
     }
     if (empty($norm_acc_ids) || empty($admin_acc_ids)) {
       die("Testing requires both admin and non-admin accounts in store.json");
@@ -59,22 +67,22 @@ class SingleNodeTest extends TestBase {
   function testBadLogin() {
     global $norm_acc_ids;
     // This is a comparatively long winded because sendRequest() only uses valid passwords.
-    $request = $this->getRequest('trunkwards')
+    $request = $this->getRequest('absolutepath')
       ->withHeader('cc-user', 'zzz123')
       ->withHeader('cc-auth', 'zzz123');
     $response = $this->getApp()->process($request, new Response());
-    $this->assertEquals($response->getStatusCode(), 400);
+    $this->assertEquals(400, $response->getStatusCode());
     $response->getBody()->rewind();
     $err_obj = json_decode($response->getBody()->getContents());
     $exception = \CreditCommons\RestAPI::reconstructCCException($err_obj);
     $this->assertInstanceOf('CreditCommons\Exceptions\DoesNotExistViolation', $exception);
     $this->assertEquals('account', $exception->type);
 
-    $request = $this->getRequest('trunkwards')
+    $request = $this->getRequest('absolutepath')
       ->withHeader('cc-user', reset($norm_acc_ids))
       ->withHeader('cc-auth', 'zzz123');
     $response = $this->getApp()->process($request, new Response());
-    $this->assertEquals($response->getStatusCode(), 400);
+    $this->assertEquals(400, $response->getStatusCode());
     $response->getBody()->rewind();
     $err_obj = json_decode($response->getBody()->getContents());
     $exception = \CreditCommons\RestAPI::reconstructCCException($err_obj);
@@ -127,8 +135,8 @@ class SingleNodeTest extends TestBase {
   }
 
   function test3rdParty() {
-    global $norm_acc_ids, $admin_acc_ids, $users;
-    $this->assertGreaterThan('1', count($users));
+    global $norm_acc_ids, $admin_acc_ids, $passwords;
+    $this->assertGreaterThan('1', count($norm_acc_ids));
     $admin = reset($admin_acc_ids);
     $payee = reset($norm_acc_ids);
     $payer = next($norm_acc_ids);
@@ -167,8 +175,8 @@ class SingleNodeTest extends TestBase {
   function testTransactionLifecycle() {
     global $norm_acc_ids, $admin_acc_ids;
     $admin = reset($admin_acc_ids);
-    $payee = reset($norm_acc_ids);
-    $payer = next($norm_acc_ids);
+    $payer = reset($norm_acc_ids);
+    $payee = next($norm_acc_ids);
     if (!$payer) {
       print "Skipped testTransactionLifecycle. More than one non-admin user required";
       return;
@@ -177,14 +185,16 @@ class SingleNodeTest extends TestBase {
     $init_summary = $this->sendRequest("account/summary/$payee", 200, $payee);
     $init_points = (array)$this->sendRequest("account/history/$payee", 200, $payee);
     $this->assertNotEmpty($init_points);
+    $transaction_description = 'test bill';
     $obj = [
       'payee' => $payee,
       'payer' => $payer,
-      'description' => 'test bill',
+      'description' => $transaction_description,
       'quant' => 10,
       'type' => 'bill',
       'metadata' => ['foo' => 'bar']
     ];
+    //echo json_encode($obj);
     // 'bill' transactions must be approved, and enter pending state.
     $transaction = $this->sendRequest('transaction', 200, $payee, 'post', json_encode($obj));
     $this->assertNotEmpty($transaction->transitions);
@@ -202,7 +212,6 @@ class SingleNodeTest extends TestBase {
     $pending_summary = $this->sendRequest("account/summary/$payee", 200, $payee);
     // Get the amount of the transaction, including fees.
     list($income, $expenditure) = $this->transactionDiff($transaction, $payee);
-    echo "\n$income, $expenditure";
     $this->assertEquals(
       $pending_summary->pending->balance,
       $init_summary->pending->balance + $income - $expenditure
@@ -254,20 +263,8 @@ class SingleNodeTest extends TestBase {
     sleep(2);// so the last point on account history doesn't override the previous transaction
     $completed_points = (array)$this->sendRequest("account/history/$payee", 200, $payee);
     $this->assertEquals(count($completed_points), count($init_points) +1);
-    // Erase
-    $this->sendRequest("transaction/$transaction->uuid/erased", 201, $admin, 'patch');
-    $erased_summary = $this->sendRequest("account/summary/$payee", 200, $payee);
-    $this->assertEquals($erased_summary, $init_summary);
-    $erased_points = (array)$this->sendRequest("account/history/$payee", 200, $payee);
-    $this->assertEquals(count($erased_points), count($init_points));
-  }
 
-  /**
-   * This doesn't work because the middleware ignores the query parameters.
-   * @todo wait for an answer to https://github.com/Nyholm/psr7/issues/181
-   */
-  function testTransactionFilterRetrieve() {
-    global $norm_acc_ids;
+    // Filtering.
     $norm_user = reset($norm_acc_ids);
     $this->sendRequest("transaction/full", 'PermissionViolation', '');
     $results = $this->sendRequest("transaction/full", 200, $norm_user);
@@ -275,13 +272,41 @@ class SingleNodeTest extends TestBase {
     $this->sendRequest("transaction/full/$first_uuid", 'PermissionViolation', '');
     $this->sendRequest("transaction/full/$first_uuid", 200, $norm_user);
     $this->sendRequest("transaction/entry/$first_uuid", 200, $norm_user);
+    $results = $this->sendRequest("transaction/entry?description=$transaction_description", 200, $norm_user);
+    // test that every result entry contains the string
+    $counts = [];
+    foreach ($results as $standaloneEntiry) {
+      $counts[] = strpos($standaloneEntiry->description, $transaction_description);
+    }
+    $this->assertContainsOnly('int', $counts, TRUE, 'Transaction did not filter by description ');
+    $all_entries = $this->sendRequest("transaction/entry", 200, $norm_user);
+    $this->assertGreaterThan(3, count($all_entries), 'Unable to test offset/limit with only '.count($all_entries). 'entries saved.');
+    $limited = $this->sendRequest("transaction/entry?limit=1,1", 200, $norm_user);
+    $this->assertEquals(array_slice($all_entries, 1, 1), $limited, "The offset/limit queryparams don't work");
 
-    return;
-    // Filter description
-    $uuids = $this->sendRequest("transaction?description=test%203rdparty", 200, $norm_user);
-    //We have the results, now fetch and test the first result
-    $transaction = $this->sendRequest("transaction/full/$first_uuid", 200, $norm_user);
-    $this->assertStringContainsString("test 3rdparty", $transaction->entries[0]->description);
+    $results = $this->sendRequest("transaction/full?states=erased,complete", 200, $norm_user);
+    $err = FALSE;
+    foreach ($results as $result) {
+      if (!in_array($result->state, ['erased', 'completed'])) {
+        $err = TRUE;
+      }
+    }
+    $this->assertEquals(FALSE, $err, 'Failed to filter by 2 states.');
+
+    $results = $this->sendRequest("transaction/full?involving=$payee", 200, $norm_user);
+    foreach ($results as $res) {
+      if ($res->entries[0]->payer <> $payee and $res->entries[0]->payee <> $payee) {
+        $err = TRUE;
+      }
+    }
+    $this->assertEquals(FALSE, $err, "Failed to filter by transactions involving $payer.");
+
+    // Erase and check that stats are updated.
+    $this->sendRequest("transaction/$transaction->uuid/erased", 201, $admin, 'patch');
+    $erased_summary = $this->sendRequest("account/summary/$payee", 200, $payee);
+    $this->assertEquals($erased_summary, $init_summary);
+    $erased_points = (array)$this->sendRequest("account/history/$payee", 200, $payee);
+    $this->assertEquals(count($erased_points), count($init_points));
   }
 
   function testAccountSummaries() {
@@ -290,13 +315,26 @@ class SingleNodeTest extends TestBase {
     $this->sendRequest("account/history/$user1", 'PermissionViolation', '');
     //  Currently there is no per-user access control around limits visibility.
     $limits = $this->sendRequest("account/limits/$user1", 200, $user1);
-    $this->assertlessThan(0, $limits->min);
-    $this->assertGreaterThan(0, $limits->max);
+    $this->assertlessThan(0, $limits->min, "Minimum account limit was not less than zero.");
+    $this->assertGreaterThan(0, $limits->max, "Maximum account limit was not greater than zero.");
     // account/summary/{acc_id} is already tested
     // OpenAPI doesn't allow optional parameters
     $this->sendRequest("account/summary", 'PermissionViolation', '');
     $this->sendRequest("account/summary", 200, $user1);
   }
+
+  function testTrunkwards() {
+    global $trunkwards_id, $norm_acc_ids, $config;
+    if (empty($trunkwards_id)) {
+      $this->assertEquals(1, 1);
+      return;
+    }
+    $this->sendRequest("absolutepath", 'PermissionViolation', '');
+    $nodes = $this->sendRequest("absolutepath", 200, reset($norm_acc_ids));
+    $this->assertGreaterThan(1, count($nodes), 'Absolute path did not return more than one node: '.reset($nodes));
+    $this->assertEquals($config['node_name'], end($nodes), 'Absolute path does not end with the current node.');
+  }
+
 
   private function checkTransactions(array $all_transactions, array $filtered_uuids, array $conditions) {
     foreach ($all_transactions as $t) {
