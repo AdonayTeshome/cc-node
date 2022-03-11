@@ -10,6 +10,7 @@ use Slim\Psr7\Response;
  *   - HashMismatchFailure
  *   - UnavailableNodeFailure Is this testable? Maybe with an invalid url?
  *   - Try to trade directly with a Remote account.
+ *
  * @todo Invalid paths currently return 404 which isn't in the spec.
  *
  */
@@ -19,16 +20,11 @@ class SingleNodeTest extends TestBase {
   const API_FILE_PATH = 'vendor/credit-commons-software-stack/cc-php-lib/docs/credit-commons-openapi-3.0.yml';
 
   function __construct() {
-    parent::__construct();
-    $this->loadAccounts('AccountStore/');
-  }
-
-
-  public static function setUpBeforeClass(): void {
     global $config;
-    // Get some user data directly from the accountStore
-    // NB the accountstore should deny requests from outside this server.
-    $config = parse_ini_file(__DIR__.'/../node.ini');
+    parent::__construct();
+    $config = parse_ini_file('./node.ini');
+    $this->getApp();//also loads slimapp.php
+    $this->loadAccounts('AccountStore/');
   }
 
   function testEndpoints() {
@@ -296,7 +292,6 @@ class SingleNodeTest extends TestBase {
   }
 
   function testTrunkwards() {
-    global $config;
     if (empty($this->trunkwardsId)) {
       $this->assertEquals(1, 1);
       return;
@@ -304,7 +299,7 @@ class SingleNodeTest extends TestBase {
     $this->sendRequest("absolutepath", 'PermissionViolation', '');
     $nodes = $this->sendRequest("absolutepath", 200, reset($this->normalAccIds));
     $this->assertGreaterThan(1, count($nodes), 'Absolute path did not return more than one node: '.reset($nodes));
-    $this->assertEquals($config['node_name'], end($nodes), 'Absolute path does not end with the current node.');
+    $this->assertEquals(\CCNode\getConfig('node_name'), end($nodes), 'Absolute path does not end with the current node.');
   }
 
 

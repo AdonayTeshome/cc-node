@@ -184,7 +184,10 @@ trait TransactionStorageTrait {
       $conditions[]  = "updated > '$date'";
     }
     if (isset($states)) {
-      $states = explode(',', $states);
+      if (is_string($states)) {
+        $states = explode(',', $states);
+      }
+      else fhfjff();
       if (in_array('validated', $states)) {
         // only the author can see transactions in the validated state.
         $conditions[]  = "(state = 'validated' and author = '$user->id')";
@@ -215,7 +218,7 @@ trait TransactionStorageTrait {
     if (isset($limit)) {
       $query .= " LIMIT $limit ";
     }
-    
+
     $query_result = Db::query($query);
     $results = [];
     while ($row = $query_result->fetch_object()) {

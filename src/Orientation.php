@@ -24,11 +24,11 @@ class Orientation {
   public $responseMode;
 
   function __construct() {
-    global $config, $user;
+    global $user;
     $this->responseMode = 0;
     $this->upstreamAccount = $user;
-    if (!empty($config['bot']['acc_id'])) {
-      $this->trunkwardsAccount = load_account($config['bot']['acc_id']);
+    if ($name = getConfig('trunkwards_name')) {
+      $this->trunkwardsAccount = load_account($name);
     }
   }
 
@@ -89,13 +89,16 @@ class Orientation {
    *   Linked nodes keyed by response_code.
    */
   function handshake() : array {
-    global $config, $user;
+    global $user;
     $results = [];
     if ($user instanceOf Accounts\User) {
       $remote_accounts = AccountStore()->filter(['status' => 1, 'local' => 0], TRUE);
       foreach ($remote_accounts as $acc) {
+        if ($acc->id == $user->id) {
+          continue;
+        }
         try {
-          $acc->API()->handshake();
+          $acc->handshake();
           $results[$acc->id] = 'ok';
         }
         catch (UnavailableNodeFailure $e) {
@@ -105,7 +108,7 @@ class Orientation {
           $results[$acc->id] = 'HashMismatchFailure';
         }
         catch(\Exception $e) {
-          die(get_class($e));
+          $results[$acc->id] = get_class($e);
         }
       }
     }

@@ -90,29 +90,31 @@ class TestBase extends TestCase {
 
 
   function loadAccounts($relative_path = '') {
+    global $config;
     $this->rawAccounts = (array)json_decode(file_get_contents($relative_path .'store.json'));
-    foreach ($this->rawAccounts as $acc) {
+
+    foreach ($this->rawAccounts as $acc_id => $acc) {
       if ($acc->status){
         if (!empty($acc->key)) {
-          $this->passwords[$acc->id] = $acc->key;
+          $this->passwords[$acc_id] = $acc->key;
           if ($acc->admin) {
-            $this->adminAccIds[] = $acc->id;
+            $this->adminAccIds[] = $acc_id;
           }
           else {
-            $this->normalAccIds[] = $acc->id;
+            $this->normalAccIds[] = $acc_id;
           }
         }
         elseif (!empty($acc->url)) {
-          if (!empty($config['bot']['acc_id']) and $acc->id == $config['bot']['acc_id']) {
-            $this->trunkwardsId = $acc->id;
+          if ($acc->id == \CCNode\getConfig('trunkward_name')) {
+            $this->trunkwardsId = $acc_id;
           }
           else {
-            $this->branchAccIds[] = $acc->id;
+            $this->branchAccIds[] = $acc_id;
           }
         }
       }
       else {
-        $this->blockedAccIds[] = $acc->id;
+        $this->blockedAccIds[] = $acc_id;
       }
     }
     if (empty($this->normalAccIds) || empty($this->adminAccIds)) {

@@ -1,7 +1,7 @@
 <?php
 
 namespace CCNode\Accounts;
-use CreditCommons\Account;
+use CCNode\Accounts\User;
 
 /**
  * Class representing an account linked to  leafwards node
@@ -27,7 +27,7 @@ abstract class Branch extends Remote {
     }
   }
 
-  static function create(\stdClass $data) : Account {
+  static function create(\stdClass $data) : User {
     if (empty($data->given_path)) {
       $data->given_path = $data->id;
     }

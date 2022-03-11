@@ -2,14 +2,30 @@
 
 namespace CCNode\Accounts;
 
-use CreditCommons\AccountRemote;
+use CCNode\Accounts\User;
 use CreditCommons\RestAPI;
 use CCNode\Db;
+use CreditCommons\Exceptions\CCFailure;
 
 /**
  * Class representing a remote account, which authorises using its latest hash.
  */
-class Remote extends AccountRemote {
+class Remote extends User {
+
+  function __construct(
+    public string $id,
+    public bool $status,
+    public int $min,
+    public int $max,
+    public string $url,
+   ) {
+    parent::__construct($id, $status, $min, $max, $url);
+  }
+
+  static function create(\stdClass $data) : User {
+    static::validateFields($data);
+    return new static($data->id, $data->status, $data->min, $data->max, $data->url);
+  }
 
   /**
    * Get the last hash pertaining to this account.
@@ -30,8 +46,17 @@ class Remote extends AccountRemote {
   }
 
   public function API() : RestAPI {
-    global $config;
-    return new RestAPI($this->url, $config['node_name'], $this->getLastHash());
+    return new RestAPI($this->url, \CCNode\getConfig('node_name'), $this->getLastHash());
+  }
+
+  public function handshake() {
+    try {
+      $this->API()->handshake();
+      return 'ok';
+    }
+    catch (CCFailure $e) {// fails to catch.
+      return get_class($e);
+    }
   }
 
   /**
@@ -45,23 +70,21 @@ class Remote extends AccountRemote {
 
   /**
    * {@inheritDoc}
-   */
-  function getAccountSummary() : array {
-    // N.B. Branchward nodes may refuse permission
-    return $this->API()->getStats($this->givenPath);
-  }
-
-
-  /**
-   * {@inheritDoc}
    * @todo this functions returns a slightly different format on branchwards and trunkwards accounts.
    */
-  static function getAccountSummaries() : array {
-    $all_accounts = parent::getAccountSummaries();
-    $map = $this->API()->accounts([], TRUE);
-    // Add this node's summaries to the trunkwards data
-    $all_accounts[$this->id]->parents = $map;
-    return $all_accounts;
+  function getAccountSummary($rel_path = '') : \stdClass {
+    if ($rel_path) {
+      $result = $this->API()->getAccountSummary($rel_path);
+    }
+    else {
+      $result = parent::getAccountSummary();
+    }
+    return $result;
+  }
+
+  function accountNameAutocomplete($rel_path) {
+    $result = $this->API()->accountNameAutocomplete($rel_path);
+    return $result;
   }
 
   function getRelPath() : string {

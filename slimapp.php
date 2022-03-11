@@ -13,12 +13,12 @@ use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\PermissionViolation;
 use CreditCommons\Exceptions\AuthViolation;
 use CreditCommons\CreditCommonsInterface;
-use CreditCommons\AccountRemote;
 use CreditCommons\RestAPI;
 use CreditCommons\Account;
 use CCNode\Slim3ErrorHandler;
 use CCNode\AddressResolver;
 use CCNode\Accounts\BoT;
+use CCNode\Accounts\Remote;
 use CCNode\Workflows;
 use CCNode\StandaloneEntry;
 use CCNode\NewTransaction;
@@ -26,7 +26,6 @@ use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\App;
 
-$config = parse_ini_file('./node.ini');
 // Slim4 (when the League\OpenAPIValidation is ready)
 //use Slim\Factory\AppFactory;
 //use Psr\Http\Message\ServerRequestInterface;
@@ -86,14 +85,13 @@ $app->get('/workflows', function (Request $request, Response $response) {
 });
 
 $app->get('/handshake', function (Request $request, Response $response) {
-  global $orientation, $config;
+  global $orientation;
   check_permission($request, 'handshake');
   return json_response($response, $orientation->handshake());
 });
 
 $app->get('/absolutepath', function (Request $request, Response $response) {
-  global $config;
-  $node_names[] = $config['node_name'];
+  $node_names[] = getConfig('node_name');
   check_permission($request, 'absolutePath');
   if ($trunkwards = API_calls()) {
     $node_names = array_merge($trunkwards->getAbsolutePath(), $node_names);
@@ -105,32 +103,32 @@ $app->get('/accounts/filter[/{fragment:.*$}]', function (Request $request, Respo
   check_permission($request, 'accountNameAutocomplete');
   $params = $request->getQueryParams();
   $remote_names = [];
-  $path = explode('/', $args['fragment']);
-  $fragment = array_pop($path);
-  if ($path and !empty($config['bot']['acc_id'])) {
-    //@todo pass this to the parent ledger
-    throw new CCFailure(message: 'accounts/{fragment} not implemented for ledger tree.');
-    $names = API_calls()->accounts(@$args['fragment'], TRUE);
-    // @todo Also we may want to query child ledgers.
+  if (isset($args['fragment'])) {
+    $given_path = explode('/', $args['fragment']);
+    $fragment = array_pop($given_path);
+  }
+
+  if (!empty($given_path)) {
+    $address_resolver = AddressResolver::create(getConfig('abs_path'));
+    list($remote_account, $rel_path) = $address_resolver->resolveToLocalAccount(implode('/', $given_path), TRUE);
+    // pass to the remote node
+    $names = $remote_account->accountNameAutocomplete($fragment, TRUE);
   }
   elseif (empty($path)) {
     $params = ['chars' => @$args['fragment'], 'status' => TRUE, 'local' => TRUE];
     $names = accountStore()->filter($params, FALSE);
   }
-  else {
-    throw new NotFoundException($request, $response);
-  }
   $paged = array_slice($names, 0, $params['limit']??10);
   return json_response($response, $paged);
 });
 
-$app->get('/account/limits/{acc_id:.*$}', function (Request $request, Response $response, $args) {
+$app->get('/account/limits/{acc_path:.*$}', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountHistory');
-  $account = accountStore()->fetch($args['acc_id']);
+  $account = accountStore()->fetch($args['acc_path']);
   return json_response($response, (object)['min' => $account->min, 'max' => $account->max]);
 });
 
-  // Open api requrest that every path argument is filled, so
+  // Retrives summaries of all accounts on the current node
 $app->get('/account/summary', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountSummary');
   $result = Accounts\User::getAccountSummaries();
@@ -138,21 +136,18 @@ $app->get('/account/summary', function (Request $request, Response $response, $a
   return $response->withHeader('Content-Type', 'application/json');
 });
 
-$app->get('/account/summary/{acc_id:.*$}', function (Request $request, Response $response, $args) {
+$app->get('/account/summary/{acc_path:.*$}', function (Request $request, Response $response, $args) {
   global $node_name;
   check_permission($request, 'accountSummary');
   $params = $request->getQueryParams();
-  $given_path = urldecode($args['acc_id']);
-  list($account, $rel_path) = AddressResolver::create()->resolveToLocalAccountName($given_path, TRUE);
-  if (empty($rel_path)) {
-    // Local account.
-    $result = $account->getAccountSummary();
+  $given_path = urldecode($args['acc_path']);
+  $address_resolver = AddressResolver::create(getConfig('abs_path'));
+  list($account, $rel_path) = $address_resolver->resolveToLocalAccount($given_path, TRUE);
+  if ($account) {
+    $result = $account->getAccountSummary($rel_path);
   }
-  else {// Forward the request
-    // Take the first part off the given path
-    $path_parts = explode('/', $given_path);
-    array_shift($path_parts);
-    $result = API_calls($account)->getAccountSummary(implode('/', $path_parts));
+  else {
+    $result = User::getAccountSummaries();
   }
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
@@ -287,11 +282,11 @@ function load_account(string $id) : Account {
 }
 
 function check_permission(Request $request, string $operationId) {
-  global $user, $config;
+  global $user;
   authenticate($request); // This sets $user
-  $permitted = \CCNode\permitted_operations();
+  $permitted = permitted_operations();
   if (!in_array($operationId, array_keys($permitted))) {
-    if ($user->id == $config['bot']['acc_id']) {
+    if ($user->id == getConfig('trunkward_name')) {
       $user_id = '<trunk>';
     }
     elseif ($user->id) {
@@ -318,7 +313,7 @@ function check_permission(Request $request, string $operationId) {
  *   A list of the api method names the current user can access.
  */
 function permitted_operations() : array {
-  global $user, $config;
+  global $user;
   $data = CreditCommonsInterface::OPERATIONS;
   $permitted[] = 'permittedEndpoints';
   if ($user->id <> '<anon>') {
@@ -345,23 +340,22 @@ function permitted_operations() : array {
 
 /**
  * Taking the user id and auth key from the header and comparing with the database. If the id is of a remote account, compare the extra
- * @global array $config
  * @global stdClass $user
  * @param Request $request
  * @return void
  * @throws DoesNotExistViolation|HashMismatchFailure|AuthViolation
  */
 function authenticate(Request $request) : void {
-  global $config, $user, $orientation;
+  global $user, $orientation;
   $user = load_account('<anon>'); // Anon
   if ($request->hasHeader('cc-user') and $request->hasHeader('cc-auth')) {
     $acc_id = $request->getHeaderLine('cc-user');
     // Users connect with an API key which can compared directly with the database.
     if ($acc_id) {
+      $user = load_account($acc_id);
       $auth = $request->getHeaderLine('cc-auth');
       if ($auth == 'null')$auth = '';// Don't know why null is returned as a string.
-      $user = load_account($acc_id);
-      if ($user instanceOf AccountRemote) {
+      if ($user instanceOf Remote) {
         if (!compare_hashes($acc_id, $auth)) {
           throw new HashMismatchFailure(otherNode: $acc_id);
         }
@@ -409,17 +403,16 @@ function compare_hashes(string $acc_id, string $auth) : bool {
  *   if not provided the balance of trade of account will be used
  * @return RestAPI|NULL
  */
-function API_calls(AccountRemote $account = NULL) {
-  global $config;
+function API_calls(Remote $account = NULL) {
   if (!$account) {
-    if ($bot = $config['bot']['acc_id']) {
+    if ($bot = getConfig('trunkwards_name')) {
       $account = load_account($bot);
     }
     else {
       return NULL;
     }
   }
-  return new RestAPI($account->url, $config['node_name'], $account->getLastHash());
+  return new RestAPI($account->url, getConfig('node_name'), $account->getLastHash());
 }
 
 /**
@@ -448,4 +441,32 @@ function json_response(Response $response, $body, int $code = 200) : Response {
   $response->getBody()->write(json_encode($body, JSON_UNESCAPED_UNICODE));
   return $response->withStatus($code)
     ->withHeader('Content-Type', 'application/json');
+}
+
+/**
+ * Get names config items, including some items that need to be processed first.
+ *
+ * @staticvar array $tree
+ * @staticvar array $config
+ * @param string $var
+ * @return mixed
+ */
+function getConfig(string $var) {
+  static $tree, $config;
+  if (!isset($tree)) {
+    $config = parse_ini_file('./node.ini');
+    $tree = explode('/', $config['abs_path']);
+  }
+  if ($var == 'node_name') {
+    return end($tree);
+  }
+  elseif ($var == 'trunkwards_name' or $var == 'trunkward_name') {
+    end($tree);
+    return prev($tree);
+  }
+  if (strpos($var, '.')) {
+    list($var, $subvar) = explode('.', $var);
+    return $config[$var][$subvar];
+  }
+  else return $config[$var];
 }

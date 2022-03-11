@@ -1,13 +1,9 @@
 <?php
 
 namespace CCNode\Tests;
-// the testing script is calling this from the main application root.
-chdir(__DIR__.'/../AccountStore');
 
 /**
  * Test class for the AccountStore service.
- *
- * @note Query args don't work. Must wait for an answer to https://github.com/Nyholm/psr7/issues/181
  */
 class AccountStoreTest extends TestBase  {
 
@@ -15,14 +11,12 @@ class AccountStoreTest extends TestBase  {
   const API_FILE_PATH = 'AccountStore/accountstore.openapi.yml';
 
   function __construct() {
-    parent::__construct();
-    $this->loadAccounts('');
-  }
-
-  public static function setUpBeforeClass(): void {
     global $config;
-    $config = parse_ini_file(__DIR__.'/../node.ini');
-    $node_name = $config['node_name'];
+    parent::__construct();
+    require_once __DIR__.'/../slimapp.php';
+    $node_name = \CCNode\getConfig('node_name');
+    chdir(__DIR__.'/../AccountStore');
+    $this->loadAccounts('');
   }
 
   function testLogin() {
@@ -33,8 +27,9 @@ class AccountStoreTest extends TestBase  {
   }
 
   function testFilterName() {
-    $this->filterTest('', array_merge($this->normalAccIds, $this->branchAccIds, $this->adminAccIds));
-    $this->filterTest('local=true', array_merge($this->normalAccIds, $this->adminAccIds));
+    $all_accounts = array_merge($this->normalAccIds, $this->branchAccIds, $this->adminAccIds, $this->blockedAccIds, [$this->trunkwardsId]);
+    $this->filterTest('', $all_accounts);
+    $this->filterTest('local=true&status=true', array_merge($this->normalAccIds, $this->adminAccIds));
     $this->filterTest('status=false', $this->blockedAccIds);
     $char = substr(reset($this->normalAccIds), 0, 1);
     $expected = array_filter(

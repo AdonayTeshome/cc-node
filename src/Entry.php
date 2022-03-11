@@ -3,6 +3,7 @@ namespace CCNode;
 
 use CreditCommons\BaseEntry;
 use CreditCommons\Account;
+use CCNode\Accounts\BoT;
 
 /**
  * Determine the account types for entries.
@@ -26,7 +27,7 @@ class Entry extends BaseEntry implements \JsonSerializable {
   static function create(\stdClass $data) : BaseEntry {
     // Convert the payer and payee into Account objects;
     foreach (['payee', 'payer'] as $role) {
-      if ($data->$role instanceOf AccountRemote) {
+      if ($data->$role instanceOf Remote) {
         $row->metadata[$data->$role->id] = $data->$role->givenPath;
       }
     }

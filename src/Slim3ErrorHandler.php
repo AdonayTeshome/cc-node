@@ -45,7 +45,7 @@ class Slim3ErrorHandler {
     else {// All other CreditCommons error classes.
       $output = (object)($exception);
     }
-    $output->node = $exception->node??$config['node_name'];
+    $output->node = $exception->node??getConfig('node_name');
     $output->class = $exception_class;
     return json_response($response, $output, $code??$exception->getCode());
    }

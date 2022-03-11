@@ -8,16 +8,15 @@ use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Requester;
 use CreditCommons\Account;
+use CreditCommons\AccountStoreInterface;
 use GuzzleHttp\RequestOptions;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
 
 /**
  * Handle requests & responses from the ledger to the accountStore.
- *
- * Instantiate this object by calling AccountStore::Create();
  */
-class AccountStore extends Requester {
+class AccountStore extends Requester implements AccountStoreInterface {
 
   /**
    * Accounts already retrieved.
@@ -30,12 +29,14 @@ class AccountStore extends Requester {
     $this->options[RequestOptions::HEADERS]['Accept'] = 'application/json';
   }
 
-  static function create() {
-    global $config;
-    return new static($config['account_store_url']);
+  public static function create() : AccountStoreInterface {
+    return new static(getConfig('account_store_url'));
   }
 
-  function checkCredentials($name, $pass) : bool {
+  /**
+   * @inheritdoc
+   */
+  function checkCredentials(string $name, string $pass) : bool {
     try {
       $this->localRequest("creds/$name/$pass");
     }
@@ -47,14 +48,7 @@ class AccountStore extends Requester {
   }
 
   /**
-   * Filter on the account names.
-   *
-   * @param array $filters
-   *   possible keys are status, local, chars, auth
-   * @param bool $full
-   *   TRUE to return the loaded Account objects
-   * @return array
-   *   CreditCommons\Account[] or string[]
+   * @inheritdoc
    */
   function filter(array $filters = [], $full = FALSE) : array {
     // Pointless to try to make use of the $this->cached here.
@@ -64,8 +58,12 @@ class AccountStore extends Requester {
     }
     // Ensure only known filters are passed
     $filters = array_intersect_key($filters, array_flip(['status', 'local', 'chars']));
-    $filters['local'] = $filters['local']?'true':'false';
-    $filters['status'] = $filters['status']?'true':'false';
+    if (isset($filters['local'])) {
+      $filters['local'] = $filters['local'] ?'true':'false';
+    }
+    if (isset($filters['status'])) {
+      $filters['status'] = $filters['status'] ?'true':'false';
+    }
     $this->options[RequestOptions::QUERY] = $filters;
     $results = (array)$this->localRequest($path);
     if ($full) {
@@ -75,17 +73,9 @@ class AccountStore extends Requester {
   }
 
   /**
-   * Get an account object by name.
-   *
-   * @param string $name
-   *   Need to be clear if this is the local name or a path
-   * @param string $view_mode
-   * @return stdClass|string
-   *   The account object
-   *
-   * @todo rename this to load
+   * @inheritdoc
    */
-  function fetch(string $name) : Account {
+  function fetch(string $name, string $remote_path = '') : Account {
     if (!isset($this->cached[$name])) {
       $path = urlencode($name);
       try{
@@ -100,13 +90,16 @@ class AccountStore extends Requester {
           throw new CCFailure("AccountStore returned an invalid error code looking for $name: ".$e->getCode());
         }
       }
+      $result->remotePath = $remote_path;
       $this->cached[$name] = $this->upcast($result);
     }
     return $this->cached[$name];
   }
 
-  // Returns FALSE for the BoT account
-  public function has($name, $node_class = '') : bool {
+  /**
+   * @inheritdoc
+   */
+  public function has(string $name, string $node_class = '') : bool {
     try {
       $acc = $this->fetch($name);
     }
@@ -124,7 +117,7 @@ class AccountStore extends Requester {
   }
 
   /**
-   * {@inheritDoc}
+   * {@inheritdoc}
    */
   protected function localRequest(string $endpoint = '') {
     $client = new Client(['base_uri' => $this->baseUrl, 'timeout' => 1]);
@@ -145,15 +138,21 @@ class AccountStore extends Requester {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public static function anonAccount() : Account {
+    $obj = ['id' => '<anon>', 'max' => 0, 'min' => 0, 'status' => 1];
+    return User::create((object)$obj);
+  }
+
+  /**
    * Determine what Account class has been fetched and instantiate it.
    *
-   * @global type $config
    * @param \stdClass $data
    * @return Account
    */
   private function upcast(\stdclass $data) : Account {
-    global $config;
-    $class = self::determineAccountClass($data, $config['bot']['acc_id']);
+    $class = self::determineAccountClass($data, getConfig('trunkward_name'));
     $this->cached[$data->id] = $class::create($data);
     return $this->cached[$data->id];
   }
@@ -185,15 +184,14 @@ class AccountStore extends Requester {
       }
     }
     else {
-      $class = 'User';
+      if ($data->admin) {
+        $class = 'Admin';
+      }
+      else {
+        $class = 'User';
+      }
     }
     return 'CCNode\Accounts\\'. $class;
-  }
-
-
-  static function anonAccount() {
-    $obj = ['id' => '<anon>', 'max' => 0, 'min' => 0, 'status' => 1];
-    return User::create((object)$obj);
   }
 
 

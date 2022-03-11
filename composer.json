@@ -42,5 +42,11 @@
       "AccountStore\\": "AccountStore",
       "BlogicService\\": "BlogicService"
     }
+  },
+  "scripts": {
+    "post-create-project-cmd": [
+      "cp node.ini.example node.ini",
+      "touch last_exception.log"
+    ]
   }
 }

@@ -139,7 +139,11 @@ components:
           type: boolean
           description: TRUE if the account is blocked.
           example: false
+        admin:
+          type: boolean
+          description: TRUE if the account is admin.
+          example: false
         url:
           type: string
-          description: The credit commons remote ledger URL
+          description: URL of the connected credit commons ledger (remote accounts only)
           example: http://cc.example.com

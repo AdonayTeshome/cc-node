@@ -81,7 +81,7 @@ class Workflows extends \CreditCommons\Workflows {
       }
       else{
         global $config;
-        $abs_path = $config['node_name'];
+        $abs_path = getConfig('node_name');
       }
       $trunkwards_tree[$abs_path] = $local_workflows;
     }
