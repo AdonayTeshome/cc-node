@@ -35,18 +35,12 @@ paths:
       operationId: filterAccount
       description: Filter accounts, and return full account objects
       parameters:
-        - name: chars
+        - name: fragment
           in: query
           description: the string or fragment to check against account names.
           required: false
           schema:
             type: string
-        - name: status
-          in: query
-          description: Filter for active (true) or blocked (false) accounts
-          required: false
-          schema:
-            type: boolean
         - name: local
           in: query
           description: Filter for local (TRUE) accounts or remote (FALSE) accounts
@@ -68,18 +62,12 @@ paths:
       operationId: filterName
       description: Filter accounts, and return a list of names
       parameters:
-        - name: chars
+        - name: fragment
           in: query
           description: the string or fragment to check against account names.
           required: false
           schema:
             type: string
-        - name: status
-          in: query
-          description: Filter for active (true) or blocked (false) accounts
-          required: false
-          schema:
-            type: boolean
         - name: local
           in: query
           description: Filter for local (TRUE) accounts or remote (FALSE) accounts

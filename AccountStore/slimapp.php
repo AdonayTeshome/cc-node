@@ -54,16 +54,8 @@ return $app;
 
 function account_store_filter($params) : AccountManager {
   $accounts = new AccountManager();
-  if (!empty($params['chars'])) {
-    $accounts->filterByName($params['chars']);
-  }
-  if (count($accounts) == 1 and !empty($params['auth'])) {
-    //prevents getting a list of all users with a given auth string.
-    $accounts->filterByAuth($params['auth']);
-  }
-  if (isset($params['status'])) {
-    $status = $params['status'] == 'true' ? TRUE : FALSE;
-    $accounts->filterByStatus($status);
+  if (!empty($params['fragment'])) {
+    $accounts->filterByName($params['fragment']);
   }
   if (isset($params['local'])) {
     $local = $params['local'] == 'true' ? TRUE : FALSE;

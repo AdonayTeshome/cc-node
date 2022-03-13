@@ -36,7 +36,7 @@ class AccountStoreTest extends TestBase  {
       array_keys($this->rawAccounts),
       function ($acc) use ($char) {return stripos($acc, $char) !== FALSE;}
     );
-    $this->filterTest("chars=$char", $expected);
+    $this->filterTest("fragment=$char", $expected);
   }
 
   function testGetAccount() {

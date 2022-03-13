@@ -57,12 +57,10 @@ class AccountStore extends Requester implements AccountStoreInterface {
       $path .= '/full';
     }
     // Ensure only known filters are passed
-    $filters = array_intersect_key($filters, array_flip(['status', 'local', 'chars']));
+    $filters = array_intersect_key($filters, array_flip(['local', 'fragment']));
     if (isset($filters['local'])) {
+      // covert to a path boolean
       $filters['local'] = $filters['local'] ?'true':'false';
-    }
-    if (isset($filters['status'])) {
-      $filters['status'] = $filters['status'] ?'true':'false';
     }
     $this->options[RequestOptions::QUERY] = $filters;
     $results = (array)$this->localRequest($path);
