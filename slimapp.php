@@ -18,6 +18,7 @@ use CreditCommons\Account;
 use CCNode\Slim3ErrorHandler;
 use CCNode\AddressResolver;
 use CCNode\Accounts\BoT;
+use CCNode\Accounts\User;
 use CCNode\Accounts\Remote;
 use CCNode\Workflows;
 use CCNode\StandaloneEntry;
@@ -107,7 +108,6 @@ $app->get('/accounts/filter[/{fragment:.*$}]', function (Request $request, Respo
     $given_path = explode('/', $args['fragment']);
     $fragment = array_pop($given_path);
   }
-
   if (!empty($given_path)) {
     $address_resolver = AddressResolver::create(getConfig('abs_path'));
     list($remote_account, $rel_path) = $address_resolver->resolveToLocalAccount(implode('/', $given_path), TRUE);
@@ -129,26 +129,35 @@ $app->get('/account/limits/{acc_path:.*$}', function (Request $request, Response
 });
 
   // Retrives summaries of all accounts on the current node
-$app->get('/account/summary', function (Request $request, Response $response, $args) {
-  check_permission($request, 'accountSummary');
-  $result = Accounts\User::getAccountSummaries();
-  $response->getBody()->write(json_encode($result));
-  return $response->withHeader('Content-Type', 'application/json');
-});
+//$app->get('/account/summary', function (Request $request, Response $response, $args) {
+//  check_permission($request, 'accountSummary');
+//  $result = Transaction::getAccountSummaries();
+//  $response->getBody()->write(json_encode($result));
+//  return $response->withHeader('Content-Type', 'application/json');
+//});
 
-$app->get('/account/summary/{acc_path:.*$}', function (Request $request, Response $response, $args) {
-  global $node_name;
+$app->get('/account/summary[/{acc_path:.*$}]', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountSummary');
   $params = $request->getQueryParams();
-  $given_path = urldecode($args['acc_path']);
+  $given_path = isset($args['acc_path']) ? urldecode($args['acc_path']) : '';
   $address_resolver = AddressResolver::create(getConfig('abs_path'));
   list($account, $rel_path) = $address_resolver->resolveToLocalAccount($given_path, TRUE);
-  if ($account) {
+
+  debug("Received: ".$_SERVER['REQUEST_URI']." account: ".($account?$account->id:'NULL').";  path: $rel_path");
+  if ($account and substr($rel_path, -1) == '/') {// All the accounts on a remote node
+    debug("All the accounts on a remote node $account->id $rel_path");
+    $result = $account->getAccountSummaries(trim($rel_path, '/'));
+  }
+  elseif ($account) {// An account on this node.
+    debug("A local or remote account $rel_path ".substr($rel_path, -1));
     $result = $account->getAccountSummary($rel_path);
   }
-  else {
-    $result = User::getAccountSummaries();
+  else {// All accounts on the current node.
+    debug("All accounts on the current node.");
+    $result = Transaction::getAccountSummaries(TRUE);
+    debug($result);
   }
+
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
 });
@@ -319,17 +328,21 @@ function permitted_operations() : array {
   if ($user->id <> '<anon>') {
     $permitted[] = 'handshake';
     $permitted[] = 'workflows';
-    if (!$user instanceof BoT) {
-      // This is the default privacy setting; leafward nodes are private to trunkward nodes
-      $permitted[] = 'absolutePath';
-      $permitted[] = 'accountHistory';
-      $permitted[] = 'accountLimits';
-      $permitted[] = 'accountNameAutocomplete';
-      $permitted[] = 'accountSummary';
-      $permitted[] = 'newTransaction';
-      $permitted[] = 'getTransaction';
-      $permitted[] = 'filterTransactions';
-      $permitted[] = 'stateChange';
+    $permitted[] = 'newTransaction';
+    $permitted[] = 'absolutePath';
+    $permitted[] = 'stateChange';
+    $map = [
+      'filterTransactions' => 'transactions',
+      'getTransaction' => 'transactions',
+      'accountHistory' => 'transactions',
+      'accountLimits' => 'acc_summaries',
+      'accountNameAutocomplete' => 'acc_ids',
+      'accountSummary' => 'acc_summaries'
+    ];
+    foreach ($map as $method => $perm) {
+      if (!$user instanceOf BoT or getConfig("priv.$perm")) {
+        $permitted[] = $method;
+      }
     }
     if ($user instanceof Remote) {
       $permitted[] = 'relayTransaction';
@@ -454,7 +467,7 @@ function json_response(Response $response, $body, int $code = 200) : Response {
 function getConfig(string $var) {
   static $tree, $config;
   if (!isset($tree)) {
-    $config = parse_ini_file('./node.ini');
+    $config = parse_ini_file('node.ini');
     $tree = explode('/', $config['abs_path']);
   }
   if ($var == 'node_name') {
@@ -469,4 +482,18 @@ function getConfig(string $var) {
     return $config[$var][$subvar];
   }
   else return $config[$var];
+}
+
+function debug($val) {
+  static $first = TRUE;
+  $file = getConfig('node_name').'.debug';
+  if (!is_scalar($val)) {
+    $val = print_r($val, 1);
+  }
+  file_put_contents(
+    $file,
+    ($first ? "\n": '').date('H:i:s')."  $val\n",
+    FILE_APPEND
+  ); //temp
+  $first = FALSE;
 }
