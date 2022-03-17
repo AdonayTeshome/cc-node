@@ -21,13 +21,13 @@ class AddressResolver {
 
   private $accountStore;
   private $nodeName;
-  private $trunkwardsName;
+  private $trunkwardName;
 
   function __construct(AccountStoreInterface $accountStore, $absolute_path) {
     $this->accountStore = $accountStore;
     $parts = explode('/', $absolute_path);
     $this->nodeName = array_pop($parts);
-    $this->trunkwardsName = array_pop($parts);
+    $this->trunkwardName = array_pop($parts);
   }
 
   static function create($absolute_path) {
@@ -67,15 +67,14 @@ class AddressResolver {
     // identify which node
     if ($proxy_account_id = $this->relativeToThisNode($parts)) {
       // it's not this node.
-      if ($user->id <> getConfig('trunkward_name')) {
-        $parts[] = $acc_id;
-        return [$this->accountStore->fetch($proxy_account_id), implode('/', $parts)];
+      if ($user->id <> $this->trunkwardName) {
+        return [$this->accountStore->fetch($proxy_account_id), implode('/', $parts).'/'.$acc_id];
       }
       else {
         throw new DoesNotExistViolation(type: 'account', id: $given_acc_path);
       }
     }
-    elseif ($acc_id and ($this->accountStore->has($acc_id) or $acc_id == getConfig('trunkward_name'))) {// its an account on this node.
+    elseif ($acc_id and ($this->accountStore->has($acc_id) or $acc_id == $this->trunkwardName)) {// its an account on this node.
       return [$this->accountStore->fetch($acc_id), implode('/', $parts)];
     }
     elseif ($acc_id) {
@@ -97,24 +96,30 @@ class AddressResolver {
       if ($pos == 0) {
         array_shift($path_parts);
       }
-      elseif ($pos > 0 and $path_parts[$pos-1] == $this->trunkwardsName) {
+      elseif ($pos > 0 and $path_parts[$pos-1] == $this->trunkwardName) {
         // This is a branch so we can cut off the start of the path.
         $path_parts = array_slice($path_parts, $pos+1);
       }
       else {// Rare
         // the node name appears under a different trunk.
         // Freaky coincidence, but pass trunkward.
-        return $this->trunkwardsName;
+        return $this->trunkwardName;
       }
     }
-    if (empty($path_parts)) {
+    if (empty(array_filter($path_parts))) {
+      // the current node.
       return '';
     }
-    elseif ($this->accountStore->has(reset($path_parts))) {
+    elseif ($this->accountStore->has(reset($path_parts), 'Remote')) {
       return array_shift($path_parts);
     }
-    return $this->trunkwardsName;
-
+    elseif ($this->accountStore->has(reset($path_parts))) {
+      return '';
+    }
+    elseif($this->trunkwardName) {
+      return $this->trunkwardName;
+    }
+    throw new DoesNotExistViolation(type: 'node', id: implode($path_parts));
   }
 
 }

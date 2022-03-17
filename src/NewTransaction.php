@@ -26,13 +26,12 @@ class NewTransaction extends BaseNewTransaction{
       mt_rand(0, 0xffff),
       mt_rand(0, 0xffff)
     );
-
     $data->entries = [(object)[
       'payee' => $data->payee,
       'payer' => $data->payer,
       'quant' => $data->quant,
       'description' => $data->description,
-      'metadata' => $data->metadata
+      'metadata' => $data->metadata??[]
     ]];
   }
 

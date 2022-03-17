@@ -15,6 +15,7 @@ class TestBase extends TestCase {
   protected $branchAccIds = [];
   protected $blockedAccIds = [];
   protected $trunkwardsId = '';
+  protected $nodePath = [];
 
   /**
    * Passwords, keyed by user
@@ -53,6 +54,7 @@ class TestBase extends TestCase {
       $this->assertEquals($expected_response, $status_code);
     }
     elseif ($contents) {
+      print_r(func_get_args());
       $e = \CreditCommons\RestAPI::reconstructCCException($contents);
       $class = "CreditCommons\Exceptions\\$expected_response";
       $this->assertInstanceOf($class, $e);
@@ -90,7 +92,7 @@ class TestBase extends TestCase {
 
 
   function loadAccounts($relative_path = '') {
-    global $config;
+    $this->nodePath = explode('/', \CCNode\getConfig('abs_path'));
     $this->rawAccounts = (array)json_decode(file_get_contents($relative_path .'store.json'));
 
     foreach ($this->rawAccounts as $acc_id => $acc) {
@@ -105,7 +107,7 @@ class TestBase extends TestCase {
           }
         }
         elseif (!empty($acc->url)) {
-          if ($acc->id == \CCNode\getConfig('trunkward_name')) {
+          if ($acc->id == \CCNode\getConfig('trunkward_acc_id')) {
             $this->trunkwardsId = $acc_id;
           }
           else {

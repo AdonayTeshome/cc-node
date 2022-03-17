@@ -2,8 +2,8 @@
 
 namespace CCNode\Accounts;
 use CreditCommons\Account;
-use CCNode\Db;
 use CCNode\TradeStats;
+use CCNode\Transaction;
 
 /**
  * Class representing a member of the ledger
@@ -44,15 +44,10 @@ class User extends Account {
    *
    * @note Uses the transaction updated time, not the created time
    */
-  function getHistory($samples = -1) : array {
+  function getHistory(int $samples = -1) : array {
     global $config;
     $points = [];
-    Db::query("SET @csum := 0");
-    $query = "SELECT updated, (@csum := @csum + diff) as balance "
-      . "FROM transaction_index "
-      . "WHERE uid1 = '$this->id' "
-      . "ORDER BY updated ASC";
-    $result = Db::query($query);
+    $result = Transaction::accountHistory($this->id) ;
     // Database is storing timestamps as 'Y-m-d H:i:s.0'
     // make a first point at zero balance 1 sec before the first balance.
     if ($t = $result->fetch_object()) {
@@ -101,16 +96,12 @@ class User extends Account {
     return $points;
   }
 
-
   /**
    * @return CreditCommons\TradeStats[]
    *   Two groups of stats, with keys 'completed' and 'pending'.
    */
   function getAccountSummary() : \stdClass {
-    $query = "SELECT uid2 as partner, income, expenditure, diff, volume, state, is_primary as isPrimary "
-      . "FROM transaction_index "
-      . "WHERE uid1 = '$this->id' and state in ('completed', 'pending')";
-    $result = Db::query($query);
+    $result = Transaction::accountSummary($this->id);
     $completed = TradeStats::builder();
     $pending = TradeStats::builder();
 
@@ -128,41 +119,9 @@ class User extends Account {
     ];
   }
 
-  /**
-   *
-   * @param bool $include_virgins
-   * @return array
-   */
-  static function getAccountSummaries($include_virgins = FALSE) : array {
-    $results = [];
-        $balances = [];
-    $result = Db::query("SELECT uid1, uid2, diff, state, is_primary "
-      . "FROM transaction_index "
-      . "WHERE income > 0");
-    while ($row = $result->fetch_object()) {
-      foreach ([$row->uid1, $row->uid2] as $uid) {
-        if (!isset($balances[$uid])) {
-          $balances[$uid] = (object)[
-            'completed' => TradeStats::builder(),
-            'pending' => TradeStats::builder()
-          ];
-        }
-      }
-      $balances[$row->uid1]->pending->logTrade($row->diff, $row->uid2, $row->is_primary);
-      $balances[$row->uid2]->pending->logTrade(-$row->diff, $row->uid1, $row->is_primary);
-      if ($row->state == 'completed') {
-        $balances[$row->uid1]->completed->logTrade($row->diff, $row->uid2, $row->is_primary);
-        $balances[$row->uid2]->completed->logTrade(-$row->diff, $row->uid1, $row->is_primary);
-      }
-    }
-    if ($include_virgins) {
-      $all_account_names = accountStore()->filter(['status' => TRUE]);
-      if (!isset($all_balances[$name])) {
-        $balances[$name]->completed = TradeStats::builder();
-        $balances[$name]->pending = TradeStats::builder();
-      }
-    }
-    return $results;
+  function getLimits() {
+    return (object)['min' => $this->min, 'max' => $this->max];
   }
+
 }
 

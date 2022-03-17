@@ -25,7 +25,7 @@ class AddressResolverTest extends \PHPUnit\Framework\TestCase {
     // account or not.
     $user = $accountStore->anonAccount();
     // Unfortunately testing framework doesn't pass queryParams so we must filter here
-    $all_accounts = $accountStore->filter([], TRUE);
+    $all_accounts = $accountStore->filter(full: TRUE);
 
     foreach ($all_accounts as $acc) {
       if($acc instanceOf Branch) {

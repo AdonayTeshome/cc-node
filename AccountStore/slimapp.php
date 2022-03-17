@@ -24,13 +24,13 @@ $app->get('/creds/{name}/{auth}', function (Request $request, Response $response
 });
 
 $app->get('/filter/full', function (Request $request, Response $response, $args) {
-  $accounts = account_store_filter($request->getQueryParams());
+  $accounts = account_store_filter(...$request->getQueryParams());
   $response->getBody()->write(json_encode($accounts->view(), JSON_UNESCAPED_UNICODE));
   return $response->withHeader('Content-Type', 'application/json');
 });
 
 $app->get('/filter', function (Request $request, Response $response, $args) {
-  $accounts = account_store_filter($request->getQueryParams());
+  $accounts = account_store_filter(...$request->getQueryParams());
   $response->getBody()->write(json_encode(array_keys($accounts->accounts), JSON_UNESCAPED_UNICODE));
   return $response->withHeader('Content-Type', 'application/json');
 });
@@ -52,7 +52,7 @@ $app->get('/{acc_id}', function (Request $request, Response $response, $args) {
 return $app;
 
 
-function account_store_filter($params) : AccountManager {
+function account_store_filter(...$params) : AccountManager {
   $accounts = new AccountManager();
   if (!empty($params['fragment'])) {
     $accounts->filterByName($params['fragment']);

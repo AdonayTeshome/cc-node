@@ -27,7 +27,7 @@ class Orientation {
     global $user;
     $this->responseMode = 0;
     $this->upstreamAccount = $user;
-    if ($name = getConfig('trunkwards_name')) {
+    if ($name = getConfig('trunkward_acc_id')) {
       $this->trunkwardsAccount = load_account($name);
     }
   }
@@ -92,7 +92,7 @@ class Orientation {
     global $user;
     $results = [];
     if ($user instanceOf Accounts\User) {
-      $remote_accounts = AccountStore()->filter(['status' => 1, 'local' => 0], TRUE);
+      $remote_accounts = AccountStore()->filter(local: 0, full: TRUE);
       foreach ($remote_accounts as $acc) {
         if ($acc->id == $user->id) {
           continue;

@@ -6,6 +6,7 @@ use CCNode\Accounts\User;
 use CreditCommons\RestAPI;
 use CCNode\Db;
 use CreditCommons\Exceptions\CCFailure;
+use CCNode\Transaction;
 
 /**
  * Class representing a remote account, which authorises using its latest hash.
@@ -60,15 +61,6 @@ class Remote extends User {
   }
 
   /**
-   * The below functions might work better somewhere else.
-   */
-
-  public function getHistory($samples = 0) : array {
-    // N.B. Branchward nodes may refuse permission
-    return $this->API()->getHistory($this->transversalPath, $samples);
-  }
-
-  /**
    * {@inheritDoc}
    * @todo this functions returns a slightly different format on branchwards and trunkwards accounts.
    */
@@ -82,8 +74,35 @@ class Remote extends User {
     return $result;
   }
 
-  function accountNameAutocomplete($rel_path) {
-    $result = $this->API()->accountNameAutocomplete($rel_path);
+  function getAccountSummaries($rel_path_to_node = '') : array {
+    return $this->API()->getAccountSummaries($rel_path_to_node);
+  }
+
+  function getAllLimits($rel_path_to_node = '') : array {
+    return (array)$this->API()->getAllAccountLimits($rel_path_to_node);
+  }
+
+  function getLimits($rel_path = '') {
+    if ($rel_path) {
+      $result = $this->API()->getAccountLimits($rel_path);
+    }
+    else {
+      $result = parent::getLimits();
+    }
+    return $result;
+  }
+
+  function accountNameFilter(string $rel_path, array $params) {
+    return $this->API()->accountNameFilter($rel_path, $params);
+  }
+
+  function getHistory(int $samples = -1, $rel_path = '') : array {
+    if ($rel_path) {
+      $result = $this->api()->getAccountHistory($rel_path, $samples);
+    }
+    else {
+      $result = parent::getHistory($samples);
+    }
     return $result;
   }
 

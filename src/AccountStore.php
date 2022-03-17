@@ -50,20 +50,38 @@ class AccountStore extends Requester implements AccountStoreInterface {
   /**
    * @inheritdoc
    */
-  function filter(array $filters = [], $full = FALSE) : array {
+  function filter(
+    int $offset = 0,
+    int $limit = 10,
+    bool $full = FALSE,
+    bool $local= NULL,
+    string $fragment = NULL
+  ) : array {
     // Pointless to try to make use of the $this->cached here.
     $path = 'filter';
     if ($full) {
       $path .= '/full';
     }
-    // Ensure only known filters are passed
-    $filters = array_intersect_key($filters, array_flip(['local', 'fragment']));
-    if (isset($filters['local'])) {
-      // covert to a path boolean
-      $filters['local'] = $filters['local'] ?'true':'false';
+    if (isset($local)) {
+      // covert to a path boolean... tho shouldn't guzzle do that?
+      $this->options[RequestOptions::QUERY]['local'] = $local ? 'true' : 'false';
     }
-    $this->options[RequestOptions::QUERY] = $filters;
+    if (isset($full)) {
+      // covert to a path boolean... tho shouldn't guzzle do that?
+      $this->options[RequestOptions::QUERY]['full'] = $full ? 'true' : 'false';
+    }
+    foreach(['fragment', 'offset', 'limit'] as $param) {
+      if (isset($$param)) {
+        $this->options[RequestOptions::QUERY][$param] = $$param;
+      }
+    }
     $results = (array)$this->localRequest($path);
+    // remove the trunkward account from all filter because know about it in other
+    // ways and it gets in the way of most use cases for filtering.
+    $pos = array_search(getConfig('trunkward_acc_id'), $results);
+    if ($pos !== FALSE) {
+      unset($results[$pos]);
+    }
     if ($full) {
       $results = array_map([$this, 'upcast'], $results);
     }
@@ -92,6 +110,17 @@ class AccountStore extends Requester implements AccountStoreInterface {
       $this->cached[$name] = $this->upcast($result);
     }
     return $this->cached[$name];
+  }
+
+  /**
+   * Get the transaction limits for all accounts.
+   * @return array
+   */
+  function allLimits() : array {
+    foreach ($this->filter(full: TRUE) as $info) {
+      $limits[$info->id] = (object)['min' => $info->min, 'max' => $info->max];
+    }
+    return $limits;
   }
 
   /**
@@ -127,12 +156,16 @@ class AccountStore extends Requester implements AccountStoreInterface {
     }
     catch (RequestException $e) {
       if ($e->getStatusCode() == 500) {
-        throw new CCFailure(message: $e->getMessage());
+        throw new CCFailure($e->getMessage());
       }
       throw $e;
     }
     $contents = $response->getBody()->getContents();
-    return json_decode($contents);
+    $result = json_decode($contents);
+    if ($contents and is_null($result)) {
+      throw new CCFailure('Non-json result from account service: '.$contents);
+    }
+    return $result;
   }
 
   /**
@@ -150,7 +183,7 @@ class AccountStore extends Requester implements AccountStoreInterface {
    * @return Account
    */
   private function upcast(\stdclass $data) : Account {
-    $class = self::determineAccountClass($data, getConfig('trunkward_name'));
+    $class = self::determineAccountClass($data, getConfig('trunkward_acc_id'));
     $this->cached[$data->id] = $class::create($data);
     return $this->cached[$data->id];
   }

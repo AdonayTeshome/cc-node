@@ -5,7 +5,7 @@ namespace CCNode;
 use CCNode\Entry;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\CCFailure;
-use CreditCommons\Exceptions\CCViolation;
+use CreditCommons\Exceptions\CCOtherViolation;
 
 trait TransactionStorageTrait {
 
@@ -34,7 +34,7 @@ trait TransactionStorageTrait {
       if ($tx->state == 'validated' and $row->author <> $user->id and !$user->admin and $row->is_primary) {
         // deny the transaction exists to all but its author and admins
         // Note this is a bit misleading but permission error has fields that we can't populate from here.
-        throw new CCViolation('This transaction has not yet been confirmed by its creator');
+        throw new CCOtherViolation("Transaction $uuid has not yet been confirmed by its creator");
       }
       $row->metadata = unserialize($row->metadata);
       $entry_rows[] = $row;
@@ -122,26 +122,27 @@ trait TransactionStorageTrait {
    *
    * @note It is not possible to filter by signatures needed or signed because
    * they don't exist, as such, in the db.
+   * @note you can't filter on metadata here.
    */
-  static function filter(array $params) : array {
+  static function filter(
+    string $sort = 'created,desc',
+    string $pager = '0,10',
+    string $payer = NULL,
+    string $payee = NULL,
+    string $involving = NULL,
+    string $author = NULL,
+    string $description = NULL,
+    string $states = NULL,//todo should we pass an array here?
+    string $types = NULL,//todo should we pass an array here?
+    string $before = NULL,
+    string $after = NULL,
+  ) : array {
     global $user;
-    $valid_fields = ['payer', 'payee', 'limit', 'sort', 'involving', 'states', 'types', 'before', 'after', 'sort', 'metadata', 'author', 'description'];
-    $params += ['sort' => 'created,desc'];
-    if ($invalid = array_diff_key($params, array_flip($valid_fields))) {
-      throw new CCViolation('Cannot filter on field: '.implode(',', array_keys($invalid)));
-    }
-    extract($params);
     // Get only the latest version of each row in the transactions table.
     $query = "SELECT e.id, t.uuid FROM transactions t "
       . "INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver "
       // Means we get one result for each entry, so we use array_unique at the end.
       . "LEFT JOIN entries e ON t.id = e.txid ";
-
-//    $query = "SELECT e.id, t.uuid FROM entries e "
-//      . "LEFT JOIN transactions t ON t.id = e.txid "
-//      . "INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver ";
-//      // Means we get one result for each entry, so we use array_unique at the end.";
-
     if (isset($payer)) {
       if ($col = strpos($payer, '/')) {
         $conditions[] = "metadata LIKE '%$payer%'";
@@ -187,10 +188,9 @@ trait TransactionStorageTrait {
       if (is_string($states)) {
         $states = explode(',', $states);
       }
-      else fhfjff();
       if (in_array('validated', $states)) {
         // only the author can see transactions in the validated state.
-        $conditions[]  = "(state = 'validated' and author = '$user->id')";
+        $conditions[]  = "(state = 'validated' AND author = '$user->id')";
       }
       else {
         // transactions with version 0 are validated but not confirmed by their creator.
@@ -202,6 +202,7 @@ trait TransactionStorageTrait {
     else {
       $conditions[] = "state <> 'erased'";
     }
+    $conditions[] ="(t.version > 0 OR e.author = '$user->id')";
 
     if (isset($types)) {
       $conditions[] = self::manyCondition('type', $types);
@@ -213,10 +214,11 @@ trait TransactionStorageTrait {
       $query .= ' WHERE '.implode(' AND ', $conditions);
     }
     list($f, $dir) = explode(',', $sort);
+    // @todo check that $f is a field.
     $query .= " ORDER BY $f ".strtoUpper($dir??'desc');
 
-    if (isset($limit)) {
-      $query .= " LIMIT $limit ";
+    if (isset($pager)) {
+      $query .= " LIMIT $pager ";
     }
 
     $query_result = Db::query($query);
@@ -233,6 +235,64 @@ trait TransactionStorageTrait {
       return $fieldname .' IN ('.implode(',', $strings).') ';
     }
     return '';
+  }
+
+
+  static function accountHistory($acc_id) : \mysqli_result {
+    Db::query("SET @csum := 0");
+    $query = "SELECT updated, (@csum := @csum + diff) as balance "
+      . "FROM transaction_index "
+      . "WHERE uid1 = '$acc_id' "
+      . "ORDER BY updated ASC";
+    return Db::query($query);
+  }
+
+  static function accountSummary($acc_id) : \mysqli_result {
+    $query = "SELECT uid2 as partner, income, expenditure, diff, volume, state, is_primary as isPrimary "
+      . "FROM transaction_index "
+      . "WHERE uid1 = '$acc_id' and state in ('completed', 'pending')";
+    return Db::query($query);
+  }
+
+
+  /**
+   *
+   * @param bool $include_virgins
+   * @return array
+   */
+  static function getAccountSummaries($include_virgins = FALSE) : array {
+    $results = $all_balances = [];
+        $balances = [];
+    $result = Db::query("SELECT uid1, uid2, diff, state, is_primary "
+      . "FROM transaction_index "
+      . "WHERE income > 0");
+    while ($row = $result->fetch_object()) {
+      foreach ([$row->uid1, $row->uid2] as $uid) {
+        if (!isset($balances[$uid])) {
+          $balances[$uid] = (object)[
+            'completed' => TradeStats::builder(),
+            'pending' => TradeStats::builder()
+          ];
+        }
+      }
+      $balances[$row->uid1]->pending->logTrade($row->diff, $row->uid2, $row->is_primary);
+      $balances[$row->uid2]->pending->logTrade(-$row->diff, $row->uid1, $row->is_primary);
+      if ($row->state == 'completed') {
+        $balances[$row->uid1]->completed->logTrade($row->diff, $row->uid2, $row->is_primary);
+        $balances[$row->uid2]->completed->logTrade(-$row->diff, $row->uid1, $row->is_primary);
+      }
+    }
+    if ($include_virgins) {
+      $all_account_names = accountStore()->filter();
+      $missing = array_diff($all_account_names, array_keys($all_balances));
+      foreach ($missing as $name) {
+        $balances[$name] = (object)[
+          'completed' => TradeStats::builder(),
+          'pending' => TradeStats::builder()
+        ];
+      }
+    }
+    return $balances;
   }
 
 }

@@ -18,7 +18,6 @@ use CreditCommons\Account;
 use CCNode\Slim3ErrorHandler;
 use CCNode\AddressResolver;
 use CCNode\Accounts\BoT;
-use CCNode\Accounts\User;
 use CCNode\Accounts\Remote;
 use CCNode\Workflows;
 use CCNode\StandaloneEntry;
@@ -100,73 +99,73 @@ $app->get('/absolutepath', function (Request $request, Response $response) {
   return json_response($response, $node_names, 200);
 });
 
-$app->get('/accounts/filter[/{fragment:.*$}]', function (Request $request, Response $response, $args) {
-  check_permission($request, 'accountNameAutocomplete');
-  $params = $request->getQueryParams();
-  $remote_names = [];
-  if (isset($args['fragment'])) {
-    $given_path = explode('/', $args['fragment']);
-    $fragment = array_pop($given_path);
+$app->get('/accounts/filter[/{acc_path:.*$}]', function (Request $request, Response $response, $args) {
+  check_permission($request, 'accountNameFilter');
+  // TEMP
+  $path_parts = explode('/', @$args['acc_path'])??'';
+  $remote_acc_id = AddressResolver::create(getConfig('abs_path'))->relativeToThisNode($path_parts);
+  if ($remote_acc_id) {
+    // All the accounts on a remote node
+    $names = accountStore()->fetch($remote_acc_id)->accountNameFilter(implode('/', $path_parts), $request->getQueryParams());
   }
-  if (!empty($given_path)) {
-    $address_resolver = AddressResolver::create(getConfig('abs_path'));
-    list($remote_account, $rel_path) = $address_resolver->resolveToLocalAccount(implode('/', $given_path), TRUE);
-    // pass to the remote node
-    $names = $remote_account->accountNameAutocomplete($fragment, TRUE);
+  else {
+    // All accounts on the current node.
+    $params = $request->getQueryParams();
+    // I'd be surprised if there wasn't a better way to turn boolean queryparams into php bools
+    if (isset($params['full']))$params['full'] = filter_var(@$params['full'], FILTER_VALIDATE_BOOLEAN);
+    if (isset($params['local']))$params['local'] = filter_var(@$params['local'], FILTER_VALIDATE_BOOLEAN);
+    $names = accountStore()->filter(...$params);
   }
-  elseif (empty($path)) {
-    $params = ['chars' => @$args['fragment'], 'status' => TRUE, 'local' => TRUE];
-    $names = accountStore()->filter($params, FALSE);
-  }
-  $paged = array_slice($names, 0, $params['limit']??10);
-  return json_response($response, $paged);
+  return json_response($response, $names);
 });
-
-$app->get('/account/limits/{acc_path:.*$}', function (Request $request, Response $response, $args) {
-  check_permission($request, 'accountHistory');
-  $account = accountStore()->fetch($args['acc_path']);
-  return json_response($response, (object)['min' => $account->min, 'max' => $account->max]);
-});
-
-  // Retrives summaries of all accounts on the current node
-//$app->get('/account/summary', function (Request $request, Response $response, $args) {
-//  check_permission($request, 'accountSummary');
-//  $result = Transaction::getAccountSummaries();
-//  $response->getBody()->write(json_encode($result));
-//  return $response->withHeader('Content-Type', 'application/json');
-//});
 
 $app->get('/account/summary[/{acc_path:.*$}]', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountSummary');
-  $params = $request->getQueryParams();
-  $given_path = isset($args['acc_path']) ? urldecode($args['acc_path']) : '';
-  $address_resolver = AddressResolver::create(getConfig('abs_path'));
-  list($account, $rel_path) = $address_resolver->resolveToLocalAccount($given_path, TRUE);
-
-  debug("Received: ".$_SERVER['REQUEST_URI']." account: ".($account?$account->id:'NULL').";  path: $rel_path");
+  list($account, $rel_path) = AddressResolver::create(getConfig('abs_path'))
+    ->resolveToLocalAccount((string)@$args['acc_path'], TRUE);
   if ($account and substr($rel_path, -1) == '/') {// All the accounts on a remote node
-    debug("All the accounts on a remote node $account->id $rel_path");
     $result = $account->getAccountSummaries(trim($rel_path, '/'));
   }
   elseif ($account) {// An account on this node.
-    debug("A local or remote account $rel_path ".substr($rel_path, -1));
     $result = $account->getAccountSummary($rel_path);
   }
   else {// All accounts on the current node.
-    debug("All accounts on the current node.");
     $result = Transaction::getAccountSummaries(TRUE);
-    debug($result);
   }
-
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
 });
 
+$app->get('/account/limits/{acc_path:.*$}', function (Request $request, Response $response, $args) {
+  check_permission($request, 'accountLimits');
+  list($account, $rel_path) = AddressResolver::create(getConfig('abs_path'))
+    ->resolveToLocalAccount((string)@$args['acc_path'], TRUE);
+  if ($account and substr($rel_path, -1) == '/') {// All the accounts on a remote node
+    debug("getting all limits on remote node $rel_path");
+    $result = $account->getAllLimits(trim($rel_path, '/'));
+  }
+  elseif ($account) {// An account on this node.
+    debug("getting limits for one account $rel_path");
+    $result = $account->getLimits($rel_path);
+  }
+  else {// All accounts on the current node.
+    debug('getting all limits');
+    $result = accountStore()->allLimits(TRUE);
+  }
+
+  return json_response($response, $result);
+});
+
 $app->get('/account/history/{acc_path:.*$}', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountHistory');
-  $params = $request->getQueryParams();
-  $account = accountStore()->fetch($args['acc_path']);
-  $result = $account->getHistory($params['samples']??0);
+  list($account, $rel_path) = AddressResolver::create(getConfig('abs_path'))
+    ->resolveToLocalAccount((string)@$args['acc_path'], TRUE);
+  $params = $request->getQueryParams() + [
+    'samples' => -1
+  ];
+
+  $result = $account->getHistory($params['samples'], $rel_path);
+
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
 });
@@ -192,7 +191,7 @@ $app->get('/transaction/{format}', function (Request $request, Response $respons
   check_permission($request, 'filterTransactions');
   $params = $request->getQueryParams();
   $results = [];
-  if ($uuids = Transaction::filter($params)) {// keyed by entries and $args['format'] == 'entry') {
+  if ($uuids = Transaction::filter(...$params)) {// keyed by entries and $args['format'] == 'entry') {
     if ($args['format'] == 'entry') {
       $results = StandaloneEntry::load(array_keys($uuids));
     }
@@ -274,20 +273,23 @@ return $app;
  * @todo make sure this is used whenever possible because it is cached.
  * @todo This doesn't seem like a good place to throw a violation.
  */
-function load_account(string $id) : Account {
+function load_account(string $acc_id) : Account {
   static $fetched = [];
-  if (!isset($fetched[$id])) {
-    if ($id == '<anon>') {
-      $fetched[$id] = accountStore()->anonAccount();
+  if (!isset($fetched[$acc_id])) {
+    if (strpos(needle: '/', haystack: $acc_id)) {
+      throw new CCFailure("Can't load unresolved account name: $acc_id");
     }
-    elseif ($id and $acc = accountStore()->fetch($id)) {
-      $fetched[$id] = $acc;
+    if ($acc_id == '<anon>') {
+      $fetched[$acc_id] = accountStore()->anonAccount();
+    }
+    elseif ($acc_id and $acc = accountStore()->fetch($acc_id)) {
+      $fetched[$acc_id] = $acc;
     }
     else {
-      throw new \DoesNotExistViolation(type: 'account', id: $id);
+      throw new \DoesNotExistViolation(type: 'account', id: $acc_id);
     }
   }
-  return $fetched[$id];
+  return $fetched[$acc_id];
 }
 
 function check_permission(Request $request, string $operationId) {
@@ -295,7 +297,7 @@ function check_permission(Request $request, string $operationId) {
   authenticate($request); // This sets $user
   $permitted = permitted_operations();
   if (!in_array($operationId, array_keys($permitted))) {
-    if ($user->id == getConfig('trunkward_name')) {
+    if ($user->id == getConfig('trunkward_acc_id')) {
       $user_id = '<trunk>';
     }
     elseif ($user->id) {
@@ -303,9 +305,7 @@ function check_permission(Request $request, string $operationId) {
     }
     else $user_id = '<anon>';
     throw new PermissionViolation(
-      acc_id: $user_id,
-      method: $request->getMethod(),
-      endpoint: $request->getRequestTarget()
+      acc_id: $user_id
     );
   }
 }
@@ -336,7 +336,7 @@ function permitted_operations() : array {
       'getTransaction' => 'transactions',
       'accountHistory' => 'transactions',
       'accountLimits' => 'acc_summaries',
-      'accountNameAutocomplete' => 'acc_ids',
+      'accountNameFilter' => 'acc_ids',
       'accountSummary' => 'acc_summaries'
     ];
     foreach ($map as $method => $perm) {
@@ -418,7 +418,7 @@ function compare_hashes(string $acc_id, string $auth) : bool {
  */
 function API_calls(Remote $account = NULL) {
   if (!$account) {
-    if ($bot = getConfig('trunkwards_name')) {
+    if ($bot = getConfig('trunkward_acc_id')) {
       $account = load_account($bot);
     }
     else {
@@ -473,7 +473,7 @@ function getConfig(string $var) {
   if ($var == 'node_name') {
     return end($tree);
   }
-  elseif ($var == 'trunkwards_name' or $var == 'trunkward_name') {
+  elseif ($var == 'trunkward_acc_id') {
     end($tree);
     return prev($tree);
   }

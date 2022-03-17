@@ -15,12 +15,12 @@ class Db {
    *
    * @return bool false on failure / mysqli MySQLi object instance on success.
    */
-  public static function connect($db = '', $user = NULL, $pass = NULL) : \mysqli {
+  public static function connect($db = '', $user = NULL, $pass = NULL, $server = NULL) : \mysqli {
     if(!isset(static::$connection) or $db) {
       $db = $db ?: getConfig('db.name');
       $db_user = $user?:getConfig('db.user');
       $db_pass = isset($pass)?$pass:getConfig('db.pass');
-      $db_server = getConfig('db.server') ?? 'localhost';
+      $db_server = $server?:getConfig('db.server');
       static::$connection = new \mysqli($db_server, $db_user, $db_pass, $db);
     }
     return static::$connection;

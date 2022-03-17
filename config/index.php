@@ -64,7 +64,7 @@ if ($_POST) {
     $connection = new mysqli('localhost', $config['db']['user'], $config['db']['pass']);
     $connection->query("DROP DATABASE ".$config['db']['name']);
     $connection->query("CREATE DATABASE ".$config['db']['name']);
-    CCNode\Db::connect($config['db']['name'], $config['db']['user'], $config['db']['pass']);
+    CCNode\Db::connect($config['db']['name'], $config['db']['user'], $config['db']['pass'], $config['db']['server']);
     foreach (explode(';', file_get_contents('install.sql')) as $q) {
       if ($query = trim($q)) {
         CCNode\Db::query($query);

@@ -10,7 +10,7 @@ use CreditCommons\Workflow;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\MaxLimitViolation;
 use CreditCommons\Exceptions\MinLimitViolation;
-use CreditCommons\Exceptions\CCViolation;
+use CreditCommons\Exceptions\CCOtherViolation;
 use CreditCommons\Exceptions\WorkflowViolation;
 use CreditCommons\TransactionInterface;
 use CreditCommons\BaseTransaction;
@@ -189,7 +189,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     $entries = [];
     foreach ($rows as $row) {
       if (!$row->quant and !$config['zero_payments']) {
-        throw new CCViolation(message: "Zero transactions not allowed on this node.");
+        throw new CCOtherViolation("Zero transactions not allowed on this node.");
       }
       if ($author){
         $row->author = $author->id;
