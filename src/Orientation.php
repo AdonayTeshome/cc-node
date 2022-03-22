@@ -92,7 +92,7 @@ class Orientation {
     global $user;
     $results = [];
     if ($user instanceOf Accounts\User) {
-      $remote_accounts = AccountStore()->filter(local: 0, full: TRUE);
+      $remote_accounts = AccountStore()->filterFull(local: FALSE);
       foreach ($remote_accounts as $acc) {
         if ($acc->id == $user->id) {
           continue;

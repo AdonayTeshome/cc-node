@@ -10,13 +10,12 @@ abstract class Branch extends Remote {
 
   function __construct(
     string $id,
-    bool $status,
     int $min,
     int $max,
     string $url,
     string $given_path = ''
   ) {
-    parent::__construct($id, $status, $min, $max, $url);
+    parent::__construct($id, $min, $max, $url);
     if ($given_path) {
       $parts = explode('/', $given_path);
       $pos = array_search($this->id, $parts);
@@ -32,7 +31,7 @@ abstract class Branch extends Remote {
       $data->given_path = $data->id;
     }
     static::validateFields($data);
-    return new static($data->id, $data->status, $data->min, $data->max, $data->url??NULL, $data->given_path);
+    return new static($data->id, $data->min, $data->max, $data->url??NULL, $data->given_path);
   }
 
 }

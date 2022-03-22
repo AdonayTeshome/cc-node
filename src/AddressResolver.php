@@ -3,6 +3,7 @@ namespace CCNode;
 
 use CreditCommons\AccountStoreInterface;
 use CreditCommons\Exceptions\DoesNotExistViolation;
+use CCNode\Accounts\Remote;
 
 /**
  * Convert all errors into an stdClass, which includes a field showing
@@ -22,12 +23,15 @@ class AddressResolver {
   private $accountStore;
   private $nodeName;
   private $trunkwardName;
+  private $userId;
 
   function __construct(AccountStoreInterface $accountStore, $absolute_path) {
+    global $user;
     $this->accountStore = $accountStore;
     $parts = explode('/', $absolute_path);
     $this->nodeName = array_pop($parts);
     $this->trunkwardName = array_pop($parts);
+    $this->userId = $user->id;
   }
 
   static function create($absolute_path) {
@@ -60,14 +64,12 @@ class AddressResolver {
    *   Otherwise the result is invalid path
    */
   public function resolveTolocalAccount(string $given_acc_path) : array {
-    global $user;
-
     $parts = explode('/', $given_acc_path);
     $acc_id = array_pop($parts);
     // identify which node
     if ($proxy_account_id = $this->relativeToThisNode($parts)) {
       // it's not this node.
-      if ($user->id <> $this->trunkwardName) {
+      if ($this->userId <> $this->trunkwardName) {
         return [$this->accountStore->fetch($proxy_account_id), implode('/', $parts).'/'.$acc_id];
       }
       else {
@@ -78,10 +80,11 @@ class AddressResolver {
       return [$this->accountStore->fetch($acc_id), implode('/', $parts)];
     }
     elseif ($acc_id) {
-      throw new DoesNotExistViolation(type: 'account', id: $given_acc_path);
+      // No matches
+      return [NULL, NULL];
     }
     else {// all accounts on this node.
-      return [NULL, NULL];
+      return [NULL, '*'];
     }
   }
 
@@ -120,6 +123,39 @@ class AddressResolver {
       return $this->trunkwardName;
     }
     throw new DoesNotExistViolation(type: 'node', id: implode($path_parts));
+  }
+
+  /**
+   * Find all the accounts in the tree that match the given fragment
+   * @param type $fragment
+   * @return type
+   */
+  function pathMatch($fragment) {
+    global $user;
+    // Make a list with all the matching trunkward node names and all the matching accounts.
+    $tree = explode('/', getConfig('abs_path'));
+    $trunkward_names = [];
+    $trunkward_acc_id = getConfig('trunkward_acc_id');
+    if ($trunkward_acc_id and $this->userId <> $trunkward_acc_id) {
+      $trunkward_names = load_account($trunkward_acc_id)->autocomplete($fragment);
+    }
+    // Local names.
+    $filtered = accountStore()->filterFull(fragment: $fragment);
+    $local = [];
+
+    foreach ($filtered as $acc) {
+      $name = $acc->id;
+      // Exclude the logged in account
+      if ($name == $this->userId) continue;
+      if ($acc instanceOf Remote) $name .= '/';
+      if ($user instanceOf Remote) {
+        $local[] = getConfig('node_name')."/$name";
+      }
+      else {
+        $local[] = $name;
+      }
+    }
+    return array_merge($trunkward_names, $local);
   }
 
 }

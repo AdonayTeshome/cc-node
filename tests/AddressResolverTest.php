@@ -25,7 +25,7 @@ class AddressResolverTest extends \PHPUnit\Framework\TestCase {
     // account or not.
     $user = $accountStore->anonAccount();
     // Unfortunately testing framework doesn't pass queryParams so we must filter here
-    $all_accounts = $accountStore->filter(full: TRUE);
+    $all_accounts = $accountStore->filterFull();
 
     foreach ($all_accounts as $acc) {
       if($acc instanceOf Branch) {
@@ -108,7 +108,7 @@ class AddressResolverTest extends \PHPUnit\Framework\TestCase {
       return;
     }
     catch(\Exception $e) {
-      print_r($e);
+      echo "\nUnexpected exception: "; print_r($e);
       return;
     }
     $this->assertEquals($expected, $account->id, "$given_name should have resolved to $expected");

@@ -5,6 +5,7 @@ namespace CCNode;
 use CCNode\Entry;
 use CCNode\BlogicRequester;
 use CCNode\Workflows;
+use CCNode\Accounts\Remote;
 use CCNode\TransactionStorageTrait;
 use CreditCommons\Workflow;
 use CreditCommons\Exceptions\DoesNotExistViolation;
@@ -32,6 +33,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     $data->state = TransactionInterface::STATE_INITIATED;
     $data->entries[0]->primary = 1;
     $data->entries = static::createEntries($data->entries, $user);
+
     $class = static::determineTransactionClass($data->entries);
     return $class::create($data);
   }
@@ -62,7 +64,6 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     $desired_state = $workflow->creation->state;
     if (!$workflow->canTransitionToState($user->id, $this, $desired_state, $user->admin)) {
       throw new WorkflowViolation(
-        acc_id: $user->id,
         type: $this->type,
         from: $this->state,
         to: $desired_state,
@@ -81,10 +82,10 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       $ledgerAccountInfo = $account->getAccountSummary();
       $projected = $ledgerAccountInfo->pending->balance + $info->diff;
       if ($projected > $first_entry->payee->max) {
-        throw new MaxLimitViolation(acc_id: $acc_id, limit: $first_entry->payee->max, projected: $projected);
+        throw new MaxLimitViolation(limit: $first_entry->payee->max, projected: $projected);
       }
       elseif ($projected < $first_entry->payer->min) {
-        throw new MinLimitViolation(acc_id: $acc_id, limit: $first_entry->payer->min, projected: $projected);
+        throw new MinLimitViolation(limit: $first_entry->payer->min, projected: $projected);
       }
     }
     $this->state = TransactionInterface::STATE_VALIDATED;
@@ -92,33 +93,28 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
 
   /**
    * @param string $target_state
-   * @throws \Exception
-   */
-  function changeState(string $target_state) {
-    $this->sign($target_state);
-  }
-
-  /**
-   *
-   * @global Account $user
-   * @param string $target_state
-   * @return $this
    * @throws WorkflowViolation
    */
-  function sign(string $target_state) {
+  function changeState(string $target_state) {
     global $user;
+    // If the logged in account is local, then at least one of the local accounts must be local.
+    // No leaf account can manipulate transactions which only bridge this ledger.
+    if ($this->entries[0]->payer instanceOf Remote and $this->entries[0]->payee instanceOf Remote and !$user instanceOf Remote) {
+      throw new WorkflowViolation(
+        type: $this->type,
+        from: $this->state,
+        to: $args['dest_state'],
+      );
+    }
     if (!$this->getWorkflow()->canTransitionToState($user->id, $this, $target_state, $user->admin)) {
       throw new WorkflowViolation(
-        acc_id: $user->id,
         type: $this->type,
         from: $this->state,
         to: $target_state,
       );
     }
-
     $this->state = $target_state;
     $this->saveNewVersion();
-    return $this;
   }
 
   /**

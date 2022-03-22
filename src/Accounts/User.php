@@ -12,23 +12,17 @@ class User extends Account {
 
   function __construct(
     string $id,
-    bool $status,
     int $min,
     int $max,
     public bool $admin
   ) {
-    parent::__construct($id, $status, $min, $max);
+    parent::__construct($id, $min, $max);
   }
 
   static function create(\stdClass $data) : User {
     $data->admin = $data->admin??FALSE;
     static::validateFields($data);
-    return new static($data->id, $data->status, $data->min, $data->max, $data->admin);
-  }
-
-  // Can this go in the base class?
-  function getRelPath() : string {
-    return $this->id;
+    return new static($data->id, $data->min, $data->max, $data->admin);
   }
 
   /**

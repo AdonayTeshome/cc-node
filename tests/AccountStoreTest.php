@@ -5,7 +5,7 @@ namespace CCNode\Tests;
 /**
  * Test class for the AccountStore service.
  */
-class AccountStoreTest extends TestBase  {
+class AccountStoreTest extends TestBase {
 
   const SLIM_PATH = 'AccountStore/slimapp.php';
   const API_FILE_PATH = 'AccountStore/accountstore.openapi.yml';

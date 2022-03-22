@@ -35,7 +35,7 @@ class TestBase extends TestCase {
     }
     if ($acc_id) {
       $request = $request->withHeader('cc-user', $acc_id)
-        ->withHeader('cc-auth', $this->passwords[$acc_id]);
+        ->withHeader('cc-auth', $this->passwords[$acc_id]??'---');
     }
     if ($request_body) {
       $request = $request->withHeader('Content-Type', 'application/json');
@@ -53,11 +53,15 @@ class TestBase extends TestCase {
       }
       $this->assertEquals($expected_response, $status_code);
     }
-    elseif ($contents) {
-      print_r(func_get_args());
-      $e = \CreditCommons\RestAPI::reconstructCCException($contents);
-      $class = "CreditCommons\Exceptions\\$expected_response";
-      $this->assertInstanceOf($class, $e);
+    elseif (is_string($expected_response)) {
+      if (isset($contents->class)) {
+        $err = \CreditCommons\RestAPI::reconstructCCErr($contents);
+        $this->assertInstanceOf("\\CreditCommons\Exceptions\\$expected_response", $err);
+      }
+      else {
+        print_r($contents);
+        $this->assertEquals(1, 0, 'Expected error but got something else.');
+      }
     }
     return $contents;
   }

@@ -33,3 +33,6 @@ validated_window = 300
 display_format = ''
 ;Whether payments of zero are valid
 zero_payments = 0
+
+;Stop on all notices and warnings.
+dev_mode=0

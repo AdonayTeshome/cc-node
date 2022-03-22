@@ -20,7 +20,7 @@ class UserRecord extends Record {
   public $admin;
 
   function __construct(\stdClass $data) {
-    parent::__construct($data->id, $data->status, $data->min??NULL, $data->max??NULL);
+    parent::__construct($data->id, $data->min??NULL, $data->max??NULL);
     $this->key = $data->key;
     $this->admin = (bool)$data->admin;
   }

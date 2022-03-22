@@ -3,7 +3,6 @@ namespace CCNode;
 
 use CreditCommons\BaseEntry;
 use CreditCommons\Account;
-use CCNode\Accounts\BoT;
 
 /**
  * Determine the account types for entries.

@@ -1,7 +1,6 @@
 <?php
 
 namespace CCNode\Tests;
-use Slim\Psr7\Response;
 
 /**
  * Tests the API functions of a node without touching remote nodes.
@@ -23,6 +22,7 @@ class SingleNodeTest extends TestBase {
     global $config;
     parent::__construct();
     $config = parse_ini_file('./node.ini');
+    $config['dev_mode'] = 0;
     $this->getApp();//also loads slimapp.php
     $this->loadAccounts('AccountStore/');
   }
@@ -40,33 +40,21 @@ class SingleNodeTest extends TestBase {
   }
 
   function testBadLogin() {
-    // This is a comparatively long winded because sendRequest() only uses valid passwords.
-    $request = $this->getRequest('absolutepath')
-      ->withHeader('cc-user', 'zzz123')
-      ->withHeader('cc-auth', 'zzz123');
-    $response = $this->getApp()->process($request, new Response());
-    $this->assertEquals(400, $response->getStatusCode());
-    $response->getBody()->rewind();
-    $err_obj = json_decode($response->getBody()->getContents());
-    $exception = \CreditCommons\RestAPI::reconstructCCException($err_obj);
-    $this->assertInstanceOf('CreditCommons\Exceptions\DoesNotExistViolation', $exception);
+    // wrong login name
+    $exception = $this->sendRequest('absolutepath', 'DoesNotExistViolation', 'noname');
     $this->assertEquals('account', $exception->type);
-
-    $request = $this->getRequest('absolutepath')
-      ->withHeader('cc-user', reset($this->normalAccIds))
-      ->withHeader('cc-auth', 'zzz123');
-    $response = $this->getApp()->process($request, new Response());
-    $this->assertEquals(400, $response->getStatusCode());
-    $response->getBody()->rewind();
-    $err_obj = json_decode($response->getBody()->getContents());
-    $exception = \CreditCommons\RestAPI::reconstructCCException($err_obj);
-    $this->assertInstanceOf('CreditCommons\Exceptions\AuthViolation', $exception);
+    //wrong password
+    $acc_id = reset($this->normalAccIds);
+    $temp = $this->passwords[$acc_id];
+    $this->passwords[$acc_id] = 'blah';
+    $this->sendRequest('absolutepath', 'AuthViolation', $acc_id);
+    $this->passwords[$acc_id] = $temp;
   }
 
   function testAccountNames() {
     $chars = substr(reset($this->adminAccIds), 0, 2);
-    $this->sendRequest("accounts/filter?fragment=$chars", 'PermissionViolation');
-    $results = $this->sendRequest("accounts/filter?fragment=$chars", 200, reset($this->normalAccIds));
+    $this->sendRequest("accounts/autocomplete/$chars", 'PermissionViolation');
+    $results = $this->sendRequest("accounts/autocomplete/$chars", 200, reset($this->normalAccIds));
     // should be a list of account names including 'a'
     foreach ($results as $acc_id) {
       $this->assertStringStartsWith($chars, $acc_id);
@@ -83,13 +71,14 @@ class SingleNodeTest extends TestBase {
   function testBadTransactions() {
     $admin = reset($this->adminAccIds);
     $obj = [
-      'payee' => reset($this->adminAccIds),
+      'payee' => reset($this->normalAccIds),
       'payer' => reset($this->normalAccIds),
       'description' => 'test 3rdparty',
       'quant' => 1,
       'type' => '3rdparty',
       'metadata' => ['foo' => 'bar']
     ];
+    $this->sendRequest('transaction', 'WrongAccountViolation', $admin, 'post', json_encode($obj));
     $obj['payee'] = 'aaaaaaaaaaa';
     $this->sendRequest('transaction', 'DoesNotExistViolation', $admin, 'post', json_encode($obj));
     $obj['payee'] = reset($this->adminAccIds);
@@ -252,6 +241,8 @@ class SingleNodeTest extends TestBase {
     $this->assertContainsOnly('int', $counts, TRUE, 'Transaction did not filter by description ');
     $all_entries = $this->sendRequest("transaction/entry", 200, $norm_user);
     $this->assertGreaterThan(3, count($all_entries), 'Unable to test offset/limit with only '.count($all_entries). 'entries saved.');
+    $limited = $this->sendRequest("transaction/entry?pager=0,3", 200, $norm_user);
+    $this->assertEquals(3, count($limited), "Pager failed to return 3 entries");
     $limited = $this->sendRequest("transaction/entry?pager=1,1", 200, $norm_user);
     $this->assertEquals(array_slice($all_entries, 1, 1), $limited, "The offset/limit queryparams don't work");
 

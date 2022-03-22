@@ -45,9 +45,7 @@ use Slim\App;
 //) use ($app) {
 //    $response = $app->getResponseFactory()->createResponse();
 //    if (!$exception instanceOf CCError) {
-//      $exception = new CCFailure([
-//        'message' => $exception->getMessage()
-//      ]);
+//      $exception = new CCFailure($exception->getMessage());
 //    }
 //    $response->getBody()->write(json_encode($exception, JSON_UNESCAPED_UNICODE));
 //    return $response->withStatus($exception->getCode());
@@ -77,7 +75,6 @@ $app->options('/', function (Request $request, Response $response) {
   check_permission($request, 'permittedEndpoints');
   return json_response($response, permitted_operations());
 });
-
 $app->get('/workflows', function (Request $request, Response $response) {
   check_permission($request, 'workflows');
   // Todo need to instantiate workflows with the BoT requester if there is one.
@@ -99,24 +96,29 @@ $app->get('/absolutepath', function (Request $request, Response $response) {
   return json_response($response, $node_names, 200);
 });
 
-$app->get('/accounts/filter[/{acc_path:.*$}]', function (Request $request, Response $response, $args) {
+// Seems rather hideous that to allow ajax the options request AND the actual request must have these CORS headers
+// todo this OPTIONS must be added to the API
+$app->options('/accounts/names[/{acc_path:.*$}]', function (Request $request, Response $response) {
+  // no authorisation needed.
+  return $response->withStatus(200)
+    ->withHeader('Access-Control-Allow-Origin', '*')
+    ->withHeader('Access-Control-Allow-Methods', 'GET')
+    ->withHeader('Access-Control-Allow-Headers', 'content-type, cc-user, cc-auth')
+    ->withHeader('Vary', 'Origin');
+});
+
+$app->get('/accounts/names[/{acc_path:.*$}]', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountNameFilter');
-  // TEMP
-  $path_parts = explode('/', @$args['acc_path'])??'';
-  $remote_acc_id = AddressResolver::create(getConfig('abs_path'))->relativeToThisNode($path_parts);
-  if ($remote_acc_id) {
-    // All the accounts on a remote node
-    $names = accountStore()->fetch($remote_acc_id)->accountNameFilter(implode('/', $path_parts), $request->getQueryParams());
-  }
-  else {
-    // All accounts on the current node.
-    $params = $request->getQueryParams();
-    // I'd be surprised if there wasn't a better way to turn boolean queryparams into php bools
-    if (isset($params['full']))$params['full'] = filter_var(@$params['full'], FILTER_VALIDATE_BOOLEAN);
-    if (isset($params['local']))$params['local'] = filter_var(@$params['local'], FILTER_VALIDATE_BOOLEAN);
-    $names = accountStore()->filter(...$params);
-  }
-  return json_response($response, $names);
+  $path_parts = isset($args['acc_path']) ? explode('/', @$args['acc_path']): [''];
+  $fragment = array_pop($path_parts);
+  $params = $request->getQueryParams() + ['limit' => '10'];
+
+  $acc_ids = AddressResolver::create(getConfig('abs_path'))->pathMatch($fragment);
+
+  $response = $response->withStatus(200)
+    ->withHeader('Access-Control-Allow-Origin', '*')
+    ->withHeader('Vary', 'Origin');
+  return json_response($response, array_slice($acc_ids, 0, $params['limit']));
 });
 
 $app->get('/account/summary[/{acc_path:.*$}]', function (Request $request, Response $response, $args) {
@@ -129,8 +131,11 @@ $app->get('/account/summary[/{acc_path:.*$}]', function (Request $request, Respo
   elseif ($account) {// An account on this node.
     $result = $account->getAccountSummary($rel_path);
   }
-  else {// All accounts on the current node.
+  elseif ($rel_path == '*') {// All accounts on the current node.
     $result = Transaction::getAccountSummaries(TRUE);
+  }
+  else {
+    $result = [];
   }
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
@@ -141,16 +146,19 @@ $app->get('/account/limits/{acc_path:.*$}', function (Request $request, Response
   list($account, $rel_path) = AddressResolver::create(getConfig('abs_path'))
     ->resolveToLocalAccount((string)@$args['acc_path'], TRUE);
   if ($account and substr($rel_path, -1) == '/') {// All the accounts on a remote node
-    debug("getting all limits on remote node $rel_path");
+    debug("getting all limits on remote node $account->id $rel_path");
     $result = $account->getAllLimits(trim($rel_path, '/'));
   }
   elseif ($account) {// An account on this node.
     debug("getting limits for one account $rel_path");
     $result = $account->getLimits($rel_path);
   }
-  else {// All accounts on the current node.
+  elseif ($rel_path == '*') {// All accounts on the current node.
     debug('getting all limits');
     $result = accountStore()->allLimits(TRUE);
+  }
+  else {
+    $result = [];
   }
 
   return json_response($response, $result);
@@ -160,9 +168,14 @@ $app->get('/account/history/{acc_path:.*$}', function (Request $request, Respons
   check_permission($request, 'accountHistory');
   list($account, $rel_path) = AddressResolver::create(getConfig('abs_path'))
     ->resolveToLocalAccount((string)@$args['acc_path'], TRUE);
-  $params = $request->getQueryParams() + [
-    'samples' => -1
-  ];
+  if (!$account) {
+    throw new \CreditCommons\Exceptions\CCOtherViolation("Unable to get history from NULL account");
+  }
+  else {
+    debug("Requesting history for $account->id $rel_path");
+  }
+  //@todo cope with various other paths.
+  $params = $request->getQueryParams() + ['samples' => -1];
 
   $result = $account->getHistory($params['samples'], $rel_path);
 
@@ -233,6 +246,7 @@ $app->post('/transaction', function (Request $request, Response $response) {
   return json_response($response, $transaction, $status_code);
 });
 
+// Relay a new transaction
 $app->post('/transaction/relay', function (Request $request, Response $response) {
   global $orientation;
   check_permission($request, 'relayTransaction');
@@ -247,17 +261,15 @@ $app->post('/transaction/relay', function (Request $request, Response $response)
 
 $app->patch('/transaction/{uuid:'.$uuid_regex.'}/{dest_state}', function (Request $request, Response $response, $args) {
   check_permission($request, 'stateChange');
-  global $orientation;
-  $uuid = $args['uuid'];
-  $transaction = Transaction::loadByUuid($uuid);
-  // Ensure that transversal transactions are being manipulated only from their
-  // end points, not an intermediate ledger
-  if (!$orientation->upstreamAccount and !empty($transaction->payer->url) and !empty($transaction->payee->url)) {
-    throw new IntermediateLedgerViolation();
-  }
-  $transaction->changeState($args['dest_state']);
+  Transaction::loadByUuid($args['uuid'])->changeState($args['dest_state']);
   return $response->withStatus(201);
 });
+
+global $config;
+if ($config['dev_mode']) {
+  // this stops execution on ALL warnings and returns CCError objects
+  set_error_handler( "\\CCNode\\exception_error_handler" );
+}
 
 return $app;
 
@@ -265,7 +277,7 @@ return $app;
  * Load an account from the accountStore.
  *
  * @staticvar array $fetched
- * @param string $id
+ * @param string $acc_id
  *   The account id or empty string to load a dummy account.
  * @return CreditCommons\Account
  * @throws DoesNotExistViolation
@@ -273,40 +285,42 @@ return $app;
  * @todo make sure this is used whenever possible because it is cached.
  * @todo This doesn't seem like a good place to throw a violation.
  */
-function load_account(string $acc_id) : Account {
+function load_account(string $acc_id = NULL) : Account {
   static $fetched = [];
   if (!isset($fetched[$acc_id])) {
     if (strpos(needle: '/', haystack: $acc_id)) {
       throw new CCFailure("Can't load unresolved account name: $acc_id");
     }
-    if ($acc_id == '<anon>') {
+    if (is_null($acc_id)) {
       $fetched[$acc_id] = accountStore()->anonAccount();
     }
-    elseif ($acc_id and $acc = accountStore()->fetch($acc_id)) {
-      $fetched[$acc_id] = $acc;
+    elseif ($acc_id and $acc = accountStore()->has($acc_id)) {
+      $fetched[$acc_id] = accountStore()->fetch($acc_id);
     }
     else {
-      throw new \DoesNotExistViolation(type: 'account', id: $acc_id);
+      throw new DoesNotExistViolation(type: 'account', id: $acc_id);
     }
   }
   return $fetched[$acc_id];
 }
 
-function check_permission(Request $request, string $operationId) {
+/**
+ * @global \CCNode\type $user
+ * @param Request $request
+ * @param string $operationId
+ * @return void
+ * @throws PermissionViolation
+ */
+function check_permission(Request $request, string $operationId) : void {
   global $user;
   authenticate($request); // This sets $user
   $permitted = permitted_operations();
   if (!in_array($operationId, array_keys($permitted))) {
+    $user_id = $user->id;
     if ($user->id == getConfig('trunkward_acc_id')) {
-      $user_id = '<trunk>';
+      $user_id .= '(trunkward)';
     }
-    elseif ($user->id) {
-      $user_id = $user->id;
-    }
-    else $user_id = '<anon>';
-    throw new PermissionViolation(
-      acc_id: $user_id
-    );
+    throw new PermissionViolation(operation: $operationId);
   }
 }
 
@@ -325,7 +339,7 @@ function permitted_operations() : array {
   global $user;
   $data = CreditCommonsInterface::OPERATIONS;
   $permitted[] = 'permittedEndpoints';
-  if ($user->id <> '<anon>') {
+  if ($user->id <> '-anon-') {
     $permitted[] = 'handshake';
     $permitted[] = 'workflows';
     $permitted[] = 'newTransaction';
@@ -360,7 +374,7 @@ function permitted_operations() : array {
  */
 function authenticate(Request $request) : void {
   global $user, $orientation;
-  $user = load_account('<anon>'); // Anon
+  $user = load_account(); // Anon
   if ($request->hasHeader('cc-user') and $request->hasHeader('cc-auth')) {
     $acc_id = $request->getHeaderLine('cc-user');
     // Users connect with an API key which can compared directly with the database.
@@ -375,7 +389,7 @@ function authenticate(Request $request) : void {
       }
       elseif (!accountStore()->checkCredentials($acc_id, $auth)) {
         //local user with the wrong password
-        throw new AuthViolation(acc_id: $acc_id);
+        throw new AuthViolation();
       }
       // login successful.
       // Todo orientation is only needed during transaction processing.
@@ -403,8 +417,6 @@ function compare_hashes(string $acc_id, string $auth) : bool {
     // Remote nodes connect with a hash of the connected account, which needs to be compared.
     $query = "SELECT TRUE FROM hash_history WHERE acc = '$acc_id' AND hash = '$auth' ORDER BY id DESC LIMIT 0, 1";
     $result = Db::query($query)->fetch_object();
-    print_r($result);
-    die($auth);
     return (bool)$result;// temp
   }
 }
@@ -496,4 +508,11 @@ function debug($val) {
     FILE_APPEND
   ); //temp
   $first = FALSE;
+}
+
+
+function exception_error_handler( $severity, $message, $file, $line ) {
+  // all warnings go the debug log AND throw an error
+  //\CCNode\debug("$message in $file: $line");
+  throw new CCFailure("$message in $file: $line");
 }

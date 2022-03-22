@@ -6,26 +6,34 @@ use CCNode\Accounts\User;
 use CreditCommons\RestAPI;
 use CCNode\Db;
 use CreditCommons\Exceptions\CCFailure;
-use CCNode\Transaction;
 
 /**
- * Class representing a remote account, which authorises using its latest hash.
+ * An account on another node, represented by an account on the current node.
  */
-class Remote extends User {
+class Remote extends User implements RemoteAccountInterface {
 
   function __construct(
-    public string $id,
-    public bool $status,
-    public int $min,
-    public int $max,
+    string $id,
+    int $min,
+    int $max,
+    /**
+     * The url of the remote node
+     * @var string
+     */
     public string $url,
+    /**
+     * The path from the node this account references, to a leaf account
+     * @var string
+     */
+    public string $relPath = ''
    ) {
-    parent::__construct($id, $status, $min, $max, $url);
+    parent::__construct($id, $min, $max, FALSE);
   }
 
   static function create(\stdClass $data) : User {
+    $data->relPath??'';// have to set the field or this validation will fail.
     static::validateFields($data);
-    return new static($data->id, $data->status, $data->min, $data->max, $data->url);
+    return new static($data->id, $data->min, $data->max, $data->url, $data->relPath);
   }
 
   /**
@@ -50,7 +58,7 @@ class Remote extends User {
     return new RestAPI($this->url, \CCNode\getConfig('node_name'), $this->getLastHash());
   }
 
-  public function handshake() {
+  public function handshake() : string {
     try {
       $this->API()->handshake();
       return 'ok';
@@ -82,7 +90,7 @@ class Remote extends User {
     return (array)$this->API()->getAllAccountLimits($rel_path_to_node);
   }
 
-  function getLimits($rel_path = '') {
+  function getLimits($rel_path = '') : \stdClass {
     if ($rel_path) {
       $result = $this->API()->getAccountLimits($rel_path);
     }
@@ -92,8 +100,8 @@ class Remote extends User {
     return $result;
   }
 
-  function accountNameFilter(string $rel_path, array $params) {
-    return $this->API()->accountNameFilter($rel_path, $params);
+  function autocomplete($fragment = '') : array {
+    return $this->api()->accountNameFilter($fragment);
   }
 
   function getHistory(int $samples = -1, $rel_path = '') : array {
@@ -106,8 +114,8 @@ class Remote extends User {
     return $result;
   }
 
-  function getRelPath() : string {
-    die('Need to calculate the relative path of remote account');
+  function onwardAccount() : string {
+    return $this->relPath;
   }
 
 }

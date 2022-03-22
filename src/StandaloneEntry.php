@@ -39,8 +39,8 @@ class StandaloneEntry extends \CreditCommons\StandaloneEntry {
     $entries = [];
     foreach (Db::query($query)->fetch_all(MYSQLI_ASSOC) as $row) {
       $data = (object)$row;
-      $data->payee = accountStore()->fetch($data->payee)->getRelPath();
-      $data->payer = accountStore()->fetch($data->payer)->getRelPath();
+//      $data->payee = accountStore()->fetch($data->payee)->onwardAccount();
+//      $data->payer = accountStore()->fetch($data->payer)->onwardAccount();
       // @todo Get the full paths from the metadata
       $data->metadata = unserialize($data->metadata);
       $entries[$data->id] = new static(

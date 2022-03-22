@@ -24,35 +24,40 @@ class MultiNodeTest extends SingleNodeTest {
 
   // Depends a lot on testAccountNames working
   function setupAccountTree() {
-    global $uncle_accs, $aunt_accs, $cousin_accs, $gfather_accs, $guncle_accs, $gaunt_accs, $gparent;
-    parent::testAccountNames();
-    $uncle_accs = $aunt_accs = $cousin_accs = $gfather_accs = $guncle_accs = $gaunt_accs = [];
-    $node_name = end($this->nodePath);
-    $parent = prev($this->nodePath);
-    $gparent = prev($this->nodePath);
+    global $local_accounts, $remote_accounts;
+    $local_user = reset($this->normalAccIds);
+    // Find all the accounts we can in what is presumably a limited testing tree and group them by node
+    // We don't need to know the specific relationship of each node to the current node.
+    // Local accounts
+    $trunkward = $this->sendRequest("accounts/names", 200, $local_user);
+    $local_accounts = array_filter($trunkward, function($a) {return strpos($a, '/') === FALSE;});
+    $nodes = array_filter($trunkward, function($a) {return substr($a, -1) == '/';});
+    $remote_accounts = array_diff($trunkward, $local_accounts, $nodes);
 
-    // Now we build a map of remote nodes
-    // Get a list of accounts on the parent.
-    $uncle_accs = $this->sendRequest("accounts/filter/$this->trunkwardsId?local=true", 200, reset($this->normalAccIds));
-    if ($aunt_accs = $this->sendRequest("accounts/filter/$this->trunkwardsId?local=false", 200, reset($this->normalAccIds))) {
-      if ($aunt_accs = array_diff($aunt_accs, [$node_name, $gparent])) {
-        $cousin_accs = $this->sendRequest("accounts/filter/$this->trunkwardsId/".reset($aunt_accs).'?local=true', 200, reset($this->normalAccIds));
-      }
-    }
-    $guncle_accs = $this->sendRequest("accounts/filter/$gparent?local=true", 200, reset($this->normalAccIds));
-    if ($gaunt_accs =  $this->sendRequest("accounts/filter/$gparent?local=false", 200, reset($this->normalAccIds))) {
-      unset($gaunt_accs[array_search($this->trunkwardsId, $gaunt_accs)]);
-      if ($gaunt_accs) {
-        $cousin1_accs = $this->sendRequest("accounts/filter/".reset($gaunt_accs).'?local=true', 200, reset($this->normalAccIds));
-      }
-    }
-    \CCNode\debug("Uncles: ".implode(',', $uncle_accs));
-    \CCNode\debug("Aunties: ".implode(',', $aunt_accs));
-    \CCNode\debug("Cousins: ".implode(',', $cousin_accs));
-    \CCNode\debug("Great-Uncles: ".implode(',', $guncle_accs));
-    \CCNode\debug("Great-Aunties: ".implode(',', $gaunt_accs));
-    \CCNode\debug("2nd Cousins: ".implode(',', $cousin1_accs));
+    print_R($local_accounts);
+    print_R($nodes);
+    print_R($remote_accounts);die();
+    $this->getBranchwardAccounts($nodes, $all_accounts);
 
+    foreach (array_reverse($this->nodePath) as $trunkward) {
+      $this->getNodeAccounts('', $all_remote_accounts, $leafward);
+      $leafward = $trunkward;
+    }
+    die();
+  }
+
+  private function getNodeAccounts($path_to_node, &$all_accounts, $exclude_leafward = NULL) {
+    //print_R(func_get_args());
+    $local_user = reset($this->normalAccIds);
+    $all_accounts[$path_to_node] = $this->sendRequest("accounts/names/$path_to_node?local=true", 200, $local_user);
+    $branches = $this->sendRequest("accounts/names/$path_to_node?local=false", 200, $local_user);
+
+    print_R($all_accounts);
+    foreach ($branches as $branch) {
+      if ($branch == $exclude_leafward) continue;
+      $this->getNodeAccounts($branch, $all_accounts);
+    print_R($all_accounts);
+    }
   }
 
   function getRelatives($path, $parent, ) {
@@ -65,21 +70,26 @@ class MultiNodeTest extends SingleNodeTest {
   }
 
   function testBadTransactions() {
+    global $guncle_accs, $gparent;
     parent::testBadTransactions();
     $admin = reset($this->adminAccIds);
     $obj = [
       'payee' => reset($this->adminAccIds),
       'payer' => reset($this->normalAccIds),
       'description' => 'test 3rdparty',
-      'quant' => 1,
+      'quant' => 10,
       'type' => '3rdparty',
       'metadata' => ['foo' => 'bar']
     ];
-    // try to trade with a remote account
     if ($this->branchAccIds) {
+      // Try to trade with a local remote account.
       $obj['payer'] = reset($this->branchAccIds);
-      $this->sendRequest('transaction', 'IntermediateledgerViolation', $admin, 'post', json_encode($obj));
-      // Test that at least one acccount must be local...
+      $this->sendRequest('transaction', 'WrongAccountViolation', $admin, 'post', json_encode($obj));
+      // Try to trade with two remote accounts
+      $obj['payee'] = $gparent .'/'.reset($guncle_accs);
+      $obj['payer'] = $gparent .'/'.end($guncle_accs);
+      echo json_encode($obj);
+      $this->sendRequest('transaction', 'WrongAccountViolation', $admin, 'post', json_encode($obj));
     }
   }
 
@@ -93,14 +103,17 @@ class MultiNodeTest extends SingleNodeTest {
 
   function testAccountSummaries() {
     global $guncle_accs, $gparent;
-    $uncle_id = end($guncle_accs);
     parent::testAccountSummaries();
-    $user1 = reset($this->normalAccIds);
-    $this->sendRequest("account/summary/$this->trunkwardsId/", 200, $user1);
-    $this->sendRequest("account/summary/$gparent/$uncle_id", 200, $user1);
-    $this->sendRequest("account/limits/$gparent/", 200, $user1);
-    $this->sendRequest("account/limits/$gparent/$uncle_id", 200, $user1);
-    $this->sendRequest("account/history/$gparent/$uncle_id", 200, $user1);
+    if ($uncle_id = end($guncle_accs)) {
+      $user1 = reset($this->normalAccIds);
+      $this->sendRequest("account/summary/$this->trunkwardsId/", 200, $user1);
+      if ($gparent) {
+        $this->sendRequest("account/summary/$gparent/$uncle_id", 200, $user1);
+        $this->sendRequest("account/limits/$gparent/", 200, $user1);
+        $this->sendRequest("account/limits/$gparent/$uncle_id", 200, $user1);
+        $this->sendRequest("account/history/$gparent/$uncle_id", 200, $user1);
+      }
+    }
     // I don't think its necessary to test other relations.
 
   }

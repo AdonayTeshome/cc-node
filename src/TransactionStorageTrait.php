@@ -215,7 +215,7 @@ trait TransactionStorageTrait {
     }
     list($f, $dir) = explode(',', $sort);
     // @todo check that $f is a field.
-    $query .= " ORDER BY $f ".strtoUpper($dir??'desc');
+    $query .= " ORDER BY $f ".strtoUpper($dir??'desc').", is_primary DESC";
 
     if (isset($pager)) {
       $query .= " LIMIT $pager ";

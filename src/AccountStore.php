@@ -3,7 +3,6 @@
 namespace CCNode;
 
 use CCNode\Accounts\User;
-use CCNode\Accounts\BoT;
 use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Requester;
@@ -47,28 +46,17 @@ class AccountStore extends Requester implements AccountStoreInterface {
     return TRUE;
   }
 
-  /**
-   * @inheritdoc
-   */
+
   function filter(
     int $offset = 0,
     int $limit = 10,
-    bool $full = FALSE,
     bool $local= NULL,
     string $fragment = NULL
   ) : array {
-    // Pointless to try to make use of the $this->cached here.
     $path = 'filter';
-    if ($full) {
-      $path .= '/full';
-    }
     if (isset($local)) {
       // covert to a path boolean... tho shouldn't guzzle do that?
       $this->options[RequestOptions::QUERY]['local'] = $local ? 'true' : 'false';
-    }
-    if (isset($full)) {
-      // covert to a path boolean... tho shouldn't guzzle do that?
-      $this->options[RequestOptions::QUERY]['full'] = $full ? 'true' : 'false';
     }
     foreach(['fragment', 'offset', 'limit'] as $param) {
       if (isset($$param)) {
@@ -76,16 +64,43 @@ class AccountStore extends Requester implements AccountStoreInterface {
       }
     }
     $results = (array)$this->localRequest($path);
-    // remove the trunkward account from all filter because know about it in other
-    // ways and it gets in the way of most use cases for filtering.
     $pos = array_search(getConfig('trunkward_acc_id'), $results);
     if ($pos !== FALSE) {
       unset($results[$pos]);
     }
-    if ($full) {
-      $results = array_map([$this, 'upcast'], $results);
-    }
     return $results;
+  }
+
+  /**
+   * @inheritdoc
+   */
+  function filterFull(
+    int $offset = 0,
+    int $limit = 10,
+    bool $local = NULL,
+    string $fragment = NULL
+  ) : array {
+    $path = 'filter/full';
+    if (isset($local)) {
+      // covert to a path boolean... tho shouldn't guzzle do that?
+      $this->options[RequestOptions::QUERY]['local'] = $local ? 'true' : 'false';
+    }
+    $this->options[RequestOptions::QUERY]['full'] = 'true';
+
+    foreach(['fragment', 'offset', 'limit'] as $param) {
+      if (isset($$param)) {
+        $this->options[RequestOptions::QUERY][$param] = $$param;
+      }
+    }
+    $results = (array)$this->localRequest($path);
+
+    foreach ($results as $key => $r) {
+      if ($r->id == getConfig('trunkward_acc_id')) {
+        unset($results[$key]);
+        break;
+      }
+    }
+    return array_map([$this, 'upcast'], $results);
   }
 
   /**
@@ -106,7 +121,7 @@ class AccountStore extends Requester implements AccountStoreInterface {
           throw new CCFailure("AccountStore returned an invalid error code looking for $name: ".$e->getCode());
         }
       }
-      $result->remotePath = $remote_path;
+      $result->relPath = $remote_path;
       $this->cached[$name] = $this->upcast($result);
     }
     return $this->cached[$name];
@@ -117,7 +132,7 @@ class AccountStore extends Requester implements AccountStoreInterface {
    * @return array
    */
   function allLimits() : array {
-    foreach ($this->filter(full: TRUE) as $info) {
+    foreach ($this->filterFull() as $info) {
       $limits[$info->id] = (object)['min' => $info->min, 'max' => $info->max];
     }
     return $limits;
@@ -131,9 +146,6 @@ class AccountStore extends Requester implements AccountStoreInterface {
       $acc = $this->fetch($name);
     }
     catch (DoesNotExistViolation $e) {
-      return FALSE;
-    }
-    if ($acc instanceOf BoT) {
       return FALSE;
     }
     if ($node_class) {
@@ -172,7 +184,7 @@ class AccountStore extends Requester implements AccountStoreInterface {
    * {@inheritdoc}
    */
   public static function anonAccount() : Account {
-    $obj = ['id' => '<anon>', 'max' => 0, 'min' => 0, 'status' => 1];
+    $obj = ['id' => '-anon-', 'max' => 0, 'min' => 0, 'status' => 1];
     return User::create((object)$obj);
   }
 
@@ -199,7 +211,7 @@ class AccountStore extends Requester implements AccountStoreInterface {
   private static function determineAccountClass(\stdClass $data, string $BoT_acc_id = '') : string {
     global $user;
     if (!empty($data->url)) {
-      $upS = $data->id == $user->id;
+      $upS = $data->id == @$user->id;
       $BoT = $data->id == $BoT_acc_id;
       if ($BoT and $upS) {
         $class = 'UpstreamBoT';
