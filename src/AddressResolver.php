@@ -3,6 +3,7 @@ namespace CCNode;
 
 use CreditCommons\AccountStoreInterface;
 use CreditCommons\Exceptions\DoesNotExistViolation;
+use CreditCommons\Exceptions\CCOtherViolation;
 use CCNode\Accounts\Remote;
 
 /**
@@ -68,15 +69,17 @@ class AddressResolver {
     $acc_id = array_pop($parts);
     // identify which node
     if ($proxy_account_id = $this->relativeToThisNode($parts)) {
-      // it's not this node.
-      if ($this->userId <> $this->trunkwardName) {
+    \CCNode\debug("resolving to $proxy_account_id");
+      // Forward to another node.
+      //if ($this->userId <> $this->trunkwardName) {
         return [$this->accountStore->fetch($proxy_account_id), implode('/', $parts).'/'.$acc_id];
-      }
-      else {
-        throw new DoesNotExistViolation(type: 'account', id: $given_acc_path);
-      }
+//      }
+//      else {
+//        throw new DoesNotExistViolation(type: 'account', id: $given_acc_path);
+//      }
     }
-    elseif ($acc_id and ($this->accountStore->has($acc_id) or $acc_id == $this->trunkwardName)) {// its an account on this node.
+    // its an account on this node.
+    elseif ($acc_id and ($this->accountStore->has($acc_id) or $acc_id == $this->trunkwardName)) {
       return [$this->accountStore->fetch($acc_id), implode('/', $parts)];
     }
     elseif ($acc_id) {
@@ -127,35 +130,55 @@ class AddressResolver {
 
   /**
    * Find all the accounts in the tree that match the given fragment
-   * @param type $fragment
-   * @return type
+   * @param string $fragment
+   * @return string[]
    */
-  function pathMatch($fragment) {
+  function pathMatch(string $fragment) : array {
     global $user;
-    // Make a list with all the matching trunkward node names and all the matching accounts.
-    $tree = explode('/', getConfig('abs_path'));
-    $trunkward_names = [];
-    $trunkward_acc_id = getConfig('trunkward_acc_id');
-    if ($trunkward_acc_id and $this->userId <> $trunkward_acc_id) {
-      $trunkward_names = load_account($trunkward_acc_id)->autocomplete($fragment);
-    }
-    // Local names.
-    $filtered = accountStore()->filterFull(fragment: $fragment);
-    $local = [];
+    list ($remote_acc, $path) = $this->resolveTolocalAccount($fragment);
 
-    foreach ($filtered as $acc) {
-      $name = $acc->id;
-      // Exclude the logged in account
-      if ($name == $this->userId) continue;
-      if ($acc instanceOf Remote) $name .= '/';
-      if ($user instanceOf Remote) {
-        $local[] = getConfig('node_name')."/$name";
+    // Look locally and trunkwards if no remote account is taken from the fragment
+    if (!$remote_acc instanceOf Accounts\Branch or empty($path)) {
+      // Make a list with all the matching trunkward node names and all the matching accounts.
+      $tree = explode('/', getConfig('abs_path'));
+      $trunkward_names = [];
+      $trunkward_acc_id = getConfig('trunkward_acc_id');
+      if ($trunkward_acc_id and $this->userId <> $trunkward_acc_id) {
+        $trunkward_names = load_account($trunkward_acc_id)->autocomplete($fragment);
       }
-      else {
-        $local[] = $name;
+      // Local names.
+      $filtered = accountStore()->filterFull(fragment: trim($fragment, '/'));
+      $local = [];
+
+      foreach ($filtered as $acc) {
+        $name = $acc->id;
+        // Exclude the logged in account
+        if ($name == $this->userId) continue;
+        if ($acc instanceOf Remote) $name .= '/';
+        if ($user instanceOf Remote) {
+          $local[] = getConfig('node_name')."/$name";
+        }
+        else {
+          $local[] = $name;
+        }
+      }
+
+      $names = array_merge($trunkward_names, $local);
+    }
+    elseif ($remote_acc) {
+      // Just give the names on the given branch
+      $names = $remote_acc->autocomplete($path);
+      if ($this->userId == getConfig('trunkward_acc_id')) {
+        foreach ($names as &$name) {
+          $name = getConfig('node_name') . '/'.$name;
+        }
       }
     }
-    return array_merge($trunkward_names, $local);
+    else {
+      // Not yet sure how to handle this or when it would happen
+      throw new CCOtherViolation("Invalid autocomplete path '$fragment'");
+    }
+    return $names;
   }
 
 }

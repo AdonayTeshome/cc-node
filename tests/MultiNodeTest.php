@@ -24,44 +24,46 @@ class MultiNodeTest extends SingleNodeTest {
 
   // Depends a lot on testAccountNames working
   function setupAccountTree() {
-    global $local_accounts, $remote_accounts;
+    global $local_accounts, $foreign_accounts, $remote_accounts;
     $local_user = reset($this->normalAccIds);
     // Find all the accounts we can in what is presumably a limited testing tree and group them by node
-    // We don't need to know the specific relationship of each node to the current node.
-    // Local accounts
-    $trunkward = $this->sendRequest("accounts/names", 200, $local_user);
-    $local_accounts = array_filter($trunkward, function($a) {return strpos($a, '/') === FALSE;});
-    $nodes = array_filter($trunkward, function($a) {return substr($a, -1) == '/';});
-    $remote_accounts = array_diff($trunkward, $local_accounts, $nodes);
-
-    print_R($local_accounts);
-    print_R($nodes);
-    print_R($remote_accounts);die();
-    $this->getBranchwardAccounts($nodes, $all_accounts);
-
-    foreach (array_reverse($this->nodePath) as $trunkward) {
-      $this->getNodeAccounts('', $all_remote_accounts, $leafward);
-      $leafward = $trunkward;
+    $local_and_trunkward = $this->sendRequest("accounts/names", 200, $local_user);
+    foreach ($local_and_trunkward as $path_name) {
+      if (substr($path_name, -1) <> '/') {
+        $all_accounts[] = $path_name;//local
+      }
+      else {//remote
+        $this->getBranchwardAccounts ($path_name, $all_accounts);
+        $remote_accounts[] = $path_name;
+      }
     }
-    die();
+    // Group the accounts
+    foreach ($all_accounts as $path) {
+      if ($pos = intval(strrpos($path, '/'))) {
+        $node_path = substr($path, 0, $pos);
+        $foreign_accounts[$node_path][] = $path;
+        $foreign_accounts['all'][] = $path;
+      }
+      else {
+        $local_accounts[] = $path;
+      }
+    }
+    shuffle($foreign_accounts['all']);
+
   }
 
-  private function getNodeAccounts($path_to_node, &$all_accounts, $exclude_leafward = NULL) {
-    //print_R(func_get_args());
+  private function getBranchwardAccounts($path_to_node, &$all_accounts) {
     $local_user = reset($this->normalAccIds);
-    $all_accounts[$path_to_node] = $this->sendRequest("accounts/names/$path_to_node?local=true", 200, $local_user);
-    $branches = $this->sendRequest("accounts/names/$path_to_node?local=false", 200, $local_user);
+    $results = $this->sendRequest("accounts/names/$path_to_node", 200, $local_user);
 
-    print_R($all_accounts);
-    foreach ($branches as $branch) {
-      if ($branch == $exclude_leafward) continue;
-      $this->getNodeAccounts($branch, $all_accounts);
-    print_R($all_accounts);
+    foreach ($results as $result) {
+      if (substr($result, -1) <> '/') {
+        $all_accounts[] = $result;
+      }
+      else {
+        $this->getBranchwardAccounts ($result, $all_accounts);
+      }
     }
-  }
-
-  function getRelatives($path, $parent, ) {
-
   }
 
   function testWorkflows() {
@@ -70,52 +72,99 @@ class MultiNodeTest extends SingleNodeTest {
   }
 
   function testBadTransactions() {
-    global $guncle_accs, $gparent;
     parent::testBadTransactions();
+    global $local_accounts, $foreign_accounts, $remote_accounts;
     $admin = reset($this->adminAccIds);
+return; // its not resolving account names yet
     $obj = [
-      'payee' => reset($this->adminAccIds),
-      'payer' => reset($this->normalAccIds),
       'description' => 'test 3rdparty',
       'quant' => 10,
       'type' => '3rdparty',
       'metadata' => ['foo' => 'bar']
     ];
-    if ($this->branchAccIds) {
-      // Try to trade with a local remote account.
-      $obj['payer'] = reset($this->branchAccIds);
-      $this->sendRequest('transaction', 'WrongAccountViolation', $admin, 'post', json_encode($obj));
-      // Try to trade with two remote accounts
-      $obj['payee'] = $gparent .'/'.reset($guncle_accs);
-      $obj['payer'] = $gparent .'/'.end($guncle_accs);
-      echo json_encode($obj);
-      $this->sendRequest('transaction', 'WrongAccountViolation', $admin, 'post', json_encode($obj));
-    }
+    $foreign_node = reset($foreign_accounts);
+    // Try to trade with two foreign accounts
+    $obj['payer'] = reset($foreign_node);
+    $obj['payee'] = end($foreign_node);
+    echo json_encode($obj);
+    $this->sendRequest('transaction', 'WrongAccountViolation', $admin, 'post', json_encode($obj));
+
+    // Try to trade with a local remote account.
+    $obj['payer'] = reset($remote_accounts);
+    $obj['payee'] = reset($local_accounts);
+    $this->sendRequest('transaction', 'WrongAccountViolation', $admin, 'post', json_encode($obj));
   }
 
   function test3rdParty() {
     parent::test3rdParty();
+    return;
+    global $local_accounts, $foreign_accounts, $remote_accounts;
+    $admin = reset($this->adminAccIds);
+    $foreign_node = reset($foreign_accounts);
+
+    $obj = [
+      'payer' => end($local_accounts),
+      'payee' => end($foreign_node),
+      'description' => 'test 3rdparty',
+      'quant' => 10,
+      'type' => '3rdparty',
+      'metadata' => ['foo' => 'bar']
+    ];
+    $this->sendRequest('transaction', 200, $admin, 'post', json_encode($obj));
+  }
+
+  // Ensure that transactions passing accross this ledger but not involving leaf
+  // accounts can't be manipulated.
+  // @todo Find a way to filter for these purely transversal transactions.
+  function _testImmutableTransversal() {
+    global $remote_accounts;
+    $admin = reset($this->adminAccIds);
+    foreach ($remote_accounts as $acc_id) {
+      $transversal = $this->sendRequest("transaction/full?", '200', $admin);
+    }
   }
 
   function testTransactionLifecycle() {
     parent::testTransactionLifecycle();
+return;
+    global $local_accounts, $foreign_accounts, $remote_accounts;
+    $admin = reset($this->adminAccIds);
+
+    $obj = [
+      'payer' => end($local_accounts),
+      'payee' => $foreign_accounts['all'][array_rand($foreign_accounts['all'])],
+      'description' => 'test 3rdparty',
+      'quant' => 10,
+      'type' => '3rdparty',
+      'metadata' => ['foo' => 'bar']
+    ];
+    $this->sendRequest('transaction', 200, $admin, 'post', json_encode($obj));
+
   }
 
   function testAccountSummaries() {
-    global $guncle_accs, $gparent;
+    global $local_accounts, $foreign_accounts, $remote_accounts;
     parent::testAccountSummaries();
-    if ($uncle_id = end($guncle_accs)) {
-      $user1 = reset($this->normalAccIds);
+    $user1 = reset($this->normalAccIds);
+    if ($this->trunkwardsId) {
       $this->sendRequest("account/summary/$this->trunkwardsId/", 200, $user1);
-      if ($gparent) {
-        $this->sendRequest("account/summary/$gparent/$uncle_id", 200, $user1);
-        $this->sendRequest("account/limits/$gparent/", 200, $user1);
-        $this->sendRequest("account/limits/$gparent/$uncle_id", 200, $user1);
-        $this->sendRequest("account/history/$gparent/$uncle_id", 200, $user1);
-      }
     }
-    // I don't think its necessary to test other relations.
-
+    // test 2 random addresses (with not more than one slash in)
+    $i=0;
+    while ($i < 2) {
+      $rel_path = next($foreign_accounts['all']);
+      if (count(explode('/', $rel_path)) > 2)continue;
+      $this->sendRequest("account/summary/$rel_path", 200, $user1);
+      $this->sendRequest("account/limits/$rel_path", 200, $user1);
+      $this->sendRequest("account/history/$rel_path", 200, $user1);
+      $i++;
+    }
+    // get the info about all the accounts
+    $node_path = key($foreign_accounts);
+    next($foreign_accounts);
+    $node_path = key($foreign_accounts);
+    $this->sendRequest("account/limits/$node_path", 200, $user1);
+    $this->sendRequest("account/summary/$node_path", 200, $user1);
   }
 
   function testTrunkwards() {

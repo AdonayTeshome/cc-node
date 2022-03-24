@@ -53,8 +53,8 @@ class SingleNodeTest extends TestBase {
 
   function testAccountNames() {
     $chars = substr(reset($this->adminAccIds), 0, 2);
-    $this->sendRequest("accounts/autocomplete/$chars", 'PermissionViolation');
-    $results = $this->sendRequest("accounts/autocomplete/$chars", 200, reset($this->normalAccIds));
+    $this->sendRequest("accounts/names/$chars", 'PermissionViolation');
+    $results = $this->sendRequest("accounts/names/$chars", 200, reset($this->normalAccIds));
     // should be a list of account names including 'a'
     foreach ($results as $acc_id) {
       $this->assertStringStartsWith($chars, $acc_id);

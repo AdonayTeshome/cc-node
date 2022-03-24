@@ -109,16 +109,13 @@ $app->options('/accounts/names[/{acc_path:.*$}]', function (Request $request, Re
 
 $app->get('/accounts/names[/{acc_path:.*$}]', function (Request $request, Response $response, $args) {
   check_permission($request, 'accountNameFilter');
-  $path_parts = isset($args['acc_path']) ? explode('/', @$args['acc_path']): [''];
-  $fragment = array_pop($path_parts);
-  $params = $request->getQueryParams() + ['limit' => '10'];
-
-  $acc_ids = AddressResolver::create(getConfig('abs_path'))->pathMatch($fragment);
-
+  $acc_ids = AddressResolver::create(getConfig('abs_path'))->pathMatch($args['acc_path']??'');
+  //if the request is from the trunk prefix all the results. (rare)
   $response = $response->withStatus(200)
     ->withHeader('Access-Control-Allow-Origin', '*')
     ->withHeader('Vary', 'Origin');
-  return json_response($response, array_slice($acc_ids, 0, $params['limit']));
+  $limit = $request->getQueryParams()['limit'] ??'10';
+  return json_response($response, array_slice($acc_ids, 0, $limit));
 });
 
 $app->get('/account/summary[/{acc_path:.*$}]', function (Request $request, Response $response, $args) {

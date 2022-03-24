@@ -100,27 +100,22 @@ class TestBase extends TestCase {
     $this->rawAccounts = (array)json_decode(file_get_contents($relative_path .'store.json'));
 
     foreach ($this->rawAccounts as $acc_id => $acc) {
-      if ($acc->status){
-        if (!empty($acc->key)) {
-          $this->passwords[$acc_id] = $acc->key;
-          if ($acc->admin) {
-            $this->adminAccIds[] = $acc_id;
-          }
-          else {
-            $this->normalAccIds[] = $acc_id;
-          }
+      if (!empty($acc->key)) {
+        $this->passwords[$acc_id] = $acc->key;
+        if ($acc->admin) {
+          $this->adminAccIds[] = $acc_id;
         }
-        elseif (!empty($acc->url)) {
-          if ($acc->id == \CCNode\getConfig('trunkward_acc_id')) {
-            $this->trunkwardsId = $acc_id;
-          }
-          else {
-            $this->branchAccIds[] = $acc_id;
-          }
+        else {
+          $this->normalAccIds[] = $acc_id;
         }
       }
-      else {
-        $this->blockedAccIds[] = $acc_id;
+      elseif (!empty($acc->url)) {
+        if ($acc->id == \CCNode\getConfig('trunkward_acc_id')) {
+          $this->trunkwardsId = $acc_id;
+        }
+        else {
+          $this->branchAccIds[] = $acc_id;
+        }
       }
     }
     if (empty($this->normalAccIds) || empty($this->adminAccIds)) {
