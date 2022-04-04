@@ -1,7 +1,7 @@
 <?php
 namespace CCNode;
 
-use CreditCommons\RestAPI;
+use CreditCommons\NodeRequester;
 use CreditCommons\Workflow;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 
@@ -10,7 +10,7 @@ use CreditCommons\Exceptions\DoesNotExistViolation;
    */
 class Workflows extends \CreditCommons\Workflows {
 
-  function __construct(RestAPI $trunkwards_node = NULL) {
+  function __construct(NodeRequester $trunkwards_node = NULL) {
     // The parent class requires the argument because it is used by clients
     // which must call the trunkwards for workflows.
     if ($trunkwards_node) {
@@ -55,7 +55,7 @@ class Workflows extends \CreditCommons\Workflows {
   /**
    * Collect Trunkward workflows and merge them with local workflows.
    * @param Workflow[] $local_workflows
-   * @paramn RestAPI $trunkward_requester
+   * @param NodeRequester $trunkward_requester
    * @return array
    *   Translated workflows, keyed by the trunkwards node name they originated from
    *
@@ -76,7 +76,7 @@ class Workflows extends \CreditCommons\Workflows {
       if ($trunkwards_tree) {
         // Get the trunkward workflows and merge them in.
         // No idea how this was supposed to work, but absoluteNodePath is no longer a function.
-        $trunkwards_nodes = RestAPI::absoluteNodePath($trunkward_requester);
+        $trunkwards_nodes = NodeRequester::absoluteNodePath($trunkward_requester);
         $abs_path = '/'.implode('/', array_reverse($trunkwards_nodes));
       }
       else{
@@ -112,8 +112,6 @@ class Workflows extends \CreditCommons\Workflows {
     }
     throw new DoesNotExistViolation(type: 'workflow', id: $needed_id);
   }
-
-
 
 }
 

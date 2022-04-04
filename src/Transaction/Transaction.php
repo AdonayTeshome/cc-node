@@ -1,57 +1,41 @@
 <?php
 
-namespace CCNode;
+namespace CCNode\Transaction;
 
-use CCNode\Entry;
+use CCNode\Transaction\Entry;
 use CCNode\BlogicRequester;
 use CCNode\Workflows;
 use CCNode\Accounts\Remote;
-use CCNode\TransactionStorageTrait;
 use CreditCommons\Workflow;
-use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\MaxLimitViolation;
 use CreditCommons\Exceptions\MinLimitViolation;
 use CreditCommons\Exceptions\CCOtherViolation;
 use CreditCommons\Exceptions\WorkflowViolation;
+use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\TransactionInterface;
 use CreditCommons\BaseTransaction;
 use CreditCommons\Account;
-use CreditCommons\TransversalEntry;
+use function CCNode\load_account;
 
 class Transaction extends BaseTransaction implements \JsonSerializable {
-  use TransactionStorageTrait;
+  use \CCNode\Transaction\StorageTrait;
+
+  protected $workflow;
 
   /**
    * Create a new transaction from a few required fields defined upstream.
    * @param stdClass $data
-   *   well formatted payer, payee, description & quant and array of stdClass entries.
+   *   Well formatted payer, payee, description & quant and array of stdClass entries.
    * @return \static
    */
   public static function createFromUpstream(\stdClass $data) : BaseTransaction {
     global $user;
-    $data->author = $user->id;
     $data->state = TransactionInterface::STATE_INITIATED;
-    $data->entries[0]->primary = 1;
-    $data->entries = static::createEntries($data->entries, $user);
-
-    $class = static::determineTransactionClass($data->entries);
-    return $class::create($data);
+    \CCNode\debug('Constructed transaction from upstream with:');
+    \CCNode\debug($data);
+    $transaction_class = Entry::upcastAccounts($data->entries);
+    return $transaction_class::create($data);
   }
-
-  /**
-   * @param array $entries
-   * @return boolean
-   *   TRUE if these entries imply a TransversalTransaction
-   */
-  protected static function determineTransactionClass(array $entries) : string {
-    foreach ($entries as $entry) {
-      if ($entry instanceOf TransversalEntry) {
-        return 'CCNode\TransversalTransaction';
-      }
-    }
-    return 'CCNode\Transaction';
-  }
-
 
   /**
    * Call the business logic, append entries.
@@ -61,26 +45,23 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     global $loadedAccounts, $config, $user;
 
     $workflow = $this->getWorkflow();
-    $desired_state = $workflow->creation->state;
-    if (!$workflow->canTransitionToState($user->id, $this, $desired_state, $user->admin)) {
-      throw new WorkflowViolation(
-        type: $this->type,
-        from: $this->state,
-        to: $desired_state,
-      );
+    if (!$workflow->active) {
+      throw new DoesNotExistViolation(type: 'workflow', id: $this->type);
     }
-
-    $first_entry = reset($this->entries);
+    $desired_state = $workflow->creation->state;
+    if (!$user->admin and !$workflow->canTransitionToState($user->id, $this, $desired_state)) {
+      throw new WorkflowViolation(type: $this->type, from: $this->state, to: $desired_state);
+    }
     // Add fees, etc by calling on the blogic service
     if ($config['blogic_service_url']) {
-      if ($fees = (new BlogicRequester($config['blogic_service_url']))->appendTo($this)) {
-        $this->entries = array_merge($this->entries, $fees);
-      }
+      (new BlogicRequester($config['blogic_service_url']))->appendTo($this);
     }
+    $first_entry = reset($this->entries);
     foreach ($this->sum() as $acc_id => $info) {
+      // Note only in the accounts in the main entry are limit-checked.
       $account = load_account($acc_id);
-      $ledgerAccountInfo = $account->getAccountSummary();
-      $projected = $ledgerAccountInfo->pending->balance + $info->diff;
+      $acc_summary = $account->getAccountSummary();
+      $projected = $acc_summary->pending->balance + $info->diff;
       if ($projected > $first_entry->payee->max) {
         throw new MaxLimitViolation(limit: $first_entry->payee->max, projected: $projected);
       }
@@ -89,6 +70,39 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       }
     }
     $this->state = TransactionInterface::STATE_VALIDATED;
+  }
+
+
+  /**
+   * Insert the transaction for the first time
+   */
+  function insert() : int {
+    // for first time transactions...
+    $workflow = $this->getWorkflow();
+    // The transaction is in 'validated' state.
+    if ($workflow->creation->confirm) {
+      $this->version = -1;
+      $status_code = 200;
+    }
+    else {
+      // Write the transaction immediately to its 'creation' state
+      $this->state = $workflow->creation->state;
+      $this->version = 0;
+      $status_code = 201;
+    }
+    // this adds +1 to the version.
+    $this->saveNewVersion();
+
+    $this->responseMode = TRUE;
+    return $status_code;
+  }
+
+  /**
+   *  Add an additional entry to the transaction.
+   */
+  function addEntry(Entry $entry) : void {
+    $entry->additional = TRUE;
+    $this->entries[] = $entry;
   }
 
   /**
@@ -106,14 +120,16 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
         to: $args['dest_state'],
       );
     }
-    if (!$this->getWorkflow()->canTransitionToState($user->id, $this, $target_state, $user->admin)) {
+    if ($user->admin or $this->getWorkflow()->canTransitionToState($user->id, $this, $target_state)) {
+      $this->state = $target_state;
+    }
+    else {
       throw new WorkflowViolation(
         type: $this->type,
         from: $this->state,
         to: $target_state,
       );
     }
-    $this->state = $target_state;
     $this->saveNewVersion();
   }
 
@@ -145,56 +161,58 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * - remove some properties.
    *
    * @return array
-   *
-   * @todo make transitions a property or function of the transaction object.
    */
   public function jsonSerialize() : array {
-    global $user;
     return [
       'uuid' => $this->uuid,
-      'updated' => $this->updated,
+      'written' => $this->written,
       'state' => $this->state,
       'type' => $this->type,
       'version' => $this->version,
       'entries' => $this->entries,
-      'transitions' => $this->getWorkflow()->getTransitions($user->id, $this, $user->admin)
+      'transitions' => $this->transitions()
     ];
+  }
+
+  private function transitions() {
+    global $user;
+    return $this->getWorkflow()->getTransitions($user->id, $this, $user->admin);
   }
 
   /**
    * Load this transaction's workflow from the local json storage.
    * @todo Sort out
    */
-  public function getWorkflow() : Workflow {
-    if ($w = (new Workflows())->get($this->type)) {
-      return $w;
+  protected function getWorkflow() : Workflow {
+    if (!$this->workflow) {
+      $this->workflow = (new Workflows())->get($this->type);
     }
-    throw new DoesNotExistViolation(type: 'workflow', id: $this->type);
+    return $this->workflow;
   }
 
+
   /**
-   *
+   * make entry objects from json entries with users already upcast by Entry::upcastAccounts
    * @param stdClass[] $rows
    *   Which are Entry objects flattened by json for transport.
    * @param string $author
    * @return Entry[]
    *   The created entries
    */
-  protected static function createEntries(array $rows, Account $author = NULL) : array {
+  public function upcastEntries(array $rows, Account $author = NULL, bool $additional = FALSE) : void {
     global $config;
-    $entries = [];
     foreach ($rows as $row) {
+      // Could this be done earlier?
       if (!$row->quant and !$config['zero_payments']) {
         throw new CCOtherViolation("Zero transactions not allowed on this node.");
       }
       if ($author){
         $row->author = $author->id;
       }
-      $row->payer = load_account($row->payer);
-      $row->payee = load_account($row->payee);
-      $entries[] = Entry::create($row);
+      $row->isAdditional = $additional;
+      $row->isPrimary = empty($this->entries);
+      $this->entries[] = Entry::create($row, $this);
     }
-    return $entries;
   }
 
 }

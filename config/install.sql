@@ -7,8 +7,7 @@ CREATE TABLE transactions (
   state enum('validated', 'pending', 'completed', 'erased', 'timedout') NOT NULL,
   payee_hash varchar(40) DEFAULT NULL comment 'Hash (remote accounts only)',
   payer_hash varchar(40) DEFAULT NULL comment 'Hash (remote accounts only)',
-  created DATETIME,
-  updated DATETIME
+  written DATETIME
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 ALTER TABLE transactions
@@ -67,8 +66,7 @@ CREATE ALGORITHM = UNDEFINED VIEW transaction_index AS
       0 AS expenditure,
       + e.quant AS diff,
       e.quant AS volume,
-      t.created,
-      t.updated,
+      t.written,
       e.is_primary
   FROM transactions t
     INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver
@@ -86,8 +84,7 @@ UNION
       e.quant AS expenditure,
       - e.quant AS diff,
       e.quant AS volume,
-      t.created,
-      t.updated,
+      t.written,
       e.is_primary
   FROM transactions t
     INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver

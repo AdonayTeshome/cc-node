@@ -29,7 +29,7 @@ $errs = [];
         <li><a href="/config/index.php">Setup</a></li>
         <li><a href="/config/index.php?accounts">Edit accounts</a></li>
         <li><a href="/config/index.php?general">Settings</a></li>
-      <?php if ((bool)$trunkwards_name == (bool)$accounts[$trunkwards_name]->url ): ?>
+      <?php if (isset($accounts[$trunkwards_name]) and (bool)$trunkwards_name == (bool)$accounts[$trunkwards_name]->url ): ?>
         <li><a href="https://gitlab.com/credit-commons-software-stack/cc-dev-client/-/blob/master/INSTALL.md">Install</a> developer client</li>
         <li>call <a href="<?php print $_SERVER['REQUEST_SCHEME'].'://'.$_SERVER['HTTP_HOST'];?>"><?php print end($abs_path);?></a> from your client</li>
       <?php endif; ?>

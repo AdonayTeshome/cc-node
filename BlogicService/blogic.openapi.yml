@@ -21,8 +21,8 @@ paths:
           schema:
             type: string
       requestBody:
-        $ref: '#/components/requestBodies/Transaction'
-        description: the originating entry
+        $ref: '#/components/requestBodies/FirstEntry'
+        description: The originating entry. Note that account names given refer to the local ledger only, not the full path.
         required: true
       responses:
         "200":
@@ -35,18 +35,18 @@ paths:
                   $ref: 'https://gitlab.com/credit-commons-software-stack/cc-php-lib/-/raw/master/docs/credit-commons-openapi-3.0.yml#/components/schemas/Entry'
 components:
   requestBodies:
-    Transaction:
+    FirstEntry:
       type: object
       description: A not-yet built transaction object.
       required:
         - type
         - entries
       properties:
-        type:
-          description: The id of the transaction workflow. Blogic often depends on this.
+        payer:
           type: string
-          example: 3rdparty
-        entries:
-          type: array
-          items:
-            $ref: "https://gitlab.com/credit-commons-software-stack/cc-php-lib/-/raw/master/docs/credit-commons-openapi-3.0.yml#/components/schemas/Entry'"
+        payee::
+          type: string
+        quant:
+          type: integer
+        author:
+          type: string

@@ -19,7 +19,7 @@ class AddressResolverTest extends \PHPUnit\Framework\TestCase {
 
     require_once __DIR__.'/../slimapp.php';
     $node_name = \CCNode\getConfig('node_name');
-    $accountStore = AccountStore::Create();
+    $accountStore = accountStore();
     // For now set the user to anon. There are no permissions checks but
     // sometimes the addressresolves depends on whether the user is the BoT
     // account or not.
@@ -66,7 +66,7 @@ class AddressResolverTest extends \PHPUnit\Framework\TestCase {
       }
     }
     else {
-      print "\nThere were no branchward accounts to test with";
+      print "\nThere were no leafward accounts to test with";
       $this->oneTest("anything", 'DoesNotExistViolation');
     }
   }
@@ -91,9 +91,8 @@ class AddressResolverTest extends \PHPUnit\Framework\TestCase {
       $this->oneTest("$trunkw_id/$node_name/zzz", 'DoesNotExistViolation');
     }
     else {
-      print "\nThere was no trunkward account to test with";
-      $this->oneTest("anything", 'DoesNotExistViolation');
-      $this->oneTest("$node_name/anything", 'DoesNotExistViolation');
+      $this->oneTest("anything", NULL);
+      $this->oneTest("$node_name/anything", NULL);
     }
   }
 
@@ -111,8 +110,14 @@ class AddressResolverTest extends \PHPUnit\Framework\TestCase {
       echo "\nUnexpected exception: "; print_r($e);
       return;
     }
-    $this->assertEquals($expected, $account->id, "$given_name should have resolved to $expected");
-    $this->assertEquals($expected_path, $relative_path, "$given_name should have a relative path of $expected_path");
+    if ($expected == NULL) {
+      $this->assertNull($account);
+      $this->assertNull($relative_path);
+    }
+    else {
+      $this->assertEquals($expected, $account->id, "$given_name should have resolved to $expected");
+      $this->assertEquals($expected_path, $relative_path, "$given_name should have a relative path of $expected_path");
+    }
   }
 
 }

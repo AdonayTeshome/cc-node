@@ -13,7 +13,6 @@ class TestBase extends TestCase {
   protected $adminAccIds = [];
   protected $normalAccIds = [];
   protected $branchAccIds = [];
-  protected $blockedAccIds = [];
   protected $trunkwardsId = '';
   protected $nodePath = [];
 
@@ -55,11 +54,15 @@ class TestBase extends TestCase {
     }
     elseif (is_string($expected_response)) {
       if (isset($contents->class)) {
-        $err = \CreditCommons\RestAPI::reconstructCCErr($contents);
-        $this->assertInstanceOf("\\CreditCommons\Exceptions\\$expected_response", $err);
+        $err = \CreditCommons\NodeRequester::reconstructCCErr($contents);
+        $class = "\\CreditCommons\Exceptions\\$expected_response";
+        if (!$err instanceof $class) {
+          echo "\nUnexpected error: ";print_r($err);
+        }
+        $this->assertInstanceOf($class, $err);
       }
       else {
-        print_r($contents);
+        echo "\nExpected $expected_response but got: ";print_r($contents);
         $this->assertEquals(1, 0, 'Expected error but got something else.');
       }
     }

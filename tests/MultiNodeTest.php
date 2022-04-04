@@ -33,7 +33,7 @@ class MultiNodeTest extends SingleNodeTest {
         $all_accounts[] = $path_name;//local
       }
       else {//remote
-        $this->getBranchwardAccounts ($path_name, $all_accounts);
+        $this->getLeafwardAccounts($path_name, $all_accounts);
         $remote_accounts[] = $path_name;
       }
     }
@@ -49,10 +49,9 @@ class MultiNodeTest extends SingleNodeTest {
       }
     }
     shuffle($foreign_accounts['all']);
-
   }
 
-  private function getBranchwardAccounts($path_to_node, &$all_accounts) {
+  private function getLeafwardAccounts($path_to_node, &$all_accounts) {
     $local_user = reset($this->normalAccIds);
     $results = $this->sendRequest("accounts/names/$path_to_node", 200, $local_user);
 
@@ -61,7 +60,7 @@ class MultiNodeTest extends SingleNodeTest {
         $all_accounts[] = $result;
       }
       else {
-        $this->getBranchwardAccounts ($result, $all_accounts);
+        $this->getLeafwardAccounts ($result, $all_accounts);
       }
     }
   }
@@ -72,10 +71,9 @@ class MultiNodeTest extends SingleNodeTest {
   }
 
   function testBadTransactions() {
-    parent::testBadTransactions();
+    //parent::testBadTransactions();
     global $local_accounts, $foreign_accounts, $remote_accounts;
     $admin = reset($this->adminAccIds);
-return; // its not resolving account names yet
     $obj = [
       'description' => 'test 3rdparty',
       'quant' => 10,
@@ -86,31 +84,40 @@ return; // its not resolving account names yet
     // Try to trade with two foreign accounts
     $obj['payer'] = reset($foreign_node);
     $obj['payee'] = end($foreign_node);
-    echo json_encode($obj);
-    $this->sendRequest('transaction', 'WrongAccountViolation', $admin, 'post', json_encode($obj));
+    //$this->sendRequest('transaction', 'WrongAccountViolation', $admin, 'post', json_encode($obj));
 
-    // Try to trade with a local remote account.
-    $obj['payer'] = reset($remote_accounts);
+    // Try to trade with a mirror account.
     $obj['payee'] = reset($local_accounts);
+    $obj['payer'] = reset($remote_accounts);
+echo json_encode($obj, JSON_PRETTY_PRINT);
     $this->sendRequest('transaction', 'WrongAccountViolation', $admin, 'post', json_encode($obj));
   }
 
   function test3rdParty() {
     parent::test3rdParty();
-    return;
     global $local_accounts, $foreign_accounts, $remote_accounts;
     $admin = reset($this->adminAccIds);
     $foreign_node = reset($foreign_accounts);
 
-    $obj = [
-      'payer' => end($local_accounts),
+    $obj = (object)[
       'payee' => end($foreign_node),
+      'payer' => reset($foreign_node),
       'description' => 'test 3rdparty',
       'quant' => 10,
       'type' => '3rdparty',
       'metadata' => ['foo' => 'bar']
     ];
-    $this->sendRequest('transaction', 200, $admin, 'post', json_encode($obj));
+    // test that admin can't even do a transaction between two foreign accounts
+    $this->sendRequest('transaction', 'WrongAccountViolation', $admin, 'post', json_encode($obj));
+    $obj->payee = reset($foreign_node);
+    $obj->payer = reset($local_accounts);
+    $this->sendRequest('transaction', 201, $admin, 'post', json_encode($obj));
+
+    // test again for good measure.
+    $foreign_node = end($foreign_accounts);
+    $obj->payee = end($foreign_node);
+    $obj->payer = end($local_accounts);
+    $this->sendRequest('transaction', 201, $admin, 'post', json_encode($obj));
   }
 
   // Ensure that transactions passing accross this ledger but not involving leaf
@@ -125,21 +132,19 @@ return; // its not resolving account names yet
   }
 
   function testTransactionLifecycle() {
-    parent::testTransactionLifecycle();
-return;
+    //parent::testTransactionLifecycle();
     global $local_accounts, $foreign_accounts, $remote_accounts;
     $admin = reset($this->adminAccIds);
-
-    $obj = [
+    $obj = (object)[
       'payer' => end($local_accounts),
       'payee' => $foreign_accounts['all'][array_rand($foreign_accounts['all'])],
-      'description' => 'test 3rdparty',
+      'description' => 'test bill',
       'quant' => 10,
-      'type' => '3rdparty',
+      'type' => 'credit',
       'metadata' => ['foo' => 'bar']
     ];
-    $this->sendRequest('transaction', 200, $admin, 'post', json_encode($obj));
-
+    $tx = $this->sendRequest('transaction', 200, $obj->payer, 'post', json_encode($obj));
+    $this->sendRequest("transaction/$tx->uuid/pending", 201, $obj->payer, 'patch');
   }
 
   function testAccountSummaries() {

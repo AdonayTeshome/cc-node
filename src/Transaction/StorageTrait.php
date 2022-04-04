@@ -1,21 +1,25 @@
 <?php
 
-namespace CCNode;
+namespace CCNode\Transaction;
 
-use CCNode\Entry;
+use CCNode\Transaction\Entry;
+use CCNode\Accounts\Remote;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\CCOtherViolation;
+use CCNode\Db;
 
-trait TransactionStorageTrait {
+trait StorageTrait {
 
   /**
    * @param type $uuid
    * @return \Transaction
    */
   static function loadByUuid($uuid) : Transaction {
-    global $orientation, $user;
-    $q = "SELECT id as txID, uuid, created, updated, version, type, state FROM transactions "
+    global $user;
+    // Select the latest version
+    $q = "SELECT id as txID, uuid, written, version, type, state "
+      . "FROM transactions "
       . "WHERE uuid = '$uuid' "
       . "ORDER BY version DESC "
       . "LIMIT 0, 1";
@@ -37,10 +41,10 @@ trait TransactionStorageTrait {
         throw new CCOtherViolation("Transaction $uuid has not yet been confirmed by its creator");
       }
       $row->metadata = unserialize($row->metadata);
-      $entry_rows[] = $row;
+      $tx->entries[] = $row;
     }
-    $tx->entries = static::createEntries($entry_rows);
-    $class = static::determineTransactionClass($tx->entries);
+    $class = Entry::upcastAccounts($tx->entries);
+
     // All these values should be validated, so no need to use static::create
     $transaction = $class::create($tx);
 
@@ -50,24 +54,45 @@ trait TransactionStorageTrait {
   /**
    * Write the transaction entries to the database.
    *
+   * @return int
+   *   The id of the new transaction version.
+   *
    * @note No database errors are anticipated.
    */
-  public function saveNewVersion() {
+  public function saveNewVersion() : int {
     global $user;
     $now = date("Y-m-d H:i:s");
+    $this->written = $now;
     $this->version++;
-    if ($this->version < 2) {
-      $this->created = $now;
-    }
-    $this->updated = $now;
 
-    $query = "INSERT INTO transactions (uuid, version, type, state, scribe, created, updated) "
-    . "VALUES ('$this->uuid', $this->version, '$this->type', '$this->state', '$user->id', '$this->created', '$this->updated')";
+    $query = "INSERT INTO transactions (uuid, version, type, state, scribe, written) "
+    . "VALUES ('$this->uuid', $this->version, '$this->type', '$this->state', '$user->id', '$this->written')";
     $success = Db::query($query);
 
     $connection = \CCNode\Db::connect();
     $new_id = $connection->query("SELECT LAST_INSERT_ID() as id")->fetch_object()->id;
     $this->writeEntries($new_id);
+    return $new_id;
+  }
+    /**
+   *
+   * @param int $id
+   */
+  protected function writeHashes(int $id) {
+    \CCNode\debug($this->entries[0]);
+    $payee_hash = $payer_hash = '';
+    if ($this->entries[0]->payee instanceOf Remote) {
+      $acc = $this->entries[0]->payee;
+      $entries = $this->filterFor($acc, $acc instanceOf \CCNode\Accounts\BoT);
+      $payee_hash = $this->getHash($acc, $entries);
+    }
+    if ($this->entries[0]->payer instanceOf Remote) {
+      $acc = $this->entries[0]->payer;
+      $entries = $this->filterFor($acc, $acc instanceOf \CCNode\Accounts\BoT);
+      $payer_hash = $this->getHash($acc, $entries);
+    }
+    $query = "UPDATE transactions SET payee_hash = '$payee_hash', payer_hash = '$payer_hash' WHERE id = $id";
+    Db::query($query);
   }
 
   /**
@@ -97,10 +122,12 @@ trait TransactionStorageTrait {
    * @note No database errors are anticipated.
    */
   private function insertEntry(int $txid, Entry $entry) : int {
+
+    // Calculate metadata for local storage
     foreach (['payee', 'payer'] as $role) {
       $$role = $entry->{$role}->id;
-      if ($entry->{$role} instanceof RemoteAccount) {
-        $entry->metadata[$$role] = $entry->{$role}->givenPath;
+      if ($entry->{$role} instanceof Remote) {
+        $entry->metadata->{$$role} = $entry->{$role}->givenPath;
       }
     }
     $metadata = serialize($entry->metadata);
@@ -125,7 +152,7 @@ trait TransactionStorageTrait {
    * @note you can't filter on metadata here.
    */
   static function filter(
-    string $sort = 'created,desc',
+    string $sort = 'written,desc',
     string $pager = '0,10',
     string $payer = NULL,
     string $payee = NULL,
@@ -176,13 +203,15 @@ trait TransactionStorageTrait {
     if (isset($description)) {
       $conditions[]  = "e.description LIKE '%$description%'";
     }
+    // NB this uses the date the transaction was last written, not created.
+    // to use the created date would require joining the current query to transactions where version =1
     if (isset($before)) {
       $date = date("Y-m-d H:i:s", strtotime($before));
-      $conditions[]  = "updated < '$date'";
+      $conditions[]  = "written < '$date'";
     }
     if (isset($after)) {
       $date = date("Y-m-d H:i:s", strtotime($after));
-      $conditions[]  = "updated > '$date'";
+      $conditions[]  = "written > '$date'";
     }
     if (isset($states)) {
       if (is_string($states)) {
@@ -238,12 +267,16 @@ trait TransactionStorageTrait {
   }
 
 
+  /*
+   * @todo decide whether to use transaction creation or written dates.
+   * Written is easier with the current architecture.
+   */
   static function accountHistory($acc_id) : \mysqli_result {
     Db::query("SET @csum := 0");
-    $query = "SELECT updated, (@csum := @csum + diff) as balance "
+    $query = "SELECT written, (@csum := @csum + diff) as balance "
       . "FROM transaction_index "
       . "WHERE uid1 = '$acc_id' "
-      . "ORDER BY updated ASC";
+      . "ORDER BY written ASC";
     return Db::query($query);
   }
 
@@ -253,7 +286,6 @@ trait TransactionStorageTrait {
       . "WHERE uid1 = '$acc_id' and state in ('completed', 'pending')";
     return Db::query($query);
   }
-
 
   /**
    *
@@ -270,8 +302,8 @@ trait TransactionStorageTrait {
       foreach ([$row->uid1, $row->uid2] as $uid) {
         if (!isset($balances[$uid])) {
           $balances[$uid] = (object)[
-            'completed' => TradeStats::builder(),
-            'pending' => TradeStats::builder()
+            'completed' => \CCNode\TradeStats::builder(),
+            'pending' => \CCNode\TradeStats::builder()
           ];
         }
       }
@@ -283,12 +315,12 @@ trait TransactionStorageTrait {
       }
     }
     if ($include_virgins) {
-      $all_account_names = accountStore()->filter();
+      $all_account_names = \CCNode\accountStore()->filter();
       $missing = array_diff($all_account_names, array_keys($all_balances));
       foreach ($missing as $name) {
         $balances[$name] = (object)[
-          'completed' => TradeStats::builder(),
-          'pending' => TradeStats::builder()
+          'completed' => \CCNode\TradeStats::builder(),
+          'pending' => \CCNode\TradeStats::builder()
         ];
       }
     }

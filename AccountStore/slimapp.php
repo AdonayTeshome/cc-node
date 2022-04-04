@@ -35,6 +35,17 @@ $app->get('/filter', function (Request $request, Response $response, $args) {
   return $response->withHeader('Content-Type', 'application/json');
 });
 
+//see https://discourse.slimframework.com/t/http-head-request/473
+$app->map(['HEAD'], '/{acc_id}', function (Request $request, Response $response, $args) {
+  $accounts = new AccountManager();
+  if (!$accounts->has($args['acc_id'])) {
+    return $response = $response->withStatus(404);
+    // This might be more elegant, but the class isn't available it seems.
+    throw new NotFoundException();
+  }
+  return $response;
+});
+
 $app->get('/{acc_id}', function (Request $request, Response $response, $args) {
   $accounts = new AccountManager();
   if ($accounts->has($args['acc_id'])) {

@@ -21,7 +21,6 @@ class Slim3ErrorHandler {
     file_put_contents('last_exception.log', print_r($exception, 1)); //temp
     $exception_class = explode('\\', get_class($exception));
     $exception_class = array_pop($exception_class);
-    //$traced = $exception->gettrace()[0];
     if (!$exception instanceOf CCError) {
       $code = 500;
       $exception_class = 'CCFailure';
@@ -33,12 +32,10 @@ class Slim3ErrorHandler {
 //        ];
 //        //if (get_class($exception) == 'League\OpenAPIValidation\PSR7\Exception\NoResponseCode') break;
 //      }
-      $output->trace = $exception->getTrace(); //experimental;;
     }
     else {// All CreditCommons error classes.
       $output = (object)($exception);
     }
-
     $output->node = $exception->node??getConfig('node_name');
     $output->method = $request->getMethod();
     $output->path = $request->geturi()->getPath();
@@ -48,6 +45,8 @@ class Slim3ErrorHandler {
       $output->path .= '?'.$q;
     }
     $output->break = $exception->getFile() .': '.$exception->getLine();
+    $output->trace = $exception->getTraceAsString(); //experimental;;
+
     return json_response($response, $output, $code??$exception->getCode());
    }
 

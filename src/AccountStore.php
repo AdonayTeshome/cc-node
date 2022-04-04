@@ -17,6 +17,8 @@ use GuzzleHttp\Exception\ClientException;
  */
 class AccountStore extends Requester implements AccountStoreInterface {
 
+  private $exists = [];
+
   /**
    * Accounts already retrieved.
    * @var Account[]
@@ -80,7 +82,6 @@ class AccountStore extends Requester implements AccountStoreInterface {
     bool $local = NULL,
     string $fragment = NULL
   ) : array {
-    $path = 'filter/full';
     if (isset($local)) {
       // covert to a path boolean... tho shouldn't guzzle do that?
       $this->options[RequestOptions::QUERY]['local'] = $local ? 'true' : 'false';
@@ -92,7 +93,8 @@ class AccountStore extends Requester implements AccountStoreInterface {
         $this->options[RequestOptions::QUERY][$param] = $$param;
       }
     }
-    $results = (array)$this->localRequest($path);
+    // 404?
+    $results = (array)$this->localRequest('filter/full');
 
     foreach ($results as $key => $r) {
       if ($r->id == getConfig('trunkward_acc_id')) {
@@ -106,25 +108,21 @@ class AccountStore extends Requester implements AccountStoreInterface {
   /**
    * @inheritdoc
    */
-  function fetch(string $name, string $remote_path = '') : Account {
-    if (!isset($this->cached[$name])) {
-      $path = urlencode($name);
-      try{
-        $result = $this->localRequest($path);
-      }
-      catch (\Exception $e) {
-        if ($e->getCode() == 404) {
-          // N.B. the name might have been deleted because of GDPR
-          throw new DoesNotExistViolation(type: 'account', id: $name);
-        }
-        else {
-          throw new CCFailure("AccountStore returned an invalid error code looking for $name: ".$e->getCode());
-        }
-      }
-      $result->relPath = $remote_path;
-      $this->cached[$name] = $this->upcast($result);
+  function fetch(string $name) : Account {
+    $path = urlencode($name);
+    try{
+      $result = $this->localRequest($path);
     }
-    return $this->cached[$name];
+    catch (ClientException $e) {
+      if ($e->getCode() == 404) {
+        // N.B. the name might have been deleted because of GDPR
+        throw new DoesNotExistViolation(type: 'account', id: $name);
+      }
+    }
+    catch (\Exception $e) {
+      throw new CCFailure("AccountStore returned a ".$e->getCode() ." from $name: ".$e->getMessage());
+    }
+    return $this->upcast($result);
   }
 
   /**
@@ -141,16 +139,18 @@ class AccountStore extends Requester implements AccountStoreInterface {
   /**
    * @inheritdoc
    */
-  public function has(string $name, string $node_class = '') : bool {
-    try {
-      $acc = $this->fetch($name);
-    }
-    catch (DoesNotExistViolation $e) {
-      return FALSE;
-    }
-    if ($node_class) {
-      $class = '\CCNode\Accounts\\'.$node_class;
-      return $acc instanceOf $class;
+  public function has(string $name) : bool {
+    if ((!in_array($name, $this->exists))) {
+      try {
+        $this->method = 'HEAD';
+        $this->localRequest($name);
+      }
+      catch (\GuzzleHttp\Exception\RequestException $e) {
+      $this->method = 'GET';
+        return FALSE;
+      }
+      $this->method = 'GET';
+      $this->exists[] = $name;
     }
     return TRUE;
   }
@@ -227,12 +227,7 @@ class AccountStore extends Requester implements AccountStoreInterface {
       }
     }
     else {
-      if ($data->admin) {
-        $class = 'Admin';
-      }
-      else {
-        $class = 'User';
-      }
+      $class = $data->admin ? 'Admin' : 'User';
     }
     return 'CCNode\Accounts\\'. $class;
   }

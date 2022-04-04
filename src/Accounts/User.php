@@ -3,7 +3,7 @@
 namespace CCNode\Accounts;
 use CreditCommons\Account;
 use CCNode\TradeStats;
-use CCNode\Transaction;
+use CCNode\Transaction\Transaction;
 
 /**
  * Class representing a member of the ledger
@@ -45,12 +45,12 @@ class User extends Account {
     // Database is storing timestamps as 'Y-m-d H:i:s.0'
     // make a first point at zero balance 1 sec before the first balance.
     if ($t = $result->fetch_object()) {
-      $start_sec = (new \DateTime($t->updated))->modify('-5 seconds');
+      $start_sec = (new \DateTime($t->written))->modify('-5 seconds');
       // 2022-02-02 23:39:56.000000
       $points[$start_sec->format('Y-m-d H:i:s')] = 0;
-      $points[$t->updated] = (int)$t->balance;
+      $points[$t->written] = (int)$t->balance;
       while($t = $result->fetch_object()) {
-        $points[$t->updated] = (int)$t->balance;
+        $points[$t->written] = (int)$t->balance;
       }
       if ($samples === 0) {
         // the raw data would show diagonal lines
@@ -115,6 +115,22 @@ class User extends Account {
 
   function getLimits() {
     return (object)['min' => $this->min, 'max' => $this->max];
+  }
+
+  function relPath() {
+    return '';
+  }
+
+  /**
+   * Get the address for passing trunkwards or branchwards.
+   * @return type
+   */
+  function foreignId() {
+    $parts =  [\CCNode\getConfig('node_name'), $this->id];
+    if ($r = $this->relPath()) {
+      $parts[] = $r;
+    }
+    return implode('/', $parts);
   }
 
 }

@@ -10,9 +10,24 @@ info:
     name: GNU GPL
 paths:
   /{acc_id}:
+    head:
+      summary: Check if an account exists
+      operationId: checkAccount.
+      parameters:
+        - in: path
+          name: acc_id
+          description: The name of the account to fetch
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the account exists
+        "404":
+          description: The account doesn't exist.
     get:
       summary: Get one account.
-      operationId: listActive.
+      operationId: getAccount.
       parameters:
         - in: path
           name: acc_id

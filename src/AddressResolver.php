@@ -5,6 +5,7 @@ use CreditCommons\AccountStoreInterface;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\CCOtherViolation;
 use CCNode\Accounts\Remote;
+use CCNode\Accounts\User;
 
 /**
  * Convert all errors into an stdClass, which includes a field showing
@@ -26,7 +27,7 @@ class AddressResolver {
   private $trunkwardName;
   private $userId;
 
-  function __construct(AccountStoreInterface $accountStore, $absolute_path) {
+  function __construct(AccountStoreInterface $accountStore, string $absolute_path) {
     global $user;
     $this->accountStore = $accountStore;
     $parts = explode('/', $absolute_path);
@@ -35,8 +36,8 @@ class AddressResolver {
     $this->userId = $user->id;
   }
 
-  static function create($absolute_path) {
-    return new static(AccountStore::create(), $absolute_path);
+  static function create() {
+    return new static(accountStore(), getConfig('abs_path'));
   }
 
   /**
@@ -61,33 +62,27 @@ class AddressResolver {
    *     The first item on the path is c or d OR
    *     The path includes b/c and another item
    *   Otherwise if the request didn't come from the trunk,
-   *     the trunkward path is returned.
+   *     The trunkward path is returned.
    *   Otherwise the result is invalid path
    */
-  public function resolveTolocalAccount(string $given_acc_path) : array {
+  public function resolveTolocalAccount(string $given_acc_path) : User|string {
     $parts = explode('/', $given_acc_path);
     $acc_id = array_pop($parts);
-    // identify which node
+    // Identify which node
     if ($proxy_account_id = $this->relativeToThisNode($parts)) {
-    \CCNode\debug("resolving to $proxy_account_id");
       // Forward to another node.
-      //if ($this->userId <> $this->trunkwardName) {
-        return [$this->accountStore->fetch($proxy_account_id), implode('/', $parts).'/'.$acc_id];
-//      }
-//      else {
-//        throw new DoesNotExistViolation(type: 'account', id: $given_acc_path);
-//      }
+      return load_account($proxy_account_id, $given_acc_path);// parts is the same as given
     }
     // its an account on this node.
     elseif ($acc_id and ($this->accountStore->has($acc_id) or $acc_id == $this->trunkwardName)) {
-      return [$this->accountStore->fetch($acc_id), implode('/', $parts)];
+      return load_account($acc_id, $given_acc_path); // $parts is missing last part, which is the account name.
     }
     elseif ($acc_id) {
-      // No matches
-      return [NULL, NULL];
+      throw new DoesNotExistViolation(type: 'account', id: $given_acc_path);
     }
     else {// all accounts on this node.
-      return [NULL, '*'];
+      //\CCNode\debug($given_acc_path);// cctrunk\/ccbranch1\/bertha\/
+      return '*';
     }
   }
 
@@ -95,7 +90,7 @@ class AddressResolver {
    * Return the account name that points to another node, and alter the $path_parts to be relative to that account.
    */
   public function relativeToThisNode(array &$path_parts) : string {
-    // handle all local and branchward nodes.
+    // handle all local and leafward nodes.
     // if the node name is in the path, cut every thing off before it.
     $pos = array_search($this->nodeName, $path_parts);
     if ($pos !== FALSE) {
@@ -106,48 +101,60 @@ class AddressResolver {
         // This is a branch so we can cut off the start of the path.
         $path_parts = array_slice($path_parts, $pos+1);
       }
-      else {// Rare
+      elseif ($this->trunkwardName) {// Rare
         // the node name appears under a different trunk.
         // Freaky coincidence, but pass trunkward.
         return $this->trunkwardName;
+      }
+      else {
+        throw new CCOtherViolation("Invalid node path: ".implode('/', $path_parts));
       }
     }
     if (empty(array_filter($path_parts))) {
       // the current node.
       return '';
     }
-    elseif ($this->accountStore->has(reset($path_parts), 'Remote')) {
-      return array_shift($path_parts);
-    }
-    elseif ($this->accountStore->has(reset($path_parts))) {
-      return '';
-    }
-    elseif($this->trunkwardName) {
-      return $this->trunkwardName;
+    else{
+      if ($this->accountStore->has(reset($path_parts))) {
+        $acc = load_account(reset($path_parts));
+        if ($acc instanceof Remote) {
+          return array_shift($path_parts);
+        }
+        else {
+          return '';
+        }
+      }
+      elseif($this->trunkwardName) {
+        return $this->trunkwardName;
+      }
     }
     throw new DoesNotExistViolation(type: 'node', id: implode($path_parts));
   }
 
   /**
-   * Find all the accounts in the tree that match the given fragment
+   * Find all the accounts in the tree that match the given fragment, excluding the current user.
    * @param string $fragment
    * @return string[]
    */
   function pathMatch(string $fragment) : array {
     global $user;
-    list ($remote_acc, $path) = $this->resolveTolocalAccount($fragment);
-
+    $trunkward_acc_id = getConfig('trunkward_acc_id');
+    try {
+      $remote_acc = $this->resolveTolocalAccount($fragment);
+    }
+    catch (DoesNotExistViolation $e) {
+      //die("No such account $fragment");
+      $remote_acc = '';
+    }
     // Look locally and trunkwards if no remote account is taken from the fragment
-    if (!$remote_acc instanceOf Accounts\Branch or empty($path)) {
+    if (!$remote_acc instanceOf Accounts\Remote or substr($fragment, -1) <> '/') {
       // Make a list with all the matching trunkward node names and all the matching accounts.
-      $tree = explode('/', getConfig('abs_path'));
       $trunkward_names = [];
-      $trunkward_acc_id = getConfig('trunkward_acc_id');
       if ($trunkward_acc_id and $this->userId <> $trunkward_acc_id) {
         $trunkward_names = load_account($trunkward_acc_id)->autocomplete($fragment);
       }
       // Local names.
-      $filtered = accountStore()->filterFull(fragment: trim($fragment, '/'));
+      $filtered = $this->accountStore->filterFull(fragment: trim($fragment, '/'));
       $local = [];
 
       foreach ($filtered as $acc) {
@@ -167,7 +174,7 @@ class AddressResolver {
     }
     elseif ($remote_acc) {
       // Just give the names on the given branch
-      $names = $remote_acc->autocomplete($path);
+      $names = $remote_acc->autocomplete($remote_acc->relPath());
       if ($this->userId == getConfig('trunkward_acc_id')) {
         foreach ($names as &$name) {
           $name = getConfig('node_name') . '/'.$name;

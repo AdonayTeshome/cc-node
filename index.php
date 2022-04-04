@@ -3,7 +3,6 @@
  * Reference implementation of a credit commons node
  */
 
-
 declare(strict_types=1);
 
 ini_set('html_errors', '0');
