@@ -95,7 +95,7 @@ class AccountStore extends Requester implements AccountStoreInterface {
     }
     // 404?
     $results = (array)$this->localRequest('filter/full');
-
+    // remove the trunkward account
     foreach ($results as $key => $r) {
       if ($r->id == getConfig('trunkward_acc_id')) {
         unset($results[$key]);
@@ -130,6 +130,7 @@ class AccountStore extends Requester implements AccountStoreInterface {
    * @return array
    */
   function allLimits() : array {
+    $limits = [];
     foreach ($this->filterFull() as $info) {
       $limits[$info->id] = (object)['min' => $info->min, 'max' => $info->max];
     }
@@ -142,14 +143,15 @@ class AccountStore extends Requester implements AccountStoreInterface {
   public function has(string $name) : bool {
     if ((!in_array($name, $this->exists))) {
       try {
+
         $this->method = 'HEAD';
         $this->localRequest($name);
+        $this->method = 'GET';
       }
       catch (\GuzzleHttp\Exception\RequestException $e) {
-      $this->method = 'GET';
+        $this->method = 'GET';
         return FALSE;
       }
-      $this->method = 'GET';
       $this->exists[] = $name;
     }
     return TRUE;
@@ -195,7 +197,7 @@ class AccountStore extends Requester implements AccountStoreInterface {
    * @return Account
    */
   private function upcast(\stdclass $data) : Account {
-    $class = self::determineAccountClass($data, getConfig('trunkward_acc_id'));
+    $class = self::determineAccountClass($data);
     $this->cached[$data->id] = $class::create($data);
     return $this->cached[$data->id];
   }
@@ -205,19 +207,20 @@ class AccountStore extends Requester implements AccountStoreInterface {
    * in the ledger tree.
    *
    * @param \stdClass $data
-   * @param string $BoT_acc_id
+   * @param string $trunkward_acc_id
    * @return string
    */
-  private static function determineAccountClass(\stdClass $data, string $BoT_acc_id = '') : string {
+  private static function determineAccountClass(\stdClass $data) : string {
     global $user;
+    $trunkward_acc_id = \CCNode\getConfig('trunkward_acc_id');
     if (!empty($data->url)) {
-      $upS = $data->id == @$user->id;
-      $BoT = $data->id == $BoT_acc_id;
-      if ($BoT and $upS) {
-        $class = 'UpstreamBoT';
+      $upS = $user ? ($data->id == $user->id) : TRUE;
+      $trunkward = $data->id == $trunkward_acc_id;
+      if ($trunkward and $upS) {
+        $class = 'UpstreamTrunkward';
       }
-      elseif ($BoT and !$upS) {
-        $class = 'DownstreamBoT';
+      elseif ($trunkward and !$upS) {
+        $class = 'DownstreamTrunkward';
       }
       elseif ($upS) {
         $class = 'UpstreamBranch';

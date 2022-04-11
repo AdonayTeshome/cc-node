@@ -13,7 +13,7 @@ class TestBase extends TestCase {
   protected $adminAccIds = [];
   protected $normalAccIds = [];
   protected $branchAccIds = [];
-  protected $trunkwardsId = '';
+  protected $trunkwardId = '';
   protected $nodePath = [];
 
   /**
@@ -40,7 +40,6 @@ class TestBase extends TestCase {
       $request = $request->withHeader('Content-Type', 'application/json');
       $request->getBody()->write($request_body);
     }
-
     $response = $this->getApp()->process($request, new Response());
     $response->getBody()->rewind();
     $contents = json_decode($response->getBody()->getContents());
@@ -48,7 +47,7 @@ class TestBase extends TestCase {
     if (is_int($expected_response)) {
       if ($status_code <> $expected_response) {
         // Blurt out to terminal to ensure all info is captured.
-        echo "\n $acc_id got unexpected code ".$status_code." on $path: ".print_r($contents, 1); // Seems to be truncated hmph.
+        echo "\n $acc_id got unexpected code ".$status_code." on $path: ".print_r($contents, 1);
       }
       $this->assertEquals($expected_response, $status_code);
     }
@@ -57,12 +56,12 @@ class TestBase extends TestCase {
         $err = \CreditCommons\NodeRequester::reconstructCCErr($contents);
         $class = "\\CreditCommons\Exceptions\\$expected_response";
         if (!$err instanceof $class) {
-          echo "\nUnexpected error: ";print_r($err);
+          echo "\nUnexpected error: ".print_r($err, 1);
         }
         $this->assertInstanceOf($class, $err);
       }
       else {
-        echo "\nExpected $expected_response but got: ";print_r($contents);
+        echo "\nExpected $expected_response but got: ".print_r($contents, 1);
         $this->assertEquals(1, 0, 'Expected error but got something else.');
       }
     }
@@ -114,7 +113,7 @@ class TestBase extends TestCase {
       }
       elseif (!empty($acc->url)) {
         if ($acc->id == \CCNode\getConfig('trunkward_acc_id')) {
-          $this->trunkwardsId = $acc_id;
+          $this->trunkwardId = $acc_id;
         }
         else {
           $this->branchAccIds[] = $acc_id;
@@ -127,3 +126,5 @@ class TestBase extends TestCase {
   }
 
 }
+// to replace the one in index.php which is not called
+function debug(){}

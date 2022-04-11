@@ -8,66 +8,70 @@ use function \CCNode\API_calls;
 
 /**
  * Handle the sending of transactions between ledgers and hashing.
+ * @todo make a new interface for this.
  */
 class TransversalTransaction extends Transaction {
 
   public $downstreamAccount;
   public $upstreamAccount;
-  // Only load the trunkwards account if we need it.
+  // Only load the trunkward account if needed
   public $trunkwardAccount = NULL;
 
-
-  /**
-   * FALSE for request, TRUE for response mode
-   * @var Bool
-   */
-  public bool $responseMode = FALSE;
-
-  /**
-   * Create a NEW transaction on this ledger to correspond with one relayed from upstream or downstream
-   *
-   * @param stdClass $data
-   *   $entries should be already prepared Entry[]
-   *
-   * @return \Transaction
-   */
-  public static function create(\stdClass $data) : static {
+  public function __construct(
+    public string $uuid,
+    public string $written,
+    public string $type,
+    public string $state,
+    array $entries,
+    public int $version,
+    public int $txID // We only know this for saved transaction, not new or upstream transactions
+  ) {
     global $user;
-\CCnode\debug($data);
-    $tx = parent::create($data);
-\CCnode\debug('TransversalTransaction::Create()');
-
-    $tx->upstreamAccount = $user instanceof Remote ? $user : NULL;
-    $payer = $tx->entries[0]->payer;
-    $payee = $tx->entries[0]->payee;
+    $this->upstreamAccount = $user instanceof Remote ? $user : NULL;
+    $payer = $entries[0]->payer;
+    $payee = $entries[0]->payee;
     // Find the downstream account
     $trunkward_name = getConfig('trunkward_acc_id');
     // if there's an upstream account, then the other one, if remote is downstream
-    if ($tx->upstreamAccount) {
-      if ($tx->upstreamAccount->id == $payee->id and $payer instanceOf Remote) {
-        $tx->downstreamAccount = $payer; // going towards a payer branch
+    if ($this->upstreamAccount) {
+      if ($this->upstreamAccount->id == $payee->id and $payer instanceOf Remote) {
+        $this->downstreamAccount = $payer; // going towards a payer branch
       }
-      elseif ($tx->upstreamAccount->id == $payer->id and $payee instanceOf Remote) {
-        $tx->downstreamAccount = $payee;// going towards a payee branch
+      elseif ($this->upstreamAccount->id == $payer->id and $payee instanceOf Remote) {
+        $this->downstreamAccount = $payee;// going towards a payee branch
       }
     }// with no upstream account, then any remote account is downstream
     else {
       if ($payee instanceOf Remote) {
-        $tx->downstreamAccount = $payee;
+        $this->downstreamAccount = $payee;
       }
       elseif ($payer instanceOf Remote) {
-        $tx->downstreamAccount = $payee;
+        $this->downstreamAccount = $payer;
       }
     }
-    /// Set the trunkwards account only if it is used.
-    if ($tx->upstreamAccount and $tx->upstreamAccount->id == $trunkward_name) {
-      $tx->trunkwardAccount = $tx->upstreamAccount;
+    /// Set the trunkward account only if it is used.
+    if ($this->upstreamAccount and $this->upstreamAccount->id == $trunkward_name) {
+      $this->trunkwardAccount = $this->upstreamAccount;
     }
-    elseif ($tx->downstreamAccount and $tx->downstreamAccount->id == $trunkward_name) {
-      $tx->trunkwardAccount = $tx->downstreamAccount;
+    elseif ($this->downstreamAccount and $this->downstreamAccount->id == $trunkward_name) {
+      $this->trunkwardAccount = $this->downstreamAccount;
     }
-    return $tx;
+    $this->upcastEntries($entries, $user->id);
   }
+
+  /**
+   * {@inheritDoc}
+   */
+  function buildValidate() : void {
+    parent::buildvalidate();
+    if ($this->downstreamAccount) {
+      $rows = $this->downstreamAccount->buildValidateRelayTransaction($this);
+      Entry::upcastAccounts($rows);
+      $this->upcastEntries($rows, $this->downstreamAccount->id, TRUE);
+    }
+    $this->responseMode = TRUE;
+  }
+
 
   /**
    * {@inheritDoc}
@@ -75,7 +79,9 @@ class TransversalTransaction extends Transaction {
   public function saveNewVersion() : int {
     global $user;
     $id = parent::saveNewVersion();
-    $this->writeHashes($id);
+    if ($this->version > 0) {
+      $this->writeHashes($id);
+    }
     return $id;
   }
 
@@ -94,9 +100,7 @@ class TransversalTransaction extends Transaction {
     foreach ($this->entries as $e) {
       if ($e->payee->id == $remote_name or $e->payer->id == $remote_name) {
         $entries[] = $e;
-        //\CCNode\debug("Selected $remote_name row with users ".$e->payee->id. ' and '.$e->payer->id);
       }
-     // else \CCNode\debug("Not selected $remote_name row with users ".$e->payee->id. ' and '.$e->payer->id);
     }
     return $entries;
   }
@@ -109,17 +113,20 @@ class TransversalTransaction extends Transaction {
    */
   protected function getHash(Remote $account, array $entries) : string {
     foreach ($entries as $entry) {
-      //we also need the trunkward payer and payee acocunt names
-      $rows[] = abs($entry->quant).'|'.$entry->description;
+      if ($this->trunkwardAccount and $account->id == $this->trunkwardAccount->id) {
+        $quant = $entry->trunkward_quant;
+      }
+      else {
+        $quant = $entry->quant;
+      }
+      $rows[] = $quant.'|'.$entry->description;
     }
     $string = join('|', [
       $account->getLastHash(),
       $this->uuid,
+      join('|', $rows),
       $this->version,
-      join('|', $rows)
     ]);
-    \CCNode\debug($string);
-    \CCNode\debug(md5($string));
     return md5($string);
   }
 
@@ -140,6 +147,9 @@ class TransversalTransaction extends Transaction {
     if ($adjacentNode = $this->responseMode ? $this->upstreamAccount : $this->downstreamAccount) {
       $array['entries'] = $this->filterFor($adjacentNode);
     }
+    if ($array['version'] < 1) {
+      unset($array['state']);
+    }
 
     // relaying downstream
     if ($this->downstreamAccount && !$this->responseMode) {
@@ -147,20 +157,6 @@ class TransversalTransaction extends Transaction {
       unset($array['status'], $array['workflow'], $array['payeeHash'], $array['payerHash'], $array['transitions']);
     }
     return $array;
-  }
-
-  /**
-   * {@inheritDoc}
-   */
-  function buildValidate() : void {
-    parent::buildvalidate();
-    if ($this->downstreamAccount) {
-      $rows = API_calls($this->downstreamAccount)->buildValidateRelayTransaction($this);
-      Entry::upcastAccounts($rows);
-      \CCNode\debug('Rows added by '.$this->downstreamAccount->id);
-      \CCNode\debug($rows);
-      $this->upcastEntries($rows, $this->downstreamAccount, TRUE);
-    }
   }
 
   /**
@@ -196,18 +192,21 @@ class TransversalTransaction extends Transaction {
 
 
   /**
-   * Functions to inform jsonSerializing
+   * Return TRUE if the response is directed towards the trunk.
+   *
    * @return bool
+   *
+   * @todo put in an interface
    */
-  public function isGoingTrunkwards() : bool {
-    return ($this->upstreamAccount and $this->responseMode == TRUE)
-      or
-    ($this->trunkwardAccount and $this->responseMode == FALSE);
+  public function trunkwardResponse() : bool {
+    if ($this->trunkwardAccount) {
+      if ($this->trunkwardAccount == $this->upstreamAccount and $this->responseMode == TRUE) {
+        return TRUE;
+      }
+      elseif ($this->trunkwardAccount == $this->downstreamAccount and $this->responseMode == FALSE) {
+        return TRUE;
+      }
+    }
+    return FALSE;
   }
-  public function isFromTrunkwards() : bool {
-    return ($this->upstreamAccount and $this->responseMode == FALSE)
-      or
-    ($this->trunkwardAccount and $this->responseMode == TRUE);
-  }
-
 }

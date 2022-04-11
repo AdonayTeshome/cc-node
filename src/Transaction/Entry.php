@@ -2,9 +2,7 @@
 namespace CCNode\Transaction;
 
 use CCNode\AddressResolver;
-use CCNode\Accounts\BoT;
 use CCNode\Accounts\Remote;
-use CCNode\Accounts\Branch;
 use CreditCommons\BaseEntry;
 use CreditCommons\Account;
 use CreditCommons\Exceptions\WrongAccountViolation;
@@ -54,8 +52,7 @@ class Entry extends BaseEntry implements \JsonSerializable {
       $data->metadata = new \stdClass();
     }
     static::validateFields($data);
-    $class = static::determineEntryClass($data->payee, $data->payer);
-    $entry = new $class (
+    $entry = new static (
       $data->payee,
       $data->payer,
       $data->quant,
@@ -69,30 +66,6 @@ class Entry extends BaseEntry implements \JsonSerializable {
       $entry->setTransaction($transaction);
     }
     return $entry;
-  }
-
-  /**
-   *
-   * @param Account $acc1
-   * @param Account $acc2
-   * @return string
-   */
-  static function determineEntryClass(Account $acc1, Account $acc2) : string {
-    $class_name = 'Entry';
-    // Now, depending on the classes of the payer and payee
-    if ($acc1 instanceOf Branch and $acc2 instanceOf Branch) {
-      // both accounts are leafwards, the current node is at the apex of the route.
-      $class_name = 'EntryTransversal';
-    }
-    elseif ($acc1 instanceOf BoT or $acc2 instanceOf BoT) {
-      // One of the accounts is trunkwards, so this class does conversion of amounts.
-      $class_name = 'EntryTrunkwards';
-    }
-    elseif ($acc1 instanceOf Branch or $acc2 instanceOf Branch) {
-      // One account is local, one account is further leafwards.
-      $class_name = 'EntryTransversal';
-    }
-    return '\CCNode\Transaction\\'.$class_name;
   }
 
   function isAdditional() : bool {
@@ -123,17 +96,20 @@ class Entry extends BaseEntry implements \JsonSerializable {
   /**
    * @param array $rows
    * @return string
-   *   The transaction classname. Transversal if any account is remote.
+   *   The transaction classname. Transversal if any account in any entry is remote.
    *
-   * @todo this might be tidier if it just does one row at a time.
+   * @todo this might be tidier if it just does one Entry at a time.
    */
   static function upcastAccounts(array &$rows) : string {
     $class = 'Transaction';
     $addressResolver = AddressResolver::create();
     foreach ($rows as &$row) {
-      $row->payee = $addressResolver->resolveTolocalAccount($row->metadata->{$row->payee}??$row->payee);
-      $row->payer = $addressResolver->resolveTolocalAccount($row->metadata->{$row->payer}??$row->payer);
-      // @todo make an address resolver function which only returns remote accounts
+      $payee_addr = $row->metadata->{$row->payee}??$row->payee;
+      $row->payee = $addressResolver->localOrRemoteAcc($payee_addr);
+      $payer_addr = $row->metadata->{$row->payer}??$row->payer;
+      $row->payer = $addressResolver->localOrRemoteAcc($payer_addr);
+      // @todo refactor the address resolver so that we can be sure by now that
+      // the payee/payer is one local or remote account and not a remote node - i.e. with a slash at the end.
       if ($row->payee instanceOf Remote) {
         if (!$row->payee->isAccount()) {
           throw new WrongAccountViolation($row->payee->givenPath);

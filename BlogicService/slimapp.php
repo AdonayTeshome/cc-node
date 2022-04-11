@@ -42,13 +42,13 @@ return $app;
 function payee_fee(\stdClass $entry, $fee) : \stdClass {
   global $config;
   // Might want to author with the authenticaed account rather than $fees account
-  $fee = floor(calc($entry->quant, $fee));
+  $fee = ceil(calc($entry->quant, $fee));
   return (object)[
     'payer' => $entry->payee,
     'payee' => $config['fees_account'],
     'author' => $config['fees_account'],
     'quant' => $fee,
-    'description' => "payee fee of $fee to ".$config['fees_account']
+    'description' => $_SERVER['SERVER_NAME']. " payee fee of $fee to ".$config['fees_account']
   ];
 }
 
@@ -57,14 +57,14 @@ function payee_fee(\stdClass $entry, $fee) : \stdClass {
  */
 function payer_fee(\stdClass $entry, $fee) : \stdClass {
   global $config;
-  $fee = floor(calc($entry->quant, $fee));
+  $fee = ceil(calc($entry->quant, $fee));
   // Might want to author with the authenticated account rather than $fees account
   return (object)[
     'payer' => $entry->payer,
     'payee' => $config['fees_account'],
     'author' => $config['fees_account'],
     'quant' => $fee,
-    'description' => "payer fee of $fee to ".$config['fees_account']
+    'description' => $_SERVER['SERVER_NAME']." payer fee of $fee to ".$config['fees_account']
   ];
 }
 

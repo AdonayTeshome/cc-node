@@ -17,18 +17,14 @@ class BlogicRequester extends Requester {
    * @return \stdClass[]
    *   Simplified entries with names only for payee, payer, author.
    */
-  function appendTo(Transaction $transaction) {
+  function getRows(Transaction $transaction) : array {
     $first_entry = $this->convert($transaction->entries[0]);
     $rows = $this
       ->setBody($first_entry)
       ->setMethod('post')
       ->request(200, $transaction->type);
-    foreach ($rows as &$row) {
-      $row->payee = load_account($row->payee);
-      $row->payer = load_account($row->payer);
-    }
-    // All Blogic transactions have the same author, a local account.
-    $transaction->upcastEntries($rows, load_account($rows[0]->author), TRUE);
+    // ensure there are no zero value rows;
+    return array_filter($rows, function($r) {return $r->quant > 0;});
   }
 
   /**

@@ -17,8 +17,10 @@ class Slim3ErrorHandler {
    * protected and is lost during json_encode
    */
   public function __invoke($request, $response, $exception) {
-    global $config, $user;
-    file_put_contents('last_exception.log', print_r($exception, 1)); //temp
+    global $user;
+    if (getConfig('dev_mode')) {
+      //file_put_contents('last_exception.log', print_r($exception, 1)); //temp
+    }
     $exception_class = explode('\\', get_class($exception));
     $exception_class = array_pop($exception_class);
     if (!$exception instanceOf CCError) {
@@ -40,7 +42,7 @@ class Slim3ErrorHandler {
     $output->method = $request->getMethod();
     $output->path = $request->geturi()->getPath();
     $output->class = $exception_class;
-    $output->acc_id = $user->id;
+    $output->user = $user ? $user->id : '-anon-';
     if ($q = $request->geturi()->getQuery()){
       $output->path .= '?'.$q;
     }

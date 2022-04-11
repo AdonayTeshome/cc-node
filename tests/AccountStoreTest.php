@@ -27,9 +27,9 @@ class AccountStoreTest extends TestBase {
   }
 
   function testFilterName() {
-    $all_accounts = array_merge($this->normalAccIds, $this->branchAccIds, $this->adminAccIds, [$this->trunkwardsId]);
+    $all_accounts = array_merge($this->normalAccIds, $this->branchAccIds, $this->adminAccIds, [$this->trunkwardId]);
 
-    $this->filterTest('', array_filter($all_accounts));// because trunkwardsId might be empty
+    $this->filterTest('', array_filter($all_accounts));// because trunkwardId might be empty
     $this->filterTest('local=true', array_merge($this->normalAccIds, $this->adminAccIds));
     $char = substr(reset($this->normalAccIds), 0, 1);
     $expected = array_filter(

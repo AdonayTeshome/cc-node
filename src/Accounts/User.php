@@ -37,6 +37,7 @@ class User extends Account {
    *   sample the data to make the message size smaller and rendering easier.
    *
    * @note Uses the transaction updated time, not the created time
+   * @note this isn't part of the core API
    */
   function getHistory(int $samples = -1) : array {
     global $config;
@@ -113,7 +114,7 @@ class User extends Account {
     ];
   }
 
-  function getLimits() {
+  function getLimits() : \stdClass {
     return (object)['min' => $this->min, 'max' => $this->max];
   }
 
@@ -123,9 +124,9 @@ class User extends Account {
 
   /**
    * Get the address for passing trunkwards or branchwards.
-   * @return type
+   * @return string
    */
-  function foreignId() {
+  function foreignId() :string {
     $parts =  [\CCNode\getConfig('node_name'), $this->id];
     if ($r = $this->relPath()) {
       $parts[] = $r;

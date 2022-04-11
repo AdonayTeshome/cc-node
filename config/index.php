@@ -10,7 +10,7 @@ const NODE_INI_FILE = '../node.ini';
 $config = parse_ini_file(NODE_INI_FILE);
 $abs_path = explode('/', $config['abs_path']);
 end($abs_path);
-$trunkwards_name = prev($abs_path);
+$trunkward_name = prev($abs_path);
 $accounts = editable_accounts();
 $errs = [];
 // the following form is used once in set up
@@ -29,7 +29,7 @@ $errs = [];
         <li><a href="/config/index.php">Setup</a></li>
         <li><a href="/config/index.php?accounts">Edit accounts</a></li>
         <li><a href="/config/index.php?general">Settings</a></li>
-      <?php if (isset($accounts[$trunkwards_name]) and (bool)$trunkwards_name == (bool)$accounts[$trunkwards_name]->url ): ?>
+      <?php if (isset($accounts[$trunkward_name]) and (bool)$trunkward_name == (bool)$accounts[$trunkward_name]->url ): ?>
         <li><a href="https://gitlab.com/credit-commons-software-stack/cc-dev-client/-/blob/master/INSTALL.md">Install</a> developer client</li>
         <li>call <a href="<?php print $_SERVER['REQUEST_SCHEME'].'://'.$_SERVER['HTTP_HOST'];?>"><?php print end($abs_path);?></a> from your client</li>
       <?php endif; ?>

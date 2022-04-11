@@ -6,6 +6,8 @@ use CCNode\Transaction\Entry;
 use CCNode\BlogicRequester;
 use CCNode\Workflows;
 use CCNode\Accounts\Remote;
+use CCNode\Accounts\Branch;
+use CCNode\Accounts\Trunkward;
 use CreditCommons\Workflow;
 use CreditCommons\Exceptions\MaxLimitViolation;
 use CreditCommons\Exceptions\MinLimitViolation;
@@ -23,6 +25,12 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
   protected $workflow;
 
   /**
+   * FALSE for request, TRUE for response mode
+   * @var Bool
+   */
+  public bool $responseMode = FALSE;
+
+  /**
    * Create a new transaction from a few required fields defined upstream.
    * @param stdClass $data
    *   Well formatted payer, payee, description & quant and array of stdClass entries.
@@ -31,8 +39,6 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
   public static function createFromUpstream(\stdClass $data) : BaseTransaction {
     global $user;
     $data->state = TransactionInterface::STATE_INITIATED;
-    \CCNode\debug('Constructed transaction from upstream with:');
-    \CCNode\debug($data);
     $transaction_class = Entry::upcastAccounts($data->entries);
     return $transaction_class::create($data);
   }
@@ -54,7 +60,12 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     }
     // Add fees, etc by calling on the blogic service
     if ($config['blogic_service_url']) {
-      (new BlogicRequester($config['blogic_service_url']))->appendTo($this);
+      $rows = (new BlogicRequester($config['blogic_service_url']))->getRows($this);
+      foreach ($rows as &$row) {
+        $row->payee = load_account($row->payee);
+        $row->payer = load_account($row->payer);
+      }
+      $this->upcastEntries($rows, $row->author, TRUE);
     }
     $first_entry = reset($this->entries);
     foreach ($this->sum() as $acc_id => $info) {
@@ -93,7 +104,6 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     // this adds +1 to the version.
     $this->saveNewVersion();
 
-    $this->responseMode = TRUE;
     return $status_code;
   }
 
@@ -192,26 +202,43 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
 
 
   /**
-   * make entry objects from json entries with users already upcast by Entry::upcastAccounts
+   * Make entry objects from json entries with users already upcast by Entry::upcastAccounts
    * @param stdClass[] $rows
    *   Which are Entry objects flattened by json for transport.
-   * @param string $author
+   * @param Account $author
    * @return Entry[]
    *   The created entries
    */
-  public function upcastEntries(array $rows, Account $author = NULL, bool $additional = FALSE) : void {
+  public function upcastEntries(array $rows, $author_acc_id, bool $additional = FALSE) : void {
     global $config;
     foreach ($rows as $row) {
       // Could this be done earlier?
       if (!$row->quant and !$config['zero_payments']) {
         throw new CCOtherViolation("Zero transactions not allowed on this node.");
       }
-      if ($author){
-        $row->author = $author->id;
+      if ($author_acc_id){
+        $row->author = $author_acc_id;
       }
       $row->isAdditional = $additional;
       $row->isPrimary = empty($this->entries);
-      $this->entries[] = Entry::create($row, $this);
+      if($row->payee instanceOf Branch and $row->payer instanceOf Branch) {
+        // both accounts are leafwards, the current node is at the apex of the route.
+        $create_method = ['EntryTransversal', 'create'];
+      }
+      elseif ($row->payee instanceOf Trunkward or $row->payer instanceOf Trunkward) {
+        // One of the accounts is trunkward, so this class does conversion of amounts.
+        $create_method = ['EntryTrunkward', 'create'];
+      }
+      elseif ($row->payee instanceOf Branch or $row->payer instanceOf Branch) {
+        // One account is local, one account is further leafwards.
+        $create_method = ['EntryTransversal', 'create'];
+      }
+      else {
+        $create_method = ['Entry', 'create'];
+      }
+      $create_method[0] = '\CCNode\Transaction\\'.$create_method[0];
+      $row->isPrimary = empty($this->entries);
+      $this->entries[] = $create_method($row, $this);
     }
   }
 

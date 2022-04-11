@@ -29,17 +29,17 @@ if ($_POST) {
         mod_account('node', $id, $fields);
       }
     }
-    // Save or resave the BoT account
+    // Save or resave the Trunkward account
     if (count($abs_path) > 1) {
-      if (empty($_POST['bot']['url']) and empty($accounts[$trunkwards_name]->url)) {
+      if (empty($_POST['trunkward']['url']) and empty($accounts[$trunkward_name]->url)) {
         die('trunkward account must have a url, or remove it from the path in the general settings.');
       }
       $accs = editable_accounts();
-      if (!isset($accs[$trunkwards_name])) {
-        add_account('node', $_POST['bot'] + ['id' => $trunkwards_name]);
+      if (!isset($accs[$trunkward_name])) {
+        add_account('node', $_POST['trunkward'] + ['id' => $trunkward_name]);
       }
-      elseif (isset($accs[$trunkwards_name])) {
-        mod_account('node', $trunkwards_name, $_POST['bot']);
+      elseif (isset($accs[$trunkward_name])) {
+        mod_account('node', $trunkward_name, $_POST['trunkward']);
       }
     }
   }
@@ -123,7 +123,7 @@ $accs = editable_accounts();
       <?php
       $nodes = array_filter(
         $accs,
-        function($a, $id) use ($trunkwards_name){return !empty($a->url) and $id <> $trunkwards_name;},
+        function($a, $id) use ($trunkward_name){return !empty($a->url) and $id <> $trunkward_name;},
         ARRAY_FILTER_USE_BOTH
       );
       foreach ($nodes as $id => $acc) : ?>
@@ -139,36 +139,36 @@ $accs = editable_accounts();
       </tr>
       <?php endforeach; ?>
       <tr>
-        <td title = "Wallet id, must be unique on this node"><input name="node[new][id]" size = "8" placeholder = "new_account_id" value="<?php $bot_name;?>"></td>
-        <td title = "Url of the remote node"><input name="node[new][url]" size = "8"  value="<?php $bot_url;?>"></td>
+        <td title = "Wallet id, must be unique on this node"><input name="node[new][id]" size = "8" placeholder = "new_account_id" value=""></td>
+        <td title = "Url of the remote node"><input name="node[new][url]" size = "8"  value=""></td>
         <?php print minmax_cell('td', 'node[new]'); ?>
         <td title = "Account is active or blocked"></td>
       </tr>
       </tbody>
       </table>
-<?php if ($trunkwards_name) : ?>
-      <h2>Trunkwards node</h2>
-      <p>The trunkwards node records the balance of trade with the rest of the world.
-        <?php $bot = $accs[$trunkwards_name]??NULL;?>
+<?php if ($trunkward_name) : ?>
+      <h2>Trunkward node</h2>
+      <p>The trunkward node records the balance of trade with the rest of the world.
+        <?php $trunkward_acc = $accs[$trunkward_name]??NULL;?>
       </p>
       <table>
         <thead>
           <tr>
             <th title = "This is how this node identifies itself to the trunkward node.">Node name</th>
-            <th title = "Url of the BoT node">Trunkwards url</th>
+            <th title = "Url of the Trunkward node">Trunkwards url</th>
             <th title = "Minimum/Maximum balance (override default @todo)">Min/Max</th>
             </tr>
         </thead>
         <tbody>
           <tr>
             <td>
-              <?php print $trunkwards_name; ?>
+              <?php print $trunkward_name; ?>
             </td>
             <td>
-              <input name="bot[url]" size = "8" placeholder="http://mynode.net" value="<?php print $bot?$bot->url:''; ?>" <?php if ($bot and $bot->url)print ' disabled';?>><font color=red>*</font>
+              <input name="trunkward[url]" size = "8" placeholder="http://mynode.net" value="<?php print $trunkward_acc?$trunkward_acc->url:''; ?>" <?php if ($bot and $bot->url)print ' disabled';?>><font color=red>*</font>
             </td>
             <td>
-              <?php print minmax_cell('span', 'bot', $bot); ?>
+              <?php print minmax_cell('span', 'trunkward', $trunkward_acc); ?>
             </td>
           </tr>
         <tbody>

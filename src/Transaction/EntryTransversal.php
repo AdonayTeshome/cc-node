@@ -7,6 +7,7 @@ use CCNode\Accounts\Remote;
 /**
  * Transversal entries have different classes (and hence methods) according to
  * which ledger it is shared with.
+ * @todo make a new interface for this.
  */
 class EntryTransversal extends Entry {
 
@@ -37,16 +38,13 @@ class EntryTransversal extends Entry {
         $flat[$role] = $this->{$role}->foreignId();
       }
     }
-    \CCNode\debug('Serialised for branchwards');
-    \CCNode\debug($flat);
     return $flat;
   }
-
 
   // unused?
   private function isGoingBackToClient() : bool {
     return $this->transaction->responseMode and
-      $user->id == $transaction->trunkwardsAccount and
+      $user->id == $transaction->trunkwardAccount and
       !$user instanceOf Remote;
   }
 

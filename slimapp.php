@@ -2,7 +2,7 @@
 /**
  * Reference implementation of a credit commons node
  *
- * @todo find a way to notify the user if the trunkward node is offline.
+ * @todo Update to slim 4 using https://github.com/thephpleague/openapi-psr7-validator/issues/136
  *
  */
 namespace CCNode;
@@ -11,14 +11,16 @@ use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\UnavailableNodeFailure;
-use CreditCommons\Exceptions\PermissionViolation;
-use CreditCommons\Exceptions\AuthViolation;
-use CreditCommons\CreditCommonsInterface;
+use CreditCommons\Exceptions\WrongAccountViolation;
 use CreditCommons\NodeRequester;
 use CreditCommons\Account;
+use CreditCommons\CreditCommonsInterface;
+use CCNode\Accounts\Trunkward;
+use CCNode\Accounts\User;
+use CCNode\Accounts\Branch;
 use CCNode\Slim3ErrorHandler;
+use CCNode\PermissionMiddleware;
 use CCNode\AddressResolver;
-use CCNode\Accounts\BoT;
 use CCNode\AccountStore;
 use CCNode\Accounts\Remote;
 use CCNode\Workflows;
@@ -55,7 +57,9 @@ use Slim\App;
 //    return $response->withStatus($exception->getCode());
 //});
 
+
 $app = new App();
+$app;
 $c = $app->getContainer();
 $getErrorHandler = function ($c) {
   return new Slim3ErrorHandler();
@@ -69,104 +73,167 @@ $c['phpErrorHandler'] = $getErrorHandler;
 $app->get('/', function (Request $request, Response $response) {
   $response->getBody()->write('It works!');
   return $response->withHeader('Content-Type', 'text/html');
-});
+}
+);
 
 /**
  * Implement the Credit Commons API methods
  */
-$app->options('/', function (Request $request, Response $response) {
-  // No access control
-  check_permission($request, 'permittedEndpoints');
-  return json_response($response, permitted_operations());
-});
-$app->options('/.*', function (Request $request, Response $response) {
-  return json_response($response);
-});
+$app->options('/{id:.*}', function (Request $request, Response $response, $args) {
+  global $user;
+  $endpoints = empty($args['id']) ? permitted_operations($user) : [];
+  return json_response($response, $endpoints);
+}
+)->setName('permittedEndpoints')->add(PermissionMiddleware::class);
 
 $app->get('/workflows', function (Request $request, Response $response) {
-  check_permission($request, 'workflows');
-  // Todo need to instantiate workflows with the BoT requester if there is one.
+  // Todo need to instantiate workflows with the Trunkward requester if there is one.
   return json_response($response, (new Workflows())->loadAll());
-});
+}
+)->setName('workflows')->add(PermissionMiddleware::class);
 
 $app->get('/handshake', function (Request $request, Response $response) {
-  check_permission($request, 'handshake');
-  return json_response($response, handshake());
-});
+  global $user;
+  $results = [];
+  // This ensures the handshakes only go one level deep.
+  if ($user instanceOf Accounts\User) {
+    $remote_accounts = AccountStore()->filterFull(local: FALSE);
+    if($trunkw = getConfig('trunkward_acc_id')) {
+      $remote_accounts[] = AccountStore()->fetch($trunkw);
+    }
+    foreach ($remote_accounts as $acc) {
+      if ($acc->id == $user->id) {
+        continue;
+      }
+      try {
+        $acc->handshake();
+        $results[$acc->id] = 'ok';
+      }
+      catch (UnavailableNodeFailure $e) {
+        $results[$acc->id] = 'UnavailableNodeFailure';
+      }
+      catch (HashMismatchFailure $e) {
+        $results[$acc->id] = 'HashMismatchFailure';
+      }
+      catch(\Exception $e) {
+        $results[$acc->id] = get_class($e);
+      }
+    }
+  }
+  return json_response($response, $results);
+}
+)->setName('handshake')->add(PermissionMiddleware::class);
 
 $app->get('/absolutepath', function (Request $request, Response $response) {
   $node_names[] = getConfig('node_name');
-  check_permission($request, 'absolutePath');
-  if ($trunkwards = API_calls()) {
-    $node_names = array_merge($trunkwards->getAbsolutePath(), $node_names);
+  if ($trunkward = API_calls()) {
+    $node_names = array_merge($trunkward->getAbsolutePath(), $node_names);
   }
   return json_response($response, $node_names, 200);
-});
+}
+)->setName('absolutePath')->add(PermissionMiddleware::class);
 
-$app->get('/accounts/names[/{acc_path:.*$}]', function (Request $request, Response $response, $args) {
-  check_permission($request, 'accountNameFilter');
-  $acc_ids = AddressResolver::create()->pathMatch($args['acc_path']??'');
+$app->get('/accounts/names[/[{acc_path:.*$}]]', function (Request $request, Response $response, $args) {
+  global $user;
+  $path = $args['acc_path']??'';
+  //$path = urldecode($args['acc_path'])??'';
+  $node_name = getConfig('node_name');
+  $remote_node = AddressResolver::create()->nodeAndFragment($path);
+  if ($remote_node) {// Match names on a specific node.
+    $acc_ids = $remote_node->autocomplete();
+    if ($remote_node instanceOf Branch and !getConfig('trunkward_acc_id')) {
+      foreach ($acc_ids as &$acc_id) {
+        $acc_id = $node_name .'/'.$acc_id;
+      }
+    }
+  }
+  else {// Match names from here to the trunk.
+    $trunkward_acc_id = getConfig('trunkward_acc_id');
+    $trunkward_names = [];
+    if ($trunkward_acc_id and $user->id <> $trunkward_acc_id) {
+      $trunkward_names = load_account($trunkward_acc_id, $path)->autocomplete();
+    }
+    // Local names.
+    $filtered = accountStore()->filterFull(fragment: trim($path, '/'));
+    $local = [];
+    foreach ($filtered as $acc) {
+      $name = $acc->id;
+      // Exclude the logged in account
+      if ($name == $user->id) continue;
+      if ($acc instanceOf Remote) $name .= '/';
+      if ($user instanceOf Remote) {
+        $local[] = $node_name."/$name";
+      }
+      else {
+        $local[] = $name;
+      }
+    }
+    $acc_ids = array_merge($trunkward_names, $local);
+  }
   //if the request is from the trunk prefix all the results. (rare)
   $limit = $request->getQueryParams()['limit'] ??'10';
   return json_response($response, array_slice($acc_ids, 0, $limit));
-});
+}
+)->setName('accountNameFilter')->add(PermissionMiddleware::class);
 
 $app->get('/account/summary[/{acc_path:.*$}]', function (Request $request, Response $response, $args) {
-  check_permission($request, 'accountSummary');
-  $account = AddressResolver::create()
-    ->resolveToLocalAccount((string)@$args['acc_path'], TRUE);
-  if ($account instanceOf Accounts\User and substr($account->givenPath, -1) == '/') {// All the accounts on a remote node
-    $result = $account->getAccountSummaries(trim($account->givenPath, '/'));
+  if ($path = $args['acc_path']??'') {
+    $account = AddressResolver::create()->nearestNode($path);
+    if ($account instanceof Remote and !$account->isAccount()) {// All the accounts on a remote node
+      $result = $account->getAccountSummaries();
+    }
+    else {// A single account on any node
+      $result = $account->getAccountSummary();
+    }
   }
-  elseif ($account instanceOf Accounts\User) {// An account on this node.
-    $result = $account->getAccountSummary($account->relPath());
-  }
-  elseif ($account == '*') {// All accounts on the current node.
+  else {// All accounts on the current node.
     $result = Transaction::getAccountSummaries(TRUE);
   }
-  $response->getBody()->write(json_encode($result));
-  return $response->withHeader('Content-Type', 'application/json');
-});
+  return json_response($response, $result);
+}
+)->setName('accountSummary')->add(PermissionMiddleware::class);
 
-$app->get('/account/limits/{acc_path:.*$}', function (Request $request, Response $response, $args) {
-  check_permission($request, 'accountLimits');
-  $account = AddressResolver::create()
-    ->resolveToLocalAccount((string)@$args['acc_path'], TRUE);
-  if ($account instanceOf Accounts\User and substr($account->givenPath, -1) == '/') {// All the accounts on a remote node
-    $result = $account->getAllLimits(trim($account->givenPath, '/'));
+$app->get('/account/limits[/{acc_path:.*$}]', function (Request $request, Response $response, $args) {
+  if ($path = $args['acc_path']??'') {
+    $account = AddressResolver::create()->nearestNode($path);
+    if ($account instanceof Remote and !$account->isAccount()) {// All the accounts on a remote node
+      $result = $account->getAllLimits();
+    }
+    else {// A single account on any node
+      $result = $account->getLimits();
+    }
   }
-  elseif ($account instanceOf Accounts\User) {// An account on this node.
-    $result = $account->getLimits($account->relPath());
-  }
-  elseif ($account == '*') {// All accounts on the current node.
+  else {// All accounts on the current node.
     $result = accountStore()->allLimits(TRUE);
   }
   return json_response($response, $result);
-});
+}
+)->setName('accountLimits')->add(PermissionMiddleware::class);
 
 $app->get('/account/history/{acc_path:.*$}', function (Request $request, Response $response, $args) {
-  check_permission($request, 'accountHistory');
-  $account = AddressResolver::create()
-    ->resolveToLocalAccount((string)@$args['acc_path'], TRUE);
-  if (!$account instanceOf \CCNode\Accounts\User) {
-    throw new \CreditCommons\Exceptions\CCOtherViolation("Unable to get history from NULL account");
-  }
-  else {
-    debug("Requesting history for local or remote account $account->id ".$account->relPath());
-  }
-  //@todo cope with various other paths.
+  $path = $args['acc_path'];
+  $account = AddressResolver::create()->localOrRemoteAcc($path);
   $params = $request->getQueryParams() + ['samples' => -1];
-  $result = $account->getHistory($params['samples'], $account->relPath());//@todo refactor this.
+  $result = $account->getHistory($params['samples']);//@todo refactor this.
   $response->getBody()->write(json_encode($result));
   return $response->withHeader('Content-Type', 'application/json');
-});
+}
+)->setName('accountHistory')->add(PermissionMiddleware::class);
 
 $uuid_regex = '[0-9a-f]{8}\b-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-\b[0-9a-f]{12}';
 // Retrieve one transaction
-$app->get('/transaction/{format}/{uuid:'.$uuid_regex.'}', function (Request $request, Response $response, $args) {
-  global $orientation;
-  check_permission($request, 'getTransaction');
-  if ($args['format'] == 'entry') {
+$app->get('/transaction/{uuid:'.$uuid_regex."}[/{node_path}]", function (Request $request, Response $response, $args) {
+  $params = $request->getQueryParams();
+  $entries = $params['entries']??'false';
+  unset($params['entries']);
+  if (!empty($args['node_path'])) {
+    $account = AddressResolver::create()->remoteNode($args['node_path']);
+    if ($account instanceOf Remote) {
+      $result = $account->getTransaction($args['uuid'], $entries == 'true');
+    }
+    else throw new WrongAccountViolation($args['node_path']);
+  }
+  elseif ($entries == 'true') {
     $result = array_values(StandaloneEntry::loadByUuid($args['uuid']));
   }
   else {// format = full (default)
@@ -174,15 +241,26 @@ $app->get('/transaction/{format}/{uuid:'.$uuid_regex.'}', function (Request $req
     $result->responseMode = TRUE;// there's nowhere tidier to do this.
   }
   return json_response($response, $result, 200);
-});
+}
+)->setName('getTransaction')->add(PermissionMiddleware::class);
 
 // Filter transactions
-$app->get('/transaction/{format}', function (Request $request, Response $response, $args) {
-  check_permission($request, 'filterTransactions');
+$app->get('/transactions[/[{node_path}]]', function (Request $request, Response $response, $args) {
   $params = $request->getQueryParams();
   $results = [];
-  if ($uuids = Transaction::filter(...$params)) {// keyed by entries and $args['format'] == 'entry') {
-    if ($args['format'] == 'entry') {
+  $entries = $params['entries']??'false';
+  unset($params['entries']);
+  $node_path = $args['node_path']??'';
+  if ($node_path) {
+    $account = AddressResolver::create()->remoteNode($node_path);
+    if ($account instanceOf Remote) {
+      // @todo this node_path needs to be shortened. Rebuild addressresolver...
+      $results = $account->filterTransactions($request->getQueryParams());
+    }
+    else throw new WrongAccountViolation($node_path);
+  }
+  elseif ($uuids = Transaction::filter(...$params)) {// keyed by entries and $args['format'] == 'entry') {
+    if ($entries == 'true') {
       $results = StandaloneEntry::load(array_keys($uuids));
     }
     else {
@@ -191,17 +269,17 @@ $app->get('/transaction/{format}', function (Request $request, Response $respons
         $results[$uuid] = Transaction::loadByUuid($uuid);
       }
     }
+    // All entries are returned, even to a foreign node.
   }
   return json_response($response, array_values($results), 200);
-});
+}
+)->setName('filterTransactions')->add(PermissionMiddleware::class);
 
 // Create a new transaction
 $app->post('/transaction', function (Request $request, Response $response) {
   global $user;
-  check_permission($request, 'newTransaction');
   $request->getBody()->rewind(); // ValidationMiddleware leaves this at the end.
   $data = json_decode($request->getBody()->getContents());
-debug('incoming: '.print_r($data, 1));
   // validate the input and create UUID
   $from_upstream = NewTransaction::prepareClientInput($data);
   $transaction = Transaction::createFromUpstream($from_upstream); // in state 'init'
@@ -210,15 +288,16 @@ debug('incoming: '.print_r($data, 1));
   $status_code = $transaction->insert();
   // Send the whole transaction back via jsonserialize to the user.
   return json_response($response, $transaction, $status_code);
-});
+}
+)->setName('newTransaction')->add(PermissionMiddleware::class);
 
 // Relay a new transaction
 $app->post('/transaction/relay', function (Request $request, Response $response) {
   global $user;
-  check_permission($request, 'relayTransaction');
   $request->getBody()->rewind(); // ValidationMiddleware leaves this at the end.
   $data = json_decode($request->getBody()->getContents());
-debug('incoming relay: '.print_r($data, 1));
+  // Convert the incoming amounts as soon as possible.
+  $user->convertTrunkwardEntries($data->entries);
   $transaction = TransversalTransaction::createFromUpstream($data);
   $transaction->buildValidate();
   $status_code = $transaction->insert();
@@ -230,13 +309,14 @@ debug('incoming relay: '.print_r($data, 1));
   );
   // $additional_entries via jsonSerialize
   return json_response($response, $additional_entries, 201);
-});
+}
+)->setName('relayTransaction')->add(PermissionMiddleware::class);
 
 $app->patch('/transaction/{uuid:'.$uuid_regex.'}/{dest_state}', function (Request $request, Response $response, $args) {
-  check_permission($request, 'stateChange');
   Transaction::loadByUuid($args['uuid'])->changeState($args['dest_state']);
   return $response->withStatus(201);
-});
+}
+)->setName('stateChange')->add(PermissionMiddleware::class);
 
 global $config;
 if ($config and $config['dev_mode']) {
@@ -278,120 +358,6 @@ function load_account(string $local_acc_id = NULL, string $given_path = NULL) : 
   return $fetched[$local_acc_id];
 }
 
-/**
- * @global \CCNode\type $user
- * @param Request $request
- * @param string $operationId
- * @return void
- * @throws PermissionViolation
- */
-function check_permission(Request $request, string $operationId) : void {
-  global $user;
-  authenticate($request); // This sets $user
-  $permitted = permitted_operations();
-  if (!in_array($operationId, array_keys($permitted))) {
-    $user_id = $user->id;
-    if ($user->id == getConfig('trunkward_acc_id')) {
-      $user_id .= '(trunkward)';
-    }
-    throw new PermissionViolation(operation: $operationId);
-  }
-}
-
-/**
- * Access control for each API method.
- *
- * Anyone can see what endpoints they can user, any authenticated user can check
- * the workflows and the connectivity of adjacent nodes. But most operations are
- * only accessible to direct members and leafward member, making this node quite
- * private with respect to the rest of the tree.
- * @global type $user
- * @return string[]
- *   A list of the api method names the current user can access.
- */
-function permitted_operations() : array {
-  global $user;
-  $data = CreditCommonsInterface::OPERATIONS;
-  $permitted[] = 'permittedEndpoints';
-  if ($user->id <> '-anon-') {
-    $permitted[] = 'handshake';
-    $permitted[] = 'workflows';
-    $permitted[] = 'newTransaction';
-    $permitted[] = 'absolutePath';
-    $permitted[] = 'stateChange';
-    $map = [
-      'filterTransactions' => 'transactions',
-      'getTransaction' => 'transactions',
-      'accountHistory' => 'transactions',
-      'accountLimits' => 'acc_summaries',
-      'accountNameFilter' => 'acc_ids',
-      'accountSummary' => 'acc_summaries'
-    ];
-    foreach ($map as $method => $perm) {
-      if (!$user instanceOf BoT or getConfig("priv.$perm")) {
-        $permitted[] = $method;
-      }
-    }
-    if ($user instanceof Remote) {
-      $permitted[] = 'relayTransaction';
-    }
-  }
-  return array_intersect_key(CreditCommonsInterface::OPERATIONS, array_flip($permitted));
-}
-
-/**
- * Taking the user id and auth key from the header and comparing with the database. If the id is of a remote account, compare the extra
- * @global stdClass $user
- * @param Request $request
- * @return void
- * @throws DoesNotExistViolation|HashMismatchFailure|AuthViolation
- */
-function authenticate(Request $request) : void {
-  global $user;
-  $user = accountStore()->anonAccount();
-  if ($request->hasHeader('cc-user') and $request->hasHeader('cc-auth')) {
-    $acc_id = $request->getHeaderLine('cc-user');
-    // Users connect with an API key which can compared directly with the database.
-    if ($acc_id) {
-      $user = load_account($acc_id);
-      $auth = ($request->getHeaderLine('cc-auth') == 'null') ?
-        NULL : // Don't know why null is returned as a string.
-        $request->getHeaderLine('cc-auth');
-      if ($user instanceOf Remote) {
-        if (!compare_hashes($acc_id, $auth)) {
-//TEMP          throw new HashMismatchFailure(otherNode: $acc_id);
-        }
-      }
-      elseif (!accountStore()->checkCredentials($acc_id, $auth)) {
-        //local user with the wrong password
-        throw new AuthViolation();
-      }
-    }
-    else {
-      // Blank username supplied, fallback to anon
-    }
-  }
-  else {
-    // No attempt to authenticate, fallback to anon
-  }
-}
-
-function compare_hashes(string $acc_id, string $auth) : bool {
-   // this is not super secure...
-  if (empty($auth)) {
-    $query = "SELECT TRUE FROM hash_history "
-      . "WHERE acc = '$acc_id'"
-      . "LIMIT 0, 1";
-    $result = Db::query($query)->fetch_object();
-    return $result == FALSE;
-  }
-  else {
-    // Remote nodes connect with a hash of the connected account, which needs to be compared.
-    $query = "SELECT TRUE FROM hash_history WHERE acc = '$acc_id' AND hash = '$auth' ORDER BY id DESC LIMIT 0, 1";
-    $result = Db::query($query)->fetch_object();
-    return (bool)$result;// temp
-  }
-}
 
 /**
  * Get the object with all the API calls, initialised with a remote account to call.
@@ -431,14 +397,13 @@ function accountStore() : AccountStore {
  * @param int $code
  * @return Response
  */
-function json_response(Response $response, $body, int $code = 200) : Response {
+function json_response(Response $response, $body = NULL, int $code = 200) : Response {
   if (is_scalar($body)){
     throw new CCFailure('Illegal value passed to json_response()');
   }
   $contents = json_encode($body, JSON_UNESCAPED_UNICODE);
   $response->getBody()->write($contents);
-global $user;
-debug("$code outgoing to $user->id: $contents");
+
   return $response->withStatus($code)
     ->withHeader('Access-Control-Allow-Origin', '*')
     ->withHeader('Access-Control-Allow-Methods', 'GET')
@@ -475,55 +440,47 @@ function getConfig(string $var) {
   else return $config[$var];
 }
 
-function debug($val) {
-  static $first = TRUE;
-  $file = getConfig('node_name').'.debug';
-  if (!is_scalar($val)) {
-    $val = print_r($val, 1);
+/**
+ * Access control for each API method.
+ *
+ * Anyone can see what endpoints they can user, any authenticated user can check
+ * the workflows and the connectivity of adjacent nodes. But most operations are
+ * only accessible to direct members and leafward member, making this node quite
+ * private with respect to the rest of the tree.
+ * @param Accounts\User $user
+ * @return string[]
+ *   A list of the api method names the current user can access.
+ * @todo make this more configurable.
+ */
+function permitted_operations(User $user) : array {
+  $permitted[] = 'permittedEndpoints';
+  if ($user->id <> '-anon-') {
+    $permitted[] = 'handshake';
+    $permitted[] = 'workflows';
+    $permitted[] = 'newTransaction';
+    $permitted[] = 'absolutePath';
+    $permitted[] = 'stateChange';
+    $map = [
+      'filterTransactions' => 'transactions',
+      'getTransaction' => 'transactions',
+      'accountHistory' => 'transactions',
+      'accountLimits' => 'acc_summaries',
+      'accountNameFilter' => 'acc_ids',
+      'accountSummary' => 'acc_summaries'
+    ];
+    foreach ($map as $method => $perm) {
+      if (!$user instanceOf Trunkward or getConfig("priv.$perm")) {
+        $permitted[] = $method;
+      }
+    }
+    if ($user instanceof Remote) {
+      $permitted[] = 'relayTransaction';
+    }
   }
-  file_put_contents(
-    $file,
-    ($first ? "\n": '').date('H:i:s')."  $val\n",
-    FILE_APPEND
-  ); //temp
-  $first = FALSE;
+  return array_intersect_key(CreditCommonsInterface::OPERATIONS, array_flip($permitted));
 }
-
 
 function exception_error_handler( $severity, $message, $file, $line ) {
   // all warnings go the debug log AND throw an error
   throw new CCFailure("$message in $file: $line");
 }
-
-
-  /**
-   * Check that all the remote nodes are online and the ratchets match
-   * @return array
-   *   Linked nodes keyed by response_code.
-   */
-  function handshake() : array {
-    global $user;
-    $results = [];
-    if ($user instanceOf Accounts\User) {
-      $remote_accounts = AccountStore()->filterFull(local: FALSE);
-      foreach ($remote_accounts as $acc) {
-        if ($acc->id == $user->id) {
-          continue;
-        }
-        try {
-          $acc->handshake();
-          $results[$acc->id] = 'ok';
-        }
-        catch (UnavailableNodeFailure $e) {
-          $results[$acc->id] = 'UnavailableNodeFailure';
-        }
-        catch (HashMismatchFailure $e) {
-          $results[$acc->id] = 'HashMismatchFailure';
-        }
-        catch(\Exception $e) {
-          $results[$acc->id] = get_class($e);
-        }
-      }
-    }
-    return $results;
-  }

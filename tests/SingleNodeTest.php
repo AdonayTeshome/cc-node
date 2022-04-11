@@ -47,7 +47,7 @@ class SingleNodeTest extends TestBase {
     $acc_id = reset($this->normalAccIds);
     $temp = $this->passwords[$acc_id];
     $this->passwords[$acc_id] = 'blah';
-    $this->sendRequest('absolutepath', 'AuthViolation', $acc_id);
+    $this->sendRequest('absolutepath', 'PasswordViolation', $acc_id);
     $this->passwords[$acc_id] = $temp;
   }
 
@@ -83,7 +83,7 @@ class SingleNodeTest extends TestBase {
     ];
     $this->sendRequest('transaction', 'WrongAccountViolation', $admin, 'post', json_encode($obj));
     $obj->payee = 'aaaaaaaaaaa';
-    $this->sendRequest('transaction', 'DoesNotExistViolation', $admin, 'post', json_encode($obj));
+    $this->sendRequest('transaction', 'PathViolation', $admin, 'post', json_encode($obj));
     $obj->payee = reset($this->adminAccIds);
     $obj->quant = 999999999;
     $this->sendRequest('transaction', 'TransactionLimitViolation', $admin, 'post', json_encode($obj));
@@ -115,7 +115,6 @@ class SingleNodeTest extends TestBase {
     $this->sendRequest('transaction', 'PermissionViolation', '', 'post', json_encode($obj));
     // Default 3rdParty workflow saves transactions immemdiately in completed state.
     $transaction = $this->sendRequest('transaction', 201, $admin, 'post', json_encode($obj));
-    sleep(2);// this is so as not to confuse the history chart, which is indexed by seconds.
     // Check the transaction is written
     $this->assertNotNull($transaction->uuid);
     $this->assertEquals($payee, $transaction->entries[0]->payee);
@@ -129,10 +128,10 @@ class SingleNodeTest extends TestBase {
     $this->assertEquals(['foo' => 'bar'], (array)$transaction->entries[0]->metadata);
 
     // try to retrieve a transaction that doesn't exist.
-    $error = $this->sendRequest('transaction/full/ada5b4f0-33a8-4807-90c7-3aa56ae1c741', 'DoesNotExistViolation', $admin);
+    $error = $this->sendRequest('transaction/ada5b4f0-33a8-4807-90c7-3aa56ae1c741', 'DoesNotExistViolation', $admin);
     $this->assertEquals('transaction', $error->type);
 
-    $this->sendRequest('transaction/full/'.$transaction->uuid.'', 200, $admin);
+    $this->sendRequest('transaction/'.$transaction->uuid.'', 200, $admin);
   }
 
   function testTransactionLifecycle() {
@@ -145,8 +144,6 @@ class SingleNodeTest extends TestBase {
     }
     // Check the balances first
     $init_summary = $this->sendRequest("account/summary/$payee", 200, $payee);
-    $init_points = (array)$this->sendRequest("account/history/$payee", 200, $payee);
-    $this->assertNotEmpty($init_points);
     $transaction_description = 'test bill';
     $obj = (object)[
       'payee' => $payer,
@@ -167,8 +164,8 @@ class SingleNodeTest extends TestBase {
     $this->assertEquals("validated", $transaction->state);
     $this->assertEquals('0', $transaction->version);
     // check that nobody else can see this transaction
-    $this->sendRequest("transaction/full/$transaction->uuid", 'CCViolation', $payer);
-    $this->sendRequest("transaction/full/$transaction->uuid", 200, $admin);
+    $this->sendRequest("transaction/$transaction->uuid", 'CCViolation', $payer);
+    $this->sendRequest("transaction/$transaction->uuid", 200, $admin);
 
     // write the transaction
     $this->sendRequest("transaction/$transaction->uuid/pending", 'PermissionViolation', '', 'patch', json_encode($obj));
@@ -225,39 +222,35 @@ class SingleNodeTest extends TestBase {
       $completed_summary->completed->trades,
       $init_summary->completed->trades +1
     );
-    sleep(2);// so the last point on account history doesn't override the previous transaction
-    $completed_points = (array)$this->sendRequest("account/history/$payee", 200, $payee);
-    // Had a lot of trouble working out how much greater than.
-    $this->assertGreaterThan(count($init_points), count($completed_points));
 
     // Filtering.
     $norm_user = reset($this->normalAccIds);
-    $this->sendRequest("transaction/full", 'PermissionViolation', '');
-    $results = $this->sendRequest("transaction/full", 200, $norm_user);
+    $this->sendRequest("transactions", 'PermissionViolation', '');
+    $results = $this->sendRequest("transactions", 200, $norm_user);
     $first_uuid = reset($results)->uuid;
-    $this->sendRequest("transaction/full/$first_uuid", 'PermissionViolation', '');
-    $this->sendRequest("transaction/full/$first_uuid", 200, $norm_user);
-    $this->sendRequest("transaction/entry/$first_uuid", 200, $norm_user);
-    $results = $this->sendRequest("transaction/entry?description=$transaction_description", 200, $norm_user);
+    $this->sendRequest("transaction/$first_uuid", 'PermissionViolation', '');
+    $this->sendRequest("transaction/$first_uuid", 200, $norm_user);
+    $this->sendRequest("transaction/$first_uuid?entries=true", 200, $norm_user);
+    $results = $this->sendRequest("transactions?entries=true&description=$transaction_description", 200, $norm_user);
     // test that every result entry contains the string
     $counts = [];
     foreach ($results as $standaloneEntiry) {
       $counts[] = strpos($standaloneEntiry->description, $transaction_description);
     }
     $this->assertContainsOnly('int', $counts, TRUE, 'Transaction did not filter by description ');
-    $all_entries = $this->sendRequest("transaction/entry", 200, $norm_user);
+    $all_entries = $this->sendRequest("transactions?entries=true", 200, $norm_user);
     if (count($all_entries) < 3) {
       echo 'Unable to test offset?pager=0,3 with only '.count($all_entries). 'entries saved.';
     }
     else {
-      $limited = $this->sendRequest("transaction/entry?pager=0,3", 200, $norm_user);
+      $limited = $this->sendRequest("transactions?entries=true&pager=0,3", 200, $norm_user);
       $this->assertEquals(3, count($limited), "Pager failed to return 3 entries");
     }
-    $limited = $this->sendRequest("transaction/entry?pager=1,1", 200, $norm_user);
+    $limited = $this->sendRequest("transactions?entries=true&pager=1,1", 200, $norm_user);
     $this->assertEquals(array_slice($all_entries, 1, 1), $limited, "The offset/limit queryparams don't work");
 
     // test the sort
-    $results = $this->sendRequest("transaction/full?states=erased,complete", 200, $norm_user);
+    $results = $this->sendRequest("transactions?states=erased,complete", 200, $norm_user);
     $err = FALSE;
     foreach ($results as $result) {
       if (!in_array($result->state, ['erased', 'completed'])) {
@@ -266,7 +259,7 @@ class SingleNodeTest extends TestBase {
     }
     $this->assertEquals(FALSE, $err, 'Failed to filter by 2 states.');
 
-    $results = $this->sendRequest("transaction/full?involving=$payee", 200, $norm_user);
+    $results = $this->sendRequest("transactions?involving=$payee", 200, $norm_user);
     foreach ($results as $res) {
       if (strpos($res->entries[0]->payer, $payee) !== FALSE and strpos($res->entries[0]->payee, $payee) !== FALSE) {
         $err = TRUE;
@@ -277,13 +270,10 @@ class SingleNodeTest extends TestBase {
     $this->sendRequest("transaction/$transaction->uuid/erased", 201, $admin, 'patch');
     $erased_summary = $this->sendRequest("account/summary/$payee", 200, $payee);
     $this->assertEquals($erased_summary, $init_summary);
-    $erased_points = (array)$this->sendRequest("account/history/$payee", 200, $payee);
-    $this->assertEquals(count($erased_points), count($init_points));
   }
 
   function testAccountSummaries() {
     $user1 = reset($this->normalAccIds);
-    $this->sendRequest("account/history/$user1", 'PermissionViolation', '');
     //  Currently there is no per-user access control around limits visibility.
     $limits = $this->sendRequest("account/limits/$user1", 200, $user1);
     $this->assertlessThan(0, $limits->min, "Minimum account limit was not less than zero.");

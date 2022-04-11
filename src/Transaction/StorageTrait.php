@@ -2,7 +2,9 @@
 
 namespace CCNode\Transaction;
 
+use CCNode\Accounts\Trunkward;
 use CCNode\Transaction\Entry;
+use CCNode\Transaction\EntryTrunkward;
 use CCNode\Accounts\Remote;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\CCFailure;
@@ -27,7 +29,7 @@ trait StorageTrait {
     if (!$tx) {
       throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
     }
-    $q = "SELECT payee, payer, description, quant, author, metadata, is_primary FROM entries "
+    $q = "SELECT payee, payer, description, quant, trunkward_quant, author, metadata, is_primary FROM entries "
       . "WHERE txid = $tx->txID "
       . "ORDER BY id ASC";
     $result = Db::query($q);
@@ -43,10 +45,10 @@ trait StorageTrait {
       $row->metadata = unserialize($row->metadata);
       $tx->entries[] = $row;
     }
-    $class = Entry::upcastAccounts($tx->entries);
+    $t_class = Entry::upcastAccounts($tx->entries);
 
     // All these values should be validated, so no need to use static::create
-    $transaction = $class::create($tx);
+    $transaction = $t_class::create($tx);
 
     return $transaction;
   }
@@ -72,6 +74,7 @@ trait StorageTrait {
     $connection = \CCNode\Db::connect();
     $new_id = $connection->query("SELECT LAST_INSERT_ID() as id")->fetch_object()->id;
     $this->writeEntries($new_id);
+    $this->responseMode = TRUE;
     return $new_id;
   }
     /**
@@ -79,16 +82,15 @@ trait StorageTrait {
    * @param int $id
    */
   protected function writeHashes(int $id) {
-    \CCNode\debug($this->entries[0]);
     $payee_hash = $payer_hash = '';
     if ($this->entries[0]->payee instanceOf Remote) {
       $acc = $this->entries[0]->payee;
-      $entries = $this->filterFor($acc, $acc instanceOf \CCNode\Accounts\BoT);
+      $entries = $this->filterFor($acc, $acc instanceOf Trunkward);
       $payee_hash = $this->getHash($acc, $entries);
     }
     if ($this->entries[0]->payer instanceOf Remote) {
       $acc = $this->entries[0]->payer;
-      $entries = $this->filterFor($acc, $acc instanceOf \CCNode\Accounts\BoT);
+      $entries = $this->filterFor($acc, $acc instanceOf Trunkward);
       $payer_hash = $this->getHash($acc, $entries);
     }
     $query = "UPDATE transactions SET payee_hash = '$payee_hash', payer_hash = '$payer_hash' WHERE id = $id";
@@ -122,7 +124,6 @@ trait StorageTrait {
    * @note No database errors are anticipated.
    */
   private function insertEntry(int $txid, Entry $entry) : int {
-
     // Calculate metadata for local storage
     foreach (['payee', 'payer'] as $role) {
       $$role = $entry->{$role}->id;
@@ -133,8 +134,9 @@ trait StorageTrait {
     $metadata = serialize($entry->metadata);
     $desc = Db::connect()->real_escape_string($entry->description);
     $primary = $entry->primary??0;
-    $q = "INSERT INTO entries (txid, payee, payer, quant, description, author, metadata, is_primary) "
-      . "VALUES ($txid, '$payee', '$payer', '$entry->quant', '$desc', '$entry->author', '$metadata', '$primary')";
+    $trunkward_quant = $entry instanceOf EntryTrunkward ? $entry->trunkward_quant : 0;
+    $q = "INSERT INTO entries (txid, payee, payer, quant, trunkward_quant, description, author, metadata, is_primary) "
+      . "VALUES ($txid, '$payee', '$payer', '$entry->quant', '$trunkward_quant', '$desc', '$entry->author', '$metadata', '$primary')";
     if ($this->id = Db::query($q)) {
       return (bool)$this->id;
     }
@@ -159,12 +161,20 @@ trait StorageTrait {
     string $involving = NULL,
     string $author = NULL,
     string $description = NULL,
-    string $states = NULL,//todo should we pass an array here?
-    string $types = NULL,//todo should we pass an array here?
+    string $states = NULL,//comma separated
+    string $state = NULL,//todo should we pass an array here?
+    string $types = NULL,//comma separated
+    string $type = NULL,//todo should we pass an array here?
     string $before = NULL,
     string $after = NULL,
   ) : array {
     global $user;
+    if (isset($state) and !isset($states)) {
+      $states = [$state];
+    }
+    if (isset($type) and !isset($types)) {
+      $type = [$type];
+    }
     // Get only the latest version of each row in the transactions table.
     $query = "SELECT e.id, t.uuid FROM transactions t "
       . "INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver "
@@ -232,7 +242,6 @@ trait StorageTrait {
       $conditions[] = "state <> 'erased'";
     }
     $conditions[] ="(t.version > 0 OR e.author = '$user->id')";
-
     if (isset($types)) {
       $conditions[] = self::manyCondition('type', $types);
     }
