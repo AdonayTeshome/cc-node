@@ -19,7 +19,7 @@ class Slim3ErrorHandler {
   public function __invoke($request, $response, $exception) {
     global $user;
     if (getConfig('dev_mode')) {
-      //file_put_contents('last_exception.log', print_r($exception, 1)); //temp
+      file_put_contents('last_exception.log', print_r($exception, 1)); //temp
     }
     $exception_class = explode('\\', get_class($exception));
     $exception_class = array_pop($exception_class);

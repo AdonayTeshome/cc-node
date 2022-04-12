@@ -16,13 +16,17 @@ use CreditCommons\Exceptions\WorkflowViolation;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\TransactionInterface;
 use CreditCommons\BaseTransaction;
-use CreditCommons\Account;
 use function CCNode\load_account;
 
 class Transaction extends BaseTransaction implements \JsonSerializable {
   use \CCNode\Transaction\StorageTrait;
 
   protected $workflow;
+  /**
+   * The database ID of the transaction, (for linking to the entries table)
+   * @var int
+   */
+  protected int $txID;
 
   /**
    * FALSE for request, TRUE for response mode
@@ -37,11 +41,21 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * @return \static
    */
   public static function createFromUpstream(\stdClass $data) : BaseTransaction {
-    global $user;
     $data->state = TransactionInterface::STATE_INITIATED;
     $transaction_class = Entry::upcastAccounts($data->entries);
     return $transaction_class::create($data);
+    // N.B. This isn't saved yet.
   }
+
+  static function create(\stdClass $data) : static {
+    $data->version = $data->version??-1;
+    $data->written = $data->written??'';
+    static::validateFields($data);
+    $t = new static($data->uuid, $data->written, $data->type, $data->state, $data->entries, $data->version);
+    $t->txID = $data->txID??0;
+    return $t;
+  }
+
 
   /**
    * Call the business logic, append entries.
@@ -65,7 +79,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
         $row->payee = load_account($row->payee);
         $row->payer = load_account($row->payer);
       }
-      $this->upcastEntries($rows, $row->author, TRUE);
+      $this->upcastEntries($rows, TRUE);
     }
     $first_entry = reset($this->entries);
     foreach ($this->sum() as $acc_id => $info) {
@@ -119,7 +133,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * @param string $target_state
    * @throws WorkflowViolation
    */
-  function changeState(string $target_state) {
+  function changeState(string $target_state) : int {
     global $user;
     // If the logged in account is local, then at least one of the local accounts must be local.
     // No leaf account can manipulate transactions which only bridge this ledger.
@@ -130,17 +144,20 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
         to: $args['dest_state'],
       );
     }
+    if ($target_state == 'null' and $this->state == 'validated') {
+      $this->delete();
+      return 200;
+    }
     if ($user->admin or $this->getWorkflow()->canTransitionToState($user->id, $this, $target_state)) {
       $this->state = $target_state;
+      $this->saveNewVersion();
+      return 201;
     }
-    else {
-      throw new WorkflowViolation(
-        type: $this->type,
-        from: $this->state,
-        to: $target_state,
-      );
-    }
-    $this->saveNewVersion();
+    throw new WorkflowViolation(
+      type: $this->type,
+      from: $this->state,
+      to: $target_state,
+    );
   }
 
   /**
@@ -205,22 +222,21 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * Make entry objects from json entries with users already upcast by Entry::upcastAccounts
    * @param stdClass[] $rows
    *   Which are Entry objects flattened by json for transport.
-   * @param Account $author
    * @return Entry[]
    *   The created entries
    */
-  public function upcastEntries(array $rows, $author_acc_id, bool $additional = FALSE) : void {
-    global $config;
+  public function upcastEntries(array $rows, bool $additional = FALSE) : void {
+    global $config, $user;
     foreach ($rows as $row) {
       // Could this be done earlier?
       if (!$row->quant and !$config['zero_payments']) {
         throw new CCOtherViolation("Zero transactions not allowed on this node.");
       }
-      if ($author_acc_id){
-        $row->author = $author_acc_id;
-      }
       $row->isAdditional = $additional;
       $row->isPrimary = empty($this->entries);
+      if (empty($row->author)) {
+        $row->author = $user->id;
+      }
       if($row->payee instanceOf Branch and $row->payer instanceOf Branch) {
         // both accounts are leafwards, the current node is at the apex of the route.
         $create_method = ['EntryTransversal', 'create'];

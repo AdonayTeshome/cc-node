@@ -144,7 +144,6 @@ class MultiNodeTest extends SingleNodeTest {
       'type' => 'credit',
       'metadata' => ['foo' => 'bar']
     ];
-    echo json_encode($obj);
     $tx = $this->sendRequest('transaction', 200, $obj->payer, 'post', json_encode($obj));
     $this->sendRequest("transaction/$tx->uuid/pending", 201, $obj->payer, 'patch');
     if ($this->trunkwardId) {

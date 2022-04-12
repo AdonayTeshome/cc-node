@@ -44,19 +44,3 @@ $app->add(function (Psr\Http\Message\ServerRequestInterface $request, Psr\Http\M
   return $response;
 });
 $app->run();
-
-
-/**
- * Write a message to a debug file.
- */
-function debug($val) {
-  $file = getConfig('node_name').'.debug';
-  if (!is_scalar($val)) {
-    $val = print_r($val, 1);
-  }
-  $written = file_put_contents(
-    $file,
-    date('H:i:s')."  $val\n",
-    FILE_APPEND
-  );
-}

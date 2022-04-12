@@ -57,7 +57,6 @@ use Slim\App;
 //    return $response->withStatus($exception->getCode());
 //});
 
-
 $app = new App();
 $app;
 $c = $app->getContainer();
@@ -313,8 +312,9 @@ $app->post('/transaction/relay', function (Request $request, Response $response)
 )->setName('relayTransaction')->add(PermissionMiddleware::class);
 
 $app->patch('/transaction/{uuid:'.$uuid_regex.'}/{dest_state}', function (Request $request, Response $response, $args) {
-  Transaction::loadByUuid($args['uuid'])->changeState($args['dest_state']);
-  return $response->withStatus(201);
+  $status_code = Transaction::loadByUuid($args['uuid'])->changeState($args['dest_state']);
+  debug('$status_code = '.$status_code);
+  return $response->withStatus($status_code);
 }
 )->setName('stateChange')->add(PermissionMiddleware::class);
 
@@ -402,8 +402,8 @@ function json_response(Response $response, $body = NULL, int $code = 200) : Resp
     throw new CCFailure('Illegal value passed to json_response()');
   }
   $contents = json_encode($body, JSON_UNESCAPED_UNICODE);
+//debug($contents);
   $response->getBody()->write($contents);
-
   return $response->withStatus($code)
     ->withHeader('Access-Control-Allow-Origin', '*')
     ->withHeader('Access-Control-Allow-Methods', 'GET')
@@ -483,4 +483,20 @@ function permitted_operations(User $user) : array {
 function exception_error_handler( $severity, $message, $file, $line ) {
   // all warnings go the debug log AND throw an error
   throw new CCFailure("$message in $file: $line");
+}
+
+
+/**
+ * Write a message to a debug file.
+ */
+function debug($val) {
+  $file = \CCNode\getConfig('node_name').'.debug';
+  if (!is_scalar($val)) {
+    $val = print_r($val, TRUE);
+  }
+  $written = file_put_contents(
+    $file,
+    date('H:i:s')."  $val\n",
+    FILE_APPEND
+  );
 }

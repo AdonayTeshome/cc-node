@@ -23,8 +23,7 @@ class TransversalTransaction extends Transaction {
     public string $type,
     public string $state,
     array $entries,
-    public int $version,
-    public int $txID // We only know this for saved transaction, not new or upstream transactions
+    public int $version
   ) {
     global $user;
     $this->upstreamAccount = $user instanceof Remote ? $user : NULL;
@@ -56,7 +55,8 @@ class TransversalTransaction extends Transaction {
     elseif ($this->downstreamAccount and $this->downstreamAccount->id == $trunkward_name) {
       $this->trunkwardAccount = $this->downstreamAccount;
     }
-    $this->upcastEntries($entries, $user->id);
+
+    $this->upcastEntries($entries);
   }
 
   /**
@@ -67,7 +67,7 @@ class TransversalTransaction extends Transaction {
     if ($this->downstreamAccount) {
       $rows = $this->downstreamAccount->buildValidateRelayTransaction($this);
       Entry::upcastAccounts($rows);
-      $this->upcastEntries($rows, $this->downstreamAccount->id, TRUE);
+      $this->upcastEntries($rows, TRUE);
     }
     $this->responseMode = TRUE;
   }
@@ -182,12 +182,13 @@ class TransversalTransaction extends Transaction {
   /**
    * {@inheritDoc}
    */
-  function changeState(string $target_state) {
+  function changeState(string $target_state) : int {
     if ($this->downstreamAccount) {
       API_calls($this->downstreamAccount)->transactionChangeState($this->uuid, $target_state);
     }
-    parent::changeState($target_state);
+    $status_code = parent::changeState($target_state);
     $this->responseMode = TRUE;
+    return $status_code;
   }
 
 

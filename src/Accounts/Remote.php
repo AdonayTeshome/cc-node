@@ -221,6 +221,7 @@ class Remote extends User implements RemoteAccountInterface {
       foreach ($entries as &$e) {
         $e->trunkward_quant = $e->quant;
         $e->quant = ceil($e->quant / $rate);
+        $e->author = $this->id;
       }
     }
   }

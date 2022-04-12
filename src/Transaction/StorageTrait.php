@@ -13,6 +13,8 @@ use CCNode\Db;
 
 trait StorageTrait {
 
+  static $timeFormat = 'Y-m-d H:i:s';
+
   /**
    * @param type $uuid
    * @return \Transaction
@@ -63,7 +65,12 @@ trait StorageTrait {
    */
   public function saveNewVersion() : int {
     global $user;
-    $now = date("Y-m-d H:i:s");
+    if ($this->state == 'validated') {
+      // No user would ever need more than one transaction in validated state.
+      $this->deleteValidated($user->id);
+    }
+
+    $now = date(self::$timeFormat);
     $this->written = $now;
     $this->version++;
 
@@ -71,13 +78,36 @@ trait StorageTrait {
     . "VALUES ('$this->uuid', $this->version, '$this->type', '$this->state', '$user->id', '$this->written')";
     $success = Db::query($query);
 
-    $connection = \CCNode\Db::connect();
-    $new_id = $connection->query("SELECT LAST_INSERT_ID() as id")->fetch_object()->id;
+    $new_id = Db::query("SELECT LAST_INSERT_ID() as id")->fetch_object()->id;
     $this->writeEntries($new_id);
-    $this->responseMode = TRUE;
+    $this->responseMode = TRUE; // Feels awkward but is still the best place for this.
     return $new_id;
   }
-    /**
+
+  function deleteValidated(string $acc_id) {
+    $result = Db::query("SELECT id FROM transactions where state = 'validated' and scribe = '$acc_id'")->fetch_object();
+    if ($result) {
+      Db::query("DELETE FROM transactions WHERE id = $result->id");
+      Db::query("DELETE FROM entries WHERE txid = $result->id");
+    }
+  }
+
+  /**
+   * suitable for calling by cron.
+   */
+  static function cleanValidated() {
+    $cutoff_moment = date(self::$timeFormat, time() - \CCNode\getConfig('validated_window'));
+
+    $result = Db::query("SELECT id FROM transactions where state = 'validated' and written < '$cutoff_moment'");
+    foreach ($result->fetch_all() as $row) {
+      $ids[] = $row[0];
+    }
+    $in = '('.implode(',', $ids).')';
+    Db::query("DELETE FROM transactions WHERE id IN $in");
+    Db::query("DELETE FROM entries WHERE txid = $in");
+  }
+
+  /**
    *
    * @param int $id
    */
@@ -140,6 +170,13 @@ trait StorageTrait {
     if ($this->id = Db::query($q)) {
       return (bool)$this->id;
     }
+  }
+
+
+  //This can only be done on transactions in state validated and possibly local transactions.
+  function delete() {
+    Db::query("DELETE FROM transactions WHERE uuid = '$this->uuid'");
+    Db::query("DELETE FROM entries WHERE txid = '$this->txID'");
   }
 
   /**
@@ -216,11 +253,11 @@ trait StorageTrait {
     // NB this uses the date the transaction was last written, not created.
     // to use the created date would require joining the current query to transactions where version =1
     if (isset($before)) {
-      $date = date("Y-m-d H:i:s", strtotime($before));
+      $date = date(self::$timeFormat, strtotime($before));
       $conditions[]  = "written < '$date'";
     }
     if (isset($after)) {
-      $date = date("Y-m-d H:i:s", strtotime($after));
+      $date = date(self::$timeFormat, strtotime($after));
       $conditions[]  = "written > '$date'";
     }
     if (isset($states)) {
