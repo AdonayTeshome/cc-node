@@ -70,10 +70,9 @@ $c['phpErrorHandler'] = $getErrorHandler;
  * Default HTML page. (Not part of the API)
  */
 $app->get('/', function (Request $request, Response $response) {
-  $response->getBody()->write('It works!');
-  return $response->withHeader('Content-Type', 'text/html');
-}
-);
+  header('Location: index.html');
+  exit;
+});
 
 /**
  * Implement the Credit Commons API methods

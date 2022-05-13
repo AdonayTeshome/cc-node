@@ -5,10 +5,10 @@
 
 declare(strict_types=1);
 
+require_once './vendor/autoload.php';
 ini_set('html_errors', '0');
-
 $config = parse_ini_file('./node.ini');
-if (empty($config['db']['name'])) {
+if (\CCNode\Db::connect($config['db']['name'], $config['db']['user'], $config['db']['pass'], $config['db']['server'])->connect_error) {
   header('Location: config/index.php');
 }
 if ($config['dev_mode']){
@@ -18,7 +18,6 @@ if ($config['dev_mode']){
   file_put_contents('error.log', '');// server may not be able to recreate the file.
 }
 
-require_once './vendor/autoload.php';
 //  Simpletest needs to be able to call $app->run() itself.
 require './slimapp.php';
 

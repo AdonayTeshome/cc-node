@@ -109,6 +109,7 @@ function editable_accounts(array $accounts = []) : array {
       $account->id = $id;
       if ($account->max === '')$account->max = NULL;
       if ($account->min === '')$account->min = NULL;
+      $account->admin = (bool)@$account->admin;
     }
     file_put_contents(ACCOUNT_STORE, json_encode($accounts));
     return [];

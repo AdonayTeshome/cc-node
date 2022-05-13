@@ -67,7 +67,6 @@ $accs = editable_accounts();
             <th title = "Password-like string">API Key</th>
             <th title = "Minimum/Maximium balance REQUIRED">Min/Max</th>
             <th title = "Checked if this account has admin privileges">Admin</th>
-            <th title = "Account is active or blocked">Enabled</th>
           </tr>
         </thead>
         <tbody>
@@ -85,9 +84,6 @@ $accs = editable_accounts();
             <td title = "Checked if this account has admin privileges">
               <input name="user[<?php print $id;?>][admin]" type="checkbox" value = "1" <?php print !empty($acc->admin)?'checked':'';?>>
             </td>
-            <td title = "Account is active or blocked">
-              <input type="checkbox" name="user[<?php print $id ?>][status]" value = 1 <?php if ($acc->status) print ' checked'?> />
-            </td>
           </tr>
           <?php endforeach; ?>
           <tr>
@@ -101,9 +97,6 @@ $accs = editable_accounts();
             <td title = "Checked if this account has admin privileges">
               <input name="user[new][admin]" type="checkbox" value = "1" >
             </td>
-            <td title = "Account is active or blocked">
-              <input name="user[new][status]" type="checkbox" value = 1 checked />
-            </td>
           </tr>
         </tbody>
       </table>
@@ -116,7 +109,6 @@ $accs = editable_accounts();
           <th title = "Wallet id, must be unique on this node">Node name</th>
           <th title = "Url of the node">Node url</th>
           <th title = "Minimum/Maximum balance (override default @todo)">Min/Max</th>
-          <th title = "Account is active or blocked">Enabled</th>
         </tr>
       </thead>
       <tbody>
@@ -133,16 +125,12 @@ $accs = editable_accounts();
           <input name="node[<?php print $id;?>][url]" placeholder="http://mynode.net" value="<?php print $acc->url;?>" size = "8">
         </td>
         <?php print minmax_cell('td', 'node['.$id.']', $acc); ?>
-        <td title = "Account is active or blocked">
-          <input type="checkbox" name="node[<?php print $id; ?>][status]" value = 1 <?php if ($acc->status) print ' checked'?> />
-        </td>
       </tr>
       <?php endforeach; ?>
       <tr>
         <td title = "Wallet id, must be unique on this node"><input name="node[new][id]" size = "8" placeholder = "new_account_id" value=""></td>
         <td title = "Url of the remote node"><input name="node[new][url]" size = "8"  value=""></td>
         <?php print minmax_cell('td', 'node[new]'); ?>
-        <td title = "Account is active or blocked"></td>
       </tr>
       </tbody>
       </table>
@@ -187,7 +175,6 @@ function add_account($type, $fields): void {
   unset($fields['id']);
   $fields = array_filter($fields, 'strlen');
   $fields += [
-    'status' => 0,
     'admin' => 0
   ];
   if ($type == 'node') {
@@ -215,16 +202,9 @@ function add_account($type, $fields): void {
 function mod_account($type, $id, $fields) : void {
   // Ensure there's a value in case of empty checkboxes
   $fields['admin'] = (int)!empty($fields['admin']);
-  $fields['status'] = (int)!empty($fields['status']);
   $accounts = editable_accounts();
   $accounts[$id] = (object)$fields;
   editable_accounts($accounts);
-}
-
-
-function status_cell($tag, $type, $acc = NULL) {
-  $status = $acc && isset($acc->status) ? $acc->status : NULL;
-  ?><checkbox name="<?php print $type; ?>[status]" value = 1 <?php if ($status) print ' checked'?>><?php
 }
 
 function minmax_cell($tag, $type, $acc = NULL) {

@@ -22,13 +22,13 @@ class UserRecord extends Record {
   function __construct(\stdClass $data) {
     parent::__construct($data->id, $data->min??NULL, $data->max??NULL);
     $this->key = $data->key;
-    $this->admin = (bool)$data->admin;
+    $this->admin = (bool)@$data->admin;
   }
 
 
   function set(\stdClass $new_data) {
     if (isset($new_data->admin)) {
-      $this->admin = (bool)$new_data->admin;
+      $this->admin = (bool)@$new_data->admin;
     }
     parent::set($new_data);
   }
