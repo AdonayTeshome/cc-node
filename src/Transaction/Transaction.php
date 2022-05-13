@@ -86,7 +86,8 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       // Note only in the accounts in the main entry are limit-checked.
       $account = load_account($acc_id);
       $acc_summary = $account->getAccountSummary();
-      $projected = $acc_summary->pending->balance + $info->diff;
+      $stats = getConfig('validate_pending') ? $acc_summary->pending : $acc_summary->completed;
+      $projected = $stats->balance + $info->diff;
       if ($projected > $first_entry->payee->max) {
         throw new MaxLimitViolation(limit: $first_entry->payee->max, projected: $projected);
       }
@@ -168,7 +169,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * @return array
    *   The differences, keyed by account name.
    */
-  public function sum() : array {
+  private function sum() : array {
     $accounts = [];
     foreach ($this->entries as $entry) {
       $accounts[$entry->payee->id] = $entry->payee;

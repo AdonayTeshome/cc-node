@@ -1,8 +1,8 @@
 [microservices]
-;url of the policy service
-account_store_url = "http://accounts.ccnode"
-;url of the blogic service (optional)
-blogic_service_url = "http://blogic.ccnode"
+;url of the policy service e.g. http://accounts.ccnode.com
+account_store_url = ""
+;url of the blogic service (optional) e.g. http://blogic.ccnode.com
+blogic_service_url = ""
 
 [db]
 db[server] = "localhost"
@@ -33,6 +33,8 @@ validated_window = 300
 display_format = ''
 ;Whether payments of zero are valid
 zero_payments = 0
+;Validate transactions against pending balances.
+validate_pending = 1
 
 ;Stop on all notices and warnings.
 dev_mode=0
