@@ -17,6 +17,7 @@ use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\TransactionInterface;
 use CreditCommons\BaseTransaction;
 use function CCNode\load_account;
+use function CCNode\getConfig
 
 class Transaction extends BaseTransaction implements \JsonSerializable {
   use \CCNode\Transaction\StorageTrait;
