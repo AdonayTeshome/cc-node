@@ -157,7 +157,7 @@ $app->get('/accounts/names[/[{acc_path:.*$}]]', function (Request $request, Resp
     foreach ($filtered as $acc) {
       $name = $acc->id;
       // Exclude the logged in account
-      if ($name == $user->id) continue;
+      if ($user instanceOf Accounts\RemoteAccountInterface and $name == $user->id) continue;
       if ($acc instanceOf Remote) $name .= '/';
       if ($user instanceOf Remote) {
         $local[] = $node_name."/$name";
