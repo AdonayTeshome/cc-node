@@ -126,7 +126,7 @@ components:
       type: object
       description: All the ledger needs to know about an account.
       properties:
-        name:
+        id:
           type: string
           description: The name of the account in the ledger
           example: jack99
@@ -138,15 +138,11 @@ components:
           type: number
           description: the maximum allowed balance for an account
           example: 100
-        blocked:
-          type: boolean
-          description: TRUE if the account is blocked.
-          example: false
         admin:
           type: boolean
           description: TRUE if the account is admin.
           example: false
         url:
           type: string
-          description: URL of the connected credit commons ledger (remote accounts only)
+          description: URL of the connected credit commons ledger. Leave blank for local accounts.
           example: http://cc.example.com
