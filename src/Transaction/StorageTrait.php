@@ -335,10 +335,10 @@ trait StorageTrait {
 
   /**
    *
-   * @param bool $include_virgins
+   * @param bool $include_virgin_wallets
    * @return array
    */
-  static function getAccountSummaries($include_virgins = FALSE) : array {
+  static function getAccountSummaries($include_virgin_wallets = FALSE) : array {
     $results = $all_balances = [];
         $balances = [];
     $result = Db::query("SELECT uid1, uid2, diff, state, is_primary "
@@ -360,9 +360,9 @@ trait StorageTrait {
         $balances[$row->uid2]->completed->logTrade(-$row->diff, $row->uid1, $row->is_primary);
       }
     }
-    if ($include_virgins) {
+    if ($include_virgin_wallets) {
       $all_account_names = \CCNode\accountStore()->filter();
-      $missing = array_diff($all_account_names, array_keys($all_balances));
+      $missing = array_diff($all_account_names, array_keys($balances));
       foreach ($missing as $name) {
         $balances[$name] = (object)[
           'completed' => \CCNode\TradeStats::builder(),
