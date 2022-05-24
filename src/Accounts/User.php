@@ -96,11 +96,10 @@ class User extends Account {
    *   Two groups of stats, with keys 'completed' and 'pending'.
    */
   function getAccountSummary() : \stdClass {
-    $result = Transaction::accountSummary($this->id);
     $completed = TradeStats::builder();
     $pending = TradeStats::builder();
 
-    while ($row = $result->fetch_object()) {
+    while ($row = Transaction::accountSummary($this->id)->fetch_object()) {
       // All transactions contribute to the pending stats.
       $pending->logTrade($row->diff, $row->partner, $row->isPrimary);
       if ($row->state == 'completed') {
