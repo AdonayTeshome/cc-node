@@ -2,12 +2,10 @@
 
 namespace CCNode\Accounts;
 
-use CCNode\Accounts\Remote;
-use CreditCommons\NodeRequester;
 use CCNode\Transaction\Transaction;
 
 /**
- * Class representing a remote account, which authorises using its latest hash.
+ * Class representing a remote account (or remote node) and managing queries to it.
  */
 interface RemoteAccountInterface {
 
@@ -19,16 +17,19 @@ interface RemoteAccountInterface {
   function getLastHash() : string;
 
   /**
-   * @return NodeRequester
-   *   Connection to the remote node
-   */
-  function API() : NodeRequester;
-
-  /**
    * The path to the remote account relative to this account on the local ledger.
    * @return string
    */
   function relPath() : string;
+
+  /**
+   * Check if this Account points to a remote account, rather than a remote node.
+   * @return bool
+   *   TRUE if this object references a remote account, not a whole node
+   *
+   * @todo refactor Address resolver so this isn't necessary in Entry::upcastAccounts
+   */
+  public function isAccount() : bool;
 
   /**
    * @return string
@@ -45,11 +46,11 @@ interface RemoteAccountInterface {
   function buildValidateRelayTransaction(Transaction $transaction) : array;
 
   /**
-   * Convert entry values (if upstream is trunkwards);
+   * Convert incoming entry values (if upstream is trunkwards);
    * @param array $entries
    * @return void
    */
-  public function convertTrunkwardEntries(array &$entries) : void;
+  public function convertIncomingEntries(array &$entries) : void;
 
   /**
    * Autocomplete fragment using account names on a remote node;
@@ -66,22 +67,14 @@ interface RemoteAccountInterface {
    * @param bool $full
    * @return \stdClass
    */
-  function getTransaction(string $uuid, bool $full = TRUE) : \stdClass;
-
-  /**
-   * Filter transactions on the remote node.
-   *
-   * @param array $params
-   * @return array
-   */
-  function filterTransactions(array $params = []) : array;
+  function retrieveTransaction(string $uuid, bool $full = TRUE) : \CreditCommons\BaseTransaction|array;
 
   /**
    * Get all the account summaries on a remote node.
    *
    * @return array
    */
-  function getAccountSummaries() : array;
+  function getAllSummaries() : array;
 
   /**
    * @return []

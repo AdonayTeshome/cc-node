@@ -27,6 +27,14 @@ class TestBase extends TestCase {
       $path = strstr($path, '?', TRUE);
       parse_str(substr($query, 1), $params);
     }
+    // This is a medium term hack to get around OpenAPI not supporting optional path parameters.
+    if (substr($path, 0, 7) == 'account' and count(explode('/', $path)) > 2) {
+      $trailing_slash = substr($path, -1) == '/' ? '/' : '';
+      $subpath = implode('/', array_slice(explode('/', $path), 2));
+      $old_subpath = $subpath;
+      \CreditCommons\NodeRequester::prepareAccPath($subpath);
+      $path = str_replace($old_subpath, $subpath, $path) . $trailing_slash;
+    }
 
     $request = $this->getRequest($path, $method);
     if (isset($params)) {
@@ -98,7 +106,8 @@ class TestBase extends TestCase {
 
 
   function loadAccounts($relative_path = '') {
-    $this->nodePath = explode('/', \CCNode\getConfig('abs_path'));
+    global $config;
+    $this->nodePath = explode('/', $config->absPath);
     $this->rawAccounts = (array)json_decode(file_get_contents($relative_path .'store.json'));
 
     foreach ($this->rawAccounts as $acc_id => $acc) {
@@ -112,7 +121,7 @@ class TestBase extends TestCase {
         }
       }
       elseif (!empty($acc->url)) {
-        if ($acc->id == \CCNode\getConfig('trunkward_acc_id')) {
+        if ($acc->id == $config->trunkwardAcc) {
           $this->trunkwardId = $acc_id;
         }
         else {

@@ -34,6 +34,7 @@ class Entry extends BaseEntry implements \JsonSerializable {
     foreach ([$payee, $payer] as $acc) {
       // Ideally this check would be a little more 'hard-wired' but that would require big architecture changes
       if ($acc instanceOf Remote and !$acc->relPath()) {
+        print_r($acc);
         throw new WrongAccountViolation($acc->id);
       }
     }

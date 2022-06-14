@@ -24,14 +24,17 @@ class AccountStore extends Requester implements AccountStoreInterface {
    * @var Account[]
    */
   private $cached = [];
+  private $trunkwardAcc;
 
-  function __construct($base_url) {
+  function __construct($base_url, $trunkward_acc = '') {
     parent::__construct($base_url);
     $this->options[RequestOptions::HEADERS]['Accept'] = 'application/json';
+    $this->trunkwardAcc = $trunkward_acc;
   }
 
   public static function create() : AccountStoreInterface {
-    return new static(getConfig('account_store_url'));
+    global $config;
+    return new static($config->accountStoreUrl, $config->trunkwardAcc);
   }
 
   /**
@@ -66,7 +69,7 @@ class AccountStore extends Requester implements AccountStoreInterface {
       }
     }
     $results = (array)$this->localRequest($path);
-    $pos = array_search(getConfig('trunkward_acc_id'), $results);
+    $pos = array_search($this->trunkwardAcc, $results);
     if ($pos !== FALSE) {
       unset($results[$pos]);
     }
@@ -97,7 +100,7 @@ class AccountStore extends Requester implements AccountStoreInterface {
     $results = (array)$this->localRequest('filter/full');
     // remove the trunkward account
     foreach ($results as $key => $r) {
-      if ($r->id == getConfig('trunkward_acc_id')) {
+      if ($r->id == $this->trunkwardAcc) {
         unset($results[$key]);
         break;
       }
@@ -207,15 +210,13 @@ class AccountStore extends Requester implements AccountStoreInterface {
    * in the ledger tree.
    *
    * @param \stdClass $data
-   * @param string $trunkward_acc_id
    * @return string
    */
   private static function determineAccountClass(\stdClass $data) : string {
-    global $user;
-    $trunkward_acc_id = \CCNode\getConfig('trunkward_acc_id');
+    global $user, $config;
     if (!empty($data->url)) {
       $upS = $user ? ($data->id == $user->id) : TRUE;
-      $trunkward = $data->id == $trunkward_acc_id;
+      $trunkward = $data->id == $config->trunkwardAcc;
       if ($trunkward and $upS) {
         $class = 'UpstreamTrunkward';
       }

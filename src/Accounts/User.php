@@ -95,11 +95,11 @@ class User extends Account {
    * @return CreditCommons\TradeStats[]
    *   Two groups of stats, with keys 'completed' and 'pending'.
    */
-  function getAccountSummary() : \stdClass {
+  function getSummary($force_local = FALSE) : \stdClass {
     $completed = TradeStats::builder();
     $pending = TradeStats::builder();
-
-    while ($row = Transaction::accountSummary($this->id)->fetch_object()) {
+    $results = Transaction::accountSummary($this->id);
+    while ($row = $results->fetch_object()) {
       // All transactions contribute to the pending stats.
       $pending->logTrade($row->diff, $row->partner, $row->isPrimary);
       if ($row->state == 'completed') {
@@ -113,7 +113,7 @@ class User extends Account {
     ];
   }
 
-  function getLimits() : \stdClass {
+  function getLimits($force_local = FALSE) : \stdClass {
     return (object)['min' => $this->min, 'max' => $this->max];
   }
 
@@ -125,13 +125,18 @@ class User extends Account {
    * Get the address for passing trunkwards or branchwards.
    * @return string
    */
-  function foreignId() :string {
-    $parts =  [\CCNode\getConfig('node_name'), $this->id];
+  function foreignId() : string {
+    global $config;
+    $parts =  [$config->nodeName, $this->id];
     if ($r = $this->relPath()) {
       $parts[] = $r;
     }
     return implode('/', $parts);
   }
 
+  //this is overridden by Remote
+  function isAccount() :bool {
+    return TRUE;
+  }
 }
 

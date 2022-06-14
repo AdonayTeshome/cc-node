@@ -16,11 +16,12 @@ class Db {
    * @return bool false on failure / mysqli MySQLi object instance on success.
    */
   public static function connect($db = '', $user = NULL, $pass = NULL, $server = NULL) : \mysqli {
+    global $config;
     if(!isset(static::$connection) or $db) {
-      $db = $db ?: getConfig('db.name');
-      $db_user = $user?:getConfig('db.user');
-      $db_pass = isset($pass)?$pass:getConfig('db.pass');
-      $db_server = $server?:getConfig('db.server');
+      $db = $db ?: $config->dbCreds['name'];
+      $db_user = $user?:$config->dbCreds['user'];
+      $db_pass = isset($pass)?$pass:$config->dbCreds  ['pass'];
+      $db_server = $server?:$config->dbCreds['server'];
       static::$connection = new \mysqli($db_server, $db_user, $db_pass, $db);
     }
     return static::$connection;

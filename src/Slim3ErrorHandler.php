@@ -17,8 +17,8 @@ class Slim3ErrorHandler {
    * protected and is lost during json_encode
    */
   public function __invoke($request, $response, $exception) {
-    global $user;
-    if (getConfig('dev_mode')) {
+    global $user, $config;
+    if ($config->devMode) {
       file_put_contents('last_exception.log', print_r($exception, 1)); //temp
     }
     $exception_class = explode('\\', get_class($exception));
@@ -38,7 +38,7 @@ class Slim3ErrorHandler {
     else {// All CreditCommons error classes.
       $output = (object)($exception);
     }
-    $output->node = $exception->node??getConfig('node_name');
+    $output->node = $exception->node??$config->nodeName;
     $output->method = $request->getMethod();
     $output->path = $request->geturi()->getPath();
     $output->class = $exception_class;

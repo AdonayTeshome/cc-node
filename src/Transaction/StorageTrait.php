@@ -96,7 +96,8 @@ trait StorageTrait {
    * suitable for calling by cron.
    */
   static function cleanValidated() {
-    $cutoff_moment = date(self::$timeFormat, time() - \CCNode\getConfig('validated_window'));
+    global $config;
+    $cutoff_moment = date(self::$timeFormat, time() - $config->validatedWindow);
 
     $result = Db::query("SELECT id FROM transactions where state = 'validated' and written < '$cutoff_moment'");
     foreach ($result->fetch_all() as $row) {
@@ -304,6 +305,12 @@ trait StorageTrait {
     return $results;
   }
 
+  /**
+   * Database query builder helper
+   * @param string $fieldname
+   * @param array $vals
+   * @return string
+   */
   private static function manyCondition  (string $fieldname, array $vals) : string {
     if ($vals) {
       foreach ($vals as $s) {$strings[] = "'".$s."'";}
@@ -361,7 +368,7 @@ trait StorageTrait {
       }
     }
     if ($include_virgin_wallets) {
-      $all_account_names = \CCNode\accountStore()->filter();
+      $all_account_names = accountStore()->filter();
       $missing = array_diff($all_account_names, array_keys($balances));
       foreach ($missing as $name) {
         $balances[$name] = (object)[

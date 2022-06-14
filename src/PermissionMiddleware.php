@@ -13,19 +13,18 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 class PermissionMiddleware {
 
   public function __invoke(Request $request, Response $response, callable $next) : Response {
-    global $user;
+    global $user, $config;
     $user = $this->authenticate($request);
 
     // The name corresponds roughly to the api route name, except where phptest doesn't support optional params
     $operationId = $request->getAttribute('route')->getName();
-    if (!in_array($operationId, array_keys(permitted_operations($user)))) {
-      if ($user->id == getConfig('trunkward_acc_id')) {
+    if (!in_array($operationId, array_keys(permitted_operations()))) {
+      if ($user->id == $config->trunkwardAcc) {
         // Change the username for a more helpful error message.
         $user->id .= ' (trunkward)';
       }
       throw new PermissionViolation(operation: $operationId);
     }
-
     return $next($request, $response);
   }
 
@@ -36,6 +35,7 @@ class PermissionMiddleware {
    * @throws DoesNotExistViolation|HashMismatchFailure|AuthViolation
    */
   function authenticate(Request $request) : User {
+    global $config;
     $user = accountStore()->anonAccount();
     if ($request->hasHeader('cc-user') and $request->hasHeader('cc-auth')) {
       $acc_id = $request->getHeaderLine('cc-user');
@@ -62,7 +62,7 @@ class PermissionMiddleware {
     else {
       // No attempt to authenticate, fallback to anon
     }
-    if (!$user instanceOf Remote and \CCNode\getConfig('dev_mode')) {
+    if (!$user instanceOf Remote and $config->devMode) {
       // only display errors on the leaf node. Downstream errors are handled.
       ini_set('display_errors', 1);
     }

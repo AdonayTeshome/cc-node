@@ -1,18 +1,16 @@
 <?php
+declare(strict_types=1);
 /**
  * Reference implementation of a credit commons node
  */
-
-declare(strict_types=1);
-
 require_once './vendor/autoload.php';
 ini_set('html_errors', '0');
-$config = parse_ini_file('./node.ini');
-if (\CCNode\Db::connect($config['db']['name'], $config['db']['user'], $config['db']['pass'], $config['db']['server'])->connect_error) {
+$temp_config = parse_ini_file('./node.ini');
+if (\CCNode\Db::connect($temp_config['db']['name'], $temp_config['db']['user'], $temp_config['db']['pass'], $temp_config['db']['server'])->connect_error) {
   header('Location: config/index.php');
 }
-if ($config['dev_mode']){
-  $node_name = array_pop(explode('/', $config['abs_path']));
+if ($temp_config['dev_mode']){
+  $node_name = array_pop(explode('/', $temp_config['abs_path']));
   //file_put_contents($node_name.'.debug', '');
   file_put_contents('last_exception.log', '');// server may not be able to recreate the file.
   file_put_contents('error.log', '');// server may not be able to recreate the file.

@@ -11,10 +11,8 @@ class AccountStoreTest extends TestBase {
   const API_FILE_PATH = 'AccountStore/accountstore.openapi.yml';
 
   function __construct() {
-    global $config;
     parent::__construct();
     require_once __DIR__.'/../slimapp.php';
-    $node_name = \CCNode\getConfig('node_name');
     chdir(__DIR__.'/../AccountStore');
     $this->loadAccounts('');
   }
