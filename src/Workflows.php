@@ -4,7 +4,7 @@ namespace CCNode;
 use CreditCommons\NodeRequester;
 use CreditCommons\Workflow;
 use CreditCommons\Exceptions\DoesNotExistViolation;
-
+use CCNode\API_calls;
   /**
    * A helper class for dealing with Workflows
    */
@@ -46,8 +46,11 @@ class Workflows extends \CreditCommons\Workflows {
         }
       }
       else {
-        new \CreditCommons\Exceptions\CCFailure('Bad json workflows file');
+        throw new \CreditCommons\Exceptions\CCFailure('Bad json workflows file');
       }
+    }
+    else {
+      throw new \CreditCommons\Exceptions\CCFailure('Missing workflows.json file at '.getcwd());
     }
     return $wfs;
   }
@@ -81,7 +84,7 @@ class Workflows extends \CreditCommons\Workflows {
       }
       else{
         global $config;
-        $abs_path = getConfig('node_name');
+        $abs_path = $config->nodeName;
       }
       $trunkward_tree[$abs_path] = $local_workflows;
     }

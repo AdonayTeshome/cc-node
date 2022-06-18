@@ -11,11 +11,12 @@ use CreditCommons\AccountStoreInterface;
 use GuzzleHttp\RequestOptions;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Exception\RequestException;
 
 /**
  * Handle requests & responses from the ledger to the accountStore.
  */
-class AccountStore extends Requester implements AccountStoreInterface {
+class AccountStoreRest extends Requester implements AccountStoreInterface {
 
   private $exists = [];
 
@@ -24,18 +25,17 @@ class AccountStore extends Requester implements AccountStoreInterface {
    * @var Account[]
    */
   private $cached = [];
+  private $trunkwardAcc;
 
-  function __construct($base_url) {
-    parent::__construct($base_url);
+  function __construct() {
+    global $config;
+    parent::__construct($config->accountStore);
     $this->options[RequestOptions::HEADERS]['Accept'] = 'application/json';
-  }
-
-  public static function create() : AccountStoreInterface {
-    return new static(getConfig('account_store_url'));
+    $this->trunkwardAcc = $config->trunkwardAcc;
   }
 
   /**
-   * @inheritdoc
+   * {@inheritDoc}
    */
   function checkCredentials(string $name, string $pass) : bool {
     try {
@@ -48,65 +48,52 @@ class AccountStore extends Requester implements AccountStoreInterface {
     return TRUE;
   }
 
-
+  /**
+   * {@inheritDoc}
+   */
   function filter(
-    int $offset = 0,
+    string $fragment = NULL,
+    bool $local = NULL,
+    bool $admin = NULL,
     int $limit = 10,
-    bool $local= NULL,
-    string $fragment = NULL
+    int $offset = 0,
+    bool $full = TRUE
   ) : array {
-    $path = 'filter';
-    if (isset($local)) {
+    global $config;
+    if ($config->devMode) {
+      // Because phpunit mode makes lots of requests with the same object.
+      $this->options[RequestOptions::QUERY] = [];//
+    }
+    if (!is_null($fragment)) {
+      $this->options[RequestOptions::QUERY]['fragment'] = $fragment;
+    }
+    if (!is_null($local)) {
       // covert to a path boolean... tho shouldn't guzzle do that?
       $this->options[RequestOptions::QUERY]['local'] = $local ? 'true' : 'false';
     }
-    foreach(['fragment', 'offset', 'limit'] as $param) {
-      if (isset($$param)) {
-        $this->options[RequestOptions::QUERY][$param] = $$param;
-      }
+    if (!is_null($admin)) {
+      // covert to a path boolean... tho shouldn't guzzle do that?
+      $this->options[RequestOptions::QUERY]['admin'] = $admin ? 'true' : 'false';
     }
-    $results = (array)$this->localRequest($path);
-    $pos = array_search(getConfig('trunkward_acc_id'), $results);
-    if ($pos !== FALSE) {
-      unset($results[$pos]);
+    if ($limit) {
+      $this->options[RequestOptions::QUERY]['limit'] = $limit;
+    }
+    if ($offset) {
+      $this->options[RequestOptions::QUERY]['offset'] = $offset;
+    }
+    $results = (array)$this->localRequest('filter');
+    if ($full) {
+      $results = (array)$this->localRequest('filter/full');
+      $results = array_map([$this, 'upcast'], $results);
+    }
+    else {
+      $results = (array)$this->localRequest('filter');
     }
     return $results;
   }
 
   /**
-   * @inheritdoc
-   */
-  function filterFull(
-    int $offset = 0,
-    int $limit = 10,
-    bool $local = NULL,
-    string $fragment = NULL
-  ) : array {
-    if (isset($local)) {
-      // covert to a path boolean... tho shouldn't guzzle do that?
-      $this->options[RequestOptions::QUERY]['local'] = $local ? 'true' : 'false';
-    }
-    $this->options[RequestOptions::QUERY]['full'] = 'true';
-
-    foreach(['fragment', 'offset', 'limit'] as $param) {
-      if (isset($$param)) {
-        $this->options[RequestOptions::QUERY][$param] = $$param;
-      }
-    }
-    // 404?
-    $results = (array)$this->localRequest('filter/full');
-    // remove the trunkward account
-    foreach ($results as $key => $r) {
-      if ($r->id == getConfig('trunkward_acc_id')) {
-        unset($results[$key]);
-        break;
-      }
-    }
-    return array_map([$this, 'upcast'], $results);
-  }
-
-  /**
-   * @inheritdoc
+   * {@inheritDoc}
    */
   function fetch(string $name) : Account {
     $path = urlencode($name);
@@ -126,29 +113,28 @@ class AccountStore extends Requester implements AccountStoreInterface {
   }
 
   /**
-   * Get the transaction limits for all accounts.
+   * Get the transaction limits for all accounts (except trunkward)
    * @return array
    */
   function allLimits() : array {
     $limits = [];
-    foreach ($this->filterFull() as $info) {
+    foreach ($this->filter() as $info) {
       $limits[$info->id] = (object)['min' => $info->min, 'max' => $info->max];
     }
     return $limits;
   }
 
   /**
-   * @inheritdoc
+   * {@inheritDoc}
    */
   public function has(string $name) : bool {
     if ((!in_array($name, $this->exists))) {
       try {
-
         $this->method = 'HEAD';
         $this->localRequest($name);
         $this->method = 'GET';
       }
-      catch (\GuzzleHttp\Exception\RequestException $e) {
+      catch (RequestException $e) {
         $this->method = 'GET';
         return FALSE;
       }
@@ -169,7 +155,7 @@ class AccountStore extends Requester implements AccountStoreInterface {
       $response = $client->{$this->method}($endpoint, $this->options);
     }
     catch (RequestException $e) {
-      if ($e->getStatusCode() == 500) {
+      if ($e->getCode() == 500) {
         throw new CCFailure($e->getMessage());
       }
       throw $e;
@@ -207,15 +193,13 @@ class AccountStore extends Requester implements AccountStoreInterface {
    * in the ledger tree.
    *
    * @param \stdClass $data
-   * @param string $trunkward_acc_id
    * @return string
    */
   private static function determineAccountClass(\stdClass $data) : string {
-    global $user;
-    $trunkward_acc_id = \CCNode\getConfig('trunkward_acc_id');
+    global $user, $config;
     if (!empty($data->url)) {
       $upS = $user ? ($data->id == $user->id) : TRUE;
-      $trunkward = $data->id == $trunkward_acc_id;
+      $trunkward = $data->id == $config->trunkwardAcc;
       if ($trunkward and $upS) {
         $class = 'UpstreamTrunkward';
       }
@@ -234,6 +218,5 @@ class AccountStore extends Requester implements AccountStoreInterface {
     }
     return 'CCNode\Accounts\\'. $class;
   }
-
 
 }

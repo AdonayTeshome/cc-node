@@ -3,7 +3,6 @@
 namespace CCNode\Transaction;
 use CCNode\Transaction\EntryTransversal;
 use CreditCommons\BaseEntry;
-use function \CCNode\getConfig;
 
 /**
  * Entry which is shared with the trunkward ledger and has a special 'quant'
@@ -14,9 +13,10 @@ class EntryTrunkward extends EntryTransversal {
   public int $trunkward_quant;
 
   static function create(\stdClass $data, $transaction) : BaseEntry {
+    global $config;
     $e = parent::create($data, $transaction);
     if (!isset($e->trunkward_quant)) {
-      $e->trunkward_quant = $data->trunkward_quant ?? ceil($e->quant * getConfig('conversion_rate'));
+      $e->trunkward_quant = $data->trunkward_quant ?? ceil($e->quant * $config->conversionRate);
     }
     return $e;
   }

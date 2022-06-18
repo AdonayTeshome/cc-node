@@ -3,7 +3,7 @@ namespace CCNode\Transaction;
 use CCNode\Transaction\Entry;
 use CCNode\Transaction\Transaction;
 use CCNode\Accounts\Remote;
-use function \CCNode\getConfig;
+use CreditCommons\TransactionInterface;
 use function \CCNode\API_calls;
 
 /**
@@ -25,12 +25,11 @@ class TransversalTransaction extends Transaction {
     array $entries,
     public int $version
   ) {
-    global $user;
+    global $user, $config;
     $this->upstreamAccount = $user instanceof Remote ? $user : NULL;
     $payer = $entries[0]->payer;
     $payee = $entries[0]->payee;
     // Find the downstream account
-    $trunkward_name = getConfig('trunkward_acc_id');
     // if there's an upstream account, then the other one, if remote is downstream
     if ($this->upstreamAccount) {
       if ($this->upstreamAccount->id == $payee->id and $payer instanceOf Remote) {
@@ -49,14 +48,20 @@ class TransversalTransaction extends Transaction {
       }
     }
     /// Set the trunkward account only if it is used.
-    if ($this->upstreamAccount and $this->upstreamAccount->id == $trunkward_name) {
+    if ($this->upstreamAccount and $this->upstreamAccount->id == $config->trunkwardAcc) {
       $this->trunkwardAccount = $this->upstreamAccount;
     }
-    elseif ($this->downstreamAccount and $this->downstreamAccount->id == $trunkward_name) {
+    elseif ($this->downstreamAccount and $this->downstreamAccount->id == $config->trunkwardAcc) {
       $this->trunkwardAccount = $this->downstreamAccount;
     }
-
     $this->upcastEntries($entries);
+  }
+
+  public static function createFromUpstream(\stdClass $data) : TransactionInterface {
+    $data->state = TransactionInterface::STATE_INITIATED;
+    $transaction_class = Entry::upcastAccounts($data->entries);
+    return $transaction_class::create($data);
+    // N.B. This isn't saved yet.
   }
 
   /**
@@ -66,6 +71,8 @@ class TransversalTransaction extends Transaction {
     parent::buildvalidate();
     if ($this->downstreamAccount) {
       $rows = $this->downstreamAccount->buildValidateRelayTransaction($this);
+\CCNode\debug('received from downstream...');
+\CCNode\debug($rows);
       Entry::upcastAccounts($rows);
       $this->upcastEntries($rows, TRUE);
     }
@@ -99,7 +106,9 @@ class TransversalTransaction extends Transaction {
     $remote_name = $account->id;
     foreach ($this->entries as $e) {
       if ($e->payee->id == $remote_name or $e->payer->id == $remote_name) {
-        $entries[] = $e;
+        $clone = clone($e);
+        unset($e->transaction); //no longer needed and clutters the debug.
+        $entries[] = $clone;
       }
     }
     return $entries;
@@ -156,6 +165,8 @@ class TransversalTransaction extends Transaction {
       // Forward the whole transaction minus a few properties.
       unset($array['status'], $array['workflow'], $array['payeeHash'], $array['payerHash'], $array['transitions']);
     }
+    \CCNode\debug('serializing...');
+    \CCNode\debug($array);
     return $array;
   }
 
@@ -182,15 +193,14 @@ class TransversalTransaction extends Transaction {
   /**
    * {@inheritDoc}
    */
-  function changeState(string $target_state) : int {
+  function changeState(string $target_state) : bool {
     if ($this->downstreamAccount) {
       API_calls($this->downstreamAccount)->transactionChangeState($this->uuid, $target_state);
     }
-    $status_code = parent::changeState($target_state);
+    $saved = parent::changeState($target_state);
     $this->responseMode = TRUE;
-    return $status_code;
+    return $saved;
   }
-
 
   /**
    * Return TRUE if the response is directed towards the trunk.

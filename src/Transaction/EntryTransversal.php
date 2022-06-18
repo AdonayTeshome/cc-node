@@ -49,9 +49,9 @@ class EntryTransversal extends Entry {
   }
 
   protected function includeMetaData() {
-    global $user;
+    global $user, $config;
     if ($user == $this->transaction->trunkwardAccount and $this->transaction->responseMode == TRUE) {
-      return \CCNode\getConfig('priv.metadata');
+      return $config->privacy['metadata'];
     }
     else return TRUE;
   }

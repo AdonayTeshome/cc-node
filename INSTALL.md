@@ -5,7 +5,7 @@
 * Mysql or mariadb.
 * Composer (php package manager). [Install Composer](https://getcomposer.org/download)
 * A web browser (unless you want to configure ini files by hand)
-* A client application which supports the credit commons API. eg the [developer client](https://gitlab.com/credit-commons-software-stack/cc-dev-client)
+* A client application which supports the credit commons API. eg the [developer client](https://gitlab.com/credit-commons/cc-dev-client)
 
 # Installation procedure for single instance.
 
@@ -22,7 +22,7 @@
 # Setup for local development
 
   * Run composer as above but without the ``--no-dev`` flag. This will include the packages needed for testing.
-  * The OpenApi spec is at vendor/credit-commons-software-stack/cc-php-lib/docs/credit-commons-openapi-3.0.yml
+  * The OpenApi spec is at vendor/credit-commons/cc-php-lib/docs/credit-commons-openapi-3.0.yml
   * unittest compares inputs and outputs against the (local) Openapi spec. To run the battery of tests, from the node root ,do ``vendor/bin/phpunit tests/SingleNodeTest.php``
 
 # Minimal settings for virtualhosts
@@ -32,13 +32,4 @@
   DocumentRoot /var/www/localhost/cc-node
 </VirtualHost>
 
-<VirtualHost *:80>
-  ServerName blogic.myccnode
-  DocumentRoot /var/www/localhost/cc-node/BlogicService
-</VirtualHost>
-
-<VirtualHost *:80>
-  ServerName accounts.myccnode
-  DocumentRoot /var/www/localhost/cc-node/AccountStore
-</VirtualHost>``
 Each of these documentRoots must have the .htaccess file provided, as must myccnode/config

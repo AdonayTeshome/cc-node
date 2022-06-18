@@ -18,7 +18,6 @@ class Remote extends User implements RemoteAccountInterface {
    * @var string
    */
   public string $givenPath = '';
-  private float $trunkwardConversionRate = 0;
 
   function __construct(
     string $id,
@@ -29,19 +28,35 @@ class Remote extends User implements RemoteAccountInterface {
      * @var string
      */
     public string $url
-   ) {
+  ) {
     parent::__construct($id, $min, $max, FALSE);
-    if ($id == \CCNode\getConfig('trunkward_acc_id')) {
-      $rate = \CCNode\getConfig('conversion_rate');
-      if ($rate <> 1) {
-        $this->trunkwardConversionRate = \CCNode\getConfig('conversion_rate');
-      }
-    }
   }
 
   static function create(\stdClass $data) : User {
     static::validateFields($data);
     return new static($data->id, $data->min, $data->max, $data->url);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  function relPath() : string {
+    $parts = explode('/', $this->givenPath);
+    // remove everything including the node name.
+    $pos = array_search($this->id, $parts);
+    if (FALSE !== $pos) {
+      $parts = array_slice($parts, $pos+1);
+    }
+
+    \CCNode\debug("RelPath of Trunkward is ". implode('/', $parts).' - ' . print_R($this, 1));
+    return implode('/', $parts);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function isAccount() : bool {
+    return substr($this->givenPath, -1) <> '/';
   }
 
   /**
@@ -63,16 +78,9 @@ class Remote extends User implements RemoteAccountInterface {
   /**
    * {@inheritdoc}
    */
-  public function API() : NodeRequester {
-    return new NodeRequester($this->url, \CCNode\getConfig('node_name'), $this->getLastHash());
-  }
-
-  /**
-   * {@inheritdoc}
-   */
   public function buildValidateRelayTransaction(Transaction $transaction) : array {
     $rows = $this->API()->buildValidateRelayTransaction($transaction);
-    $this->convertTrunkwardEntries($rows);
+    $this->convertIncomingEntries($rows);
     return $rows;
   }
 
@@ -82,7 +90,7 @@ class Remote extends User implements RemoteAccountInterface {
   public function handshake() : string {
     try {
       $this->API()->handshake();
-      return 'ok';
+      return 'ok'; // @todo shouldn't this return nothing or fail?
     }
     catch (CCFailure $e) {// fails to catch.
       return get_class($e);
@@ -99,23 +107,16 @@ class Remote extends User implements RemoteAccountInterface {
   /**
    * {@inheritdoc}
    */
-  public function getTransaction(string $uuid, $full = TRUE) : \stdClass {
+  public function retrieveTransaction(string $uuid, $full = TRUE) : \CreditCommons\BaseTransaction|array {
     $result = $this->API()->getTransaction($uuid, $this->relPath(), $full);
-    $this->convertTrunkwardEntries($result->entries);
-    $result->responseMode = TRUE;
-    return $result;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  function getAccountSummary() : \stdClass {
-    if ($this->relPath()) {
-      $result = $this->API()->getAccountSummary($this->relPath());
-      $this->convertSummary($result);
+    if (is_array($result)) {
+      $this->convertIncomingEntries($result);
+      // DO we need responsemode on each of these?
     }
     else {
-      $result = parent::getAccountSummary();
+      $result = TransversalTransaction::createFromDownstream($result);
+      $this->convertIncomingEntries($result->entries);
+      $result->responseMode = TRUE;
     }
     return $result;
   }
@@ -123,15 +124,42 @@ class Remote extends User implements RemoteAccountInterface {
   /**
    * {@inheritdoc}
    */
-  function getLimits() : \stdClass {
-    if ($this->relPath()) {
+  function getSummary($force_local = FALSE) : \stdClass {
+    if ($force_local) {
+      $result = parent::getSummary();
+    }
+    else {
+      // An account on another (branchward) node
+      $result = $this->API()->getAccountSummary($this->relPath());
+      $result = reset($result);
+    }
+    return $result;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  function getAllSummaries() : array {
+    // the relPath should have a slash at the end of it.
+    return $this->API()->getAccountSummary($this->relPath());
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  function getLimits($force_local = FALSE) : \stdClass {
+    if ($this->isAccount()) {
       $result = $this->API()->getAccountLimits($this->relPath());
-      $this->convertLimits($result);// convert values from trunkward nodes.
     }
     else {
       $result = parent::getLimits();
     }
     return $result;
+  }
+
+  function getAllLimits() : array {
+    // the relPath should have a slash at the end of it.
+    return $this->API()->getAccountLimits($this->relPath());
   }
 
   /**
@@ -151,95 +179,21 @@ class Remote extends User implements RemoteAccountInterface {
   }
 
   /**
-   * {@inheritdoc}
-   */
-  function relPath() : string {
-    $parts = explode('/', $this->givenPath);
-    // remove everything including the node name.
-    $pos = array_search($this->id, $parts);
-    if (FALSE !== $pos) {
-      $parts = array_slice($parts, $pos+1);
-    }
-    return implode('/', $parts);
-  }
-
-  /**
-   * Check if this Account points to a remote account, rather than a remote node.
-   * @return bool
-   *
-   * @todo refactor Address resolver so this isn't necessary in Entry::upcastAccounts
-   */
-  public function isAccount() {
-    return substr($this->givenPath, -1) <> '/';
-  }
-
-  /**
-   * These methods belong to remote Nodes rather than remote accounts.
-   */
-
-  /**
-   * {@inheritdoc}
-   */
-  function getAccountSummaries() : array {
-    $summaries = $this->API()->getAccountSummaries($this->relPath());
-    foreach ($summaries as $acc_id => &$summary) {
-      $this->convertSummary($summary);
-    }
-    return $summaries;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  function getAllLimits() : array {
-    // why isn't this using the given path?
-    $all_limits = (array)$this->API()->getAllAccountLimits($this->relPath());
-    foreach ($all_limits as &$limits) {
-      $this->convertLimits($limits);
-    }
-    return $all_limits;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  function filterTransactions(array $params = []) : array {
-    $results = $this->API()->filterTransactions(fields: $params, node_path: $this->relPath());
-    foreach ($results as &$result) {
-      $this->convertTrunkwardEntries($result->entries);
-      $result->responseMode = TRUE;
-    }
-    return $results;
-  }
-
-  /**
    * Convert the quantities if entries are coming from the trunk
    * @param array $entries
+   *   array of stdClass or Entries.
    */
-  public function convertTrunkwardEntries(array &$entries) : void {
-    if ($rate = $this->trunkwardConversionRate) {
-      foreach ($entries as &$e) {
-        $e->trunkward_quant = $e->quant;
-        $e->quant = ceil($e->quant / $rate);
-        $e->author = $this->id;
-      }
-    }
+  public function convertIncomingEntries(array &$entries) : void {
+    // @todo only call this when we know it is incoming from Trunk.
   }
 
-  private function convertSummary(\stdClass $summary) : void {
-    if ($rate = $this->trunkwardConversionRate) {
-      $summary->pending->receiveTrunkward($rate);
-      $summary->completed->receiveTrunkward($rate);
-    }
-    // @todo convert when Sending trunkward.
-  }
 
-  private function convertLimits(\stdClass &$data) : void {
-    if ($rate = $this->trunkwardConversionRate) {
-      $data->min = ceil($data->min / $rate);
-      $data->max = ceil($data->max / $rate);
-    }
-    // @todo convert when Sending trunkward.
+  /**
+   * {@inheritdoc}
+   */
+  private function API() : NodeRequester {
+    global $config;
+    return new NodeRequester($this->url, $config->nodeName, $this->getLastHash());
   }
 
 }

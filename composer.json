@@ -1,5 +1,5 @@
 {
-  "name": "credit-commons-software-stack/cc-node",
+  "name": "credit-commons/cc-node",
   "description": "Reference implementation of the Credit Commons protocol providing a mutual credit accounting node.",
   "license": "GPL-2.0+",
   "homepage": "https://creditcommons.net",
@@ -17,35 +17,29 @@
       "role": "Maintainer"
     }
   ],
+  "support": {
+    "email": "matslats@fastmail.com"
+  },
   "repositories": [
     {
       "type": "gitlab",
-      "url": "git@gitlab.com:credit-commons-software-stack/cc-php-lib.git"
+      "url": "git@gitlab.com:credit-commons/cc-php-lib.git"
     }
   ],
   "require": {
-    "credit-commons-software-stack/cc-php-lib": "@dev",
-    "slim/slim": "^3",
+    "credit-commons/cc-php-lib": "@dev",
     "ext-mysqli": "*",
-    "php": "^8.0"
-  },
-  "require-dev": {
-    "slim/psr7": "dev-master",
-    "phpunit/phpunit": "^9",
-    "nyholm/psr7": "^1.4",
-    "league/openapi-psr7-validator": "dev-master"
+    "php": "^8.0",
+    "slim/slim": "^3@beta"
   },
   "autoload": {
     "psr-4": {
       "CCNode\\": "src",
-      "CCNode\\Tests\\": "tests",
-      "AccountStore\\": "AccountStore",
-      "BlogicService\\": "BlogicService"
+      "CCNode\\Tests\\": "tests"
     }
   },
   "scripts": {
     "post-create-project-cmd": [
-      "cp node.ini.example node.ini",
       "touch last_exception.log"
     ]
   }

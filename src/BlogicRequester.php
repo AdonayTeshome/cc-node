@@ -4,11 +4,17 @@ namespace CCNode;
 use CreditCommons\Requester;
 use CCNode\Transaction\Transaction;
 use CCNode\Transaction\Entry;
+use CCNode\CCBlogicInterface;
 
 /**
  * Calls to the business logic service.
  */
-class BlogicRequester extends Requester {
+class BlogicRequester extends Requester implements CCBlogicInterface {
+
+  function __construct() {
+    global $config;
+    parent::__construct($config->blogicMod);
+  }
 
   /**
    * Add a new rule.
@@ -17,14 +23,11 @@ class BlogicRequester extends Requester {
    * @return \stdClass[]
    *   Simplified entries with names only for payee, payer, author.
    */
-  function getRows(Transaction $transaction) : array {
-    $first_entry = $this->convert($transaction->entries[0]);
+  public function addRows(string $type, \stdClass $entry) : array {
     $rows = $this
-      ->setBody($first_entry)
+      ->setBody($entry)
       ->setMethod('post')
-      ->request(200, $transaction->type);
-    // ensure there are no zero value rows;
-    return array_filter($rows, function($r) {return $r->quant > 0;});
+      ->request(200, $type);
   }
 
   /**

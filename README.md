@@ -1,32 +1,40 @@
-# Credit Commons reference implementation
+# Credit Commons node (reference implementation)
 
-Reference implementation of the [Credit Commons protocol](https://gitlab.com/credit-commons-software-stack/cc-php-lib/-/blob/master/docs/credit-commons-openapi-3.0.yml). [Documentation](https://gitlab.com/credit-commons-software-stack/credit-commons-documentation). This reference implementation is intended to be small and robust and federatable.
+This package implements the CreditCommonsInterface which can be found
 
 ## Intent
-Develop network software that can serve a fully differentiated world economy of federated Mutual Credit networks.
-The inspiration for this is the [Credit Commons whitepaper](http://www.creditcommons.net/) by [Matthew Slater](https://matslats.net/) and [Tim Jenkin](https://en.wikipedia.org/wiki/Tim_Jenkin).
+Develop federable Mutual Credit software that could serve world economy.
+The inspiration for this is the [Credit Commons whitepaper](https://creditcommons.net) by [Matthew Slater](https://matslats.net) and [Tim Jenkin](https://en.wikipedia.org/wiki/Tim_Jenkin).
 
 ## Vision
-The vision here serves [the overall Credit Commons vision, here](https://gitlab.com/credit-commons-software-stack/credit-commons-org/blob/master/README.md).
+The vision here serves the overall [Credit Commons vision](https://gitlab.com/credit-commons/credit-commons-org/blob/master/README.md). Any community can declare a unit of account and use any software they like to keep accounts between members. Note that mutual credit systems require governance and credit/debit limits must be set carefully. The same rules apply when nodes form a group to extend credit to each other on a new trunkward ledger.
 
-##About this reference implementation
-PHP and Mysql were chosen because the developer knew them, and because of their widespread usage and durability. The latest PHP was preferred because it is better at data type management. It depends on a separate PHP repository containing a library of the API calls needed by both nodes and leaves (clients). So far it is all the work of one person and has developed an architectural approach which could be a template or starting point for future implementations.
 
-This application could in theory be used as the backend for an app, but in practice it is too limited, and is intended to be a web service which does accounting.
-
-###The AccountStore microservice.
-This reference implementation includes a microservice which authenticates requests against accounts, and returns account names and balance limits. This is really just a placeholder, it stores info in a csv file and has no UI to edit the csv file. A proper deployment would require that the main users' repository implement a small [API](https://gitlab.com/credit-commons-software-stack/cc-node/-/blob/master/AccountStore/accountstore.openapi.yml) from which this application can read the account ids and limits. The url where the accountstore API is implemented is configured in node.ini.
-
-###Authentication
+## Architectural features.
+### Authentication
 The current version of the protocol requires that each incoming request includes headers with the account id and a key. Those credentials are then passed to the accountstore for authentication. The accountStore returns a simple authenticated user object or the client is assumed to be anonymous.
 
-###Permissions
-The reference implementation has a permission for every API call described, and there is currently no way to configure them. The user admin flag is enabled, the user has all permissions. Permission to manipulate transactions are controlled by the workflow system.
+### Workflow
+Transactions move between states in a workflow path. Each possible transition has access control which depends on the user's relationship to the transaction, e.g. payer, payee, author or admin. Every time the transaction changes state it is written to the ledger and the ledger hashchain updated.
 
-###The BLogic service
-The protcocol allows for nodes to append sub-transactions (entries) such as fees or taxes, as a transaction is being built and validated. This is called Business logic, and is implemented here as a microservice with a single method. This means that deployments can easily write their own business logic in whatever language they please. The url of this microservice is also configured in node.ini. If the value is left empty, the business logic step is skipped.
+### Object model
+The main objects are the transaction and the account. These have subclasses to cover the cases of transversal transactions (which span many nodes) and remote accounts (which trade and identify themselves using a local account.)
+Transaction workflows are inherited from trunkward and localised. The transaction workflow must be accessible to both payer and payee.
 
-###Account class hierarchy
+### Data model
+A transaction on a node may consist of several payments between accounts on that node, and it will progress through a workflow process. All this is stored in two tables, one table for the metadata, and one for each entry. When the transaction changes state the meta data changes but the entries only change the pointer to the new metadata. In addition 3 mysql views are provided to make query building easier.
+The payee and payer ids, obtained externally are stored in the ledger.
+
+### Permissions
+The API consists of about 10 methods, each with a unique name. The reference implementation is not very flexible about this, but the function which determines access is easy to edit. Each node can determine in the config whether it wishes to expose itself to 4 types of data request from the rest of the tree
+
+### Autocomplete
+One REST method is intended to autocomplete accountnames from trunkward nodes, but can also traverse other branches if they permit.
+
+### Pathname system
+Remote addresses are prefixed with the node names, and delimited by a '/' just like in a file system. ALso, like in a file system, relative paths are supported.
+
+### Account class hierarchy
 In order to relay a transaction accross the tree, the node needs to know its position in the path from twig to twig. It does this by parsing the payer and payee paths and loading them as account objects of different classes.
 
     Account
@@ -37,3 +45,18 @@ In order to relay a transaction accross the tree, the node needs to know its pos
         - Trunkward
           - DownstreamTrunkward
           - UpstreamTrunkward
+
+## Installation
+This is not a standalone app or a REST server.
+To incorporate it in your application, first add this repository to your composer.json
+
+    "repositories": [
+       {
+           "type": "gitlab",
+            "url": "git@gitlab.com:credit-commons/cc-php-lib.git"
+       }
+    ]
+
+Save and then at the command line:
+
+```$ composer require credit-commons/cc-node```

@@ -9,6 +9,7 @@ use CCNode\Accounts\Remote;
 use CCNode\Accounts\Branch;
 use CCNode\Accounts\Trunkward;
 use CreditCommons\Workflow;
+use CreditCommons\NewTransaction;
 use CreditCommons\Exceptions\MaxLimitViolation;
 use CreditCommons\Exceptions\MinLimitViolation;
 use CreditCommons\Exceptions\CCOtherViolation;
@@ -17,7 +18,6 @@ use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\TransactionInterface;
 use CreditCommons\BaseTransaction;
 use function CCNode\load_account;
-use function CCNode\getConfig;
 
 class Transaction extends BaseTransaction implements \JsonSerializable {
   use \CCNode\Transaction\StorageTrait;
@@ -37,12 +37,22 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
 
   /**
    * Create a new transaction from a few required fields defined upstream.
-   * @param stdClass $data
-   *   Well formatted payer, payee, description & quant and array of stdClass entries.
-   * @return \static
+   * @param NewTransaction $new
+   * @return TransactionInterface
    */
-  public static function createFromUpstream(\stdClass $data) : BaseTransaction {
+  public static function createFromLeaf(NewTransaction $new) : TransactionInterface {
+    $data = new \stdClass;
+    $data->uuid = $new->uuid;
+    $data->type = $new->type;
     $data->state = TransactionInterface::STATE_INITIATED;
+    $data->version = -1;
+    $data->entries = [(object)[
+      'payee' => $new->payee,
+      'payer' => $new->payer,
+      'description' => $new->description,
+      'metadata' => $new->metadata,
+      'quant' => $new->quant
+    ]];
     $transaction_class = Entry::upcastAccounts($data->entries);
     return $transaction_class::create($data);
     // N.B. This isn't saved yet.
@@ -57,13 +67,12 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     return $t;
   }
 
-
   /**
    * Call the business logic, append entries.
    * Validate the transaction in its workflow's 'creation' state
    */
   function buildValidate() : void {
-    global $loadedAccounts, $config, $user;
+    global $config, $user;
 
     $workflow = $this->getWorkflow();
     if (!$workflow->active) {
@@ -73,27 +82,44 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     if (!$user->admin and !$workflow->canTransitionToState($user->id, $this, $desired_state)) {
       throw new WorkflowViolation(type: $this->type, from: $this->state, to: $desired_state);
     }
-    // Add fees, etc by calling on the blogic service
-    if ($config['blogic_service_url']) {
-      $rows = (new BlogicRequester($config['blogic_service_url']))->getRows($this);
-      foreach ($rows as &$row) {
-        $row->payee = load_account($row->payee);
-        $row->payer = load_account($row->payer);
+    $main_entry = $this->entries[0];
+    // Add fees, etc by calling on the blogic module, either internally or via REST API
+    // @todo make the same function name for both.
+    if ($config->blogicMod) {
+      if (class_exists($config->blogicMod)) {
+        $class = $config->blogicMod;
+        $blogic_mod = new $class();
+        $rows = $blogic_mod->addRows($this->type, $main_entry);
+        // The internal blogic class should return entries with ful account objects
+      }
+      elseif($config->blogicMod) {// Should really test that it is a url.
+        $rows = (new BlogicRequester())->addRows($this->type, $main_entry);
+        // An external Blogic class cannot load user objects so we need to upcast
+        // them carefully to preserve the given path of any remote accounts.
+        foreach ($rows as &$row) {
+          // Try to reuse the already loaded accounts to upcast the new rows.
+          if ($row->payee == $main_entry->payee->id)$row->payee = $main_entry->payee;
+          elseif ($row->payee == $main_entry->payer->id)$row->payee = $main_entry->payer;
+          else $row->payee = load_account($row->payee);
+
+          if ($row->payer == $main_entry->payee->id)$row->payer = $main_entry->payee;
+          elseif ($row->payer == $main_entry->payer->id)$row->payer = $main_entry->payer;
+          else $row->payer = load_account($row->payer);
+        }
       }
       $this->upcastEntries($rows, TRUE);
     }
-    $first_entry = reset($this->entries);
     foreach ($this->sum() as $acc_id => $info) {
       // Note only in the accounts in the main entry are limit-checked.
       $account = load_account($acc_id);
-      $acc_summary = $account->getAccountSummary();
-      $stats = getConfig('validate_pending') ? $acc_summary->pending : $acc_summary->completed;
+      $acc_summary = $account->getSummary(TRUE);
+      $stats = $config->validatePending ? $acc_summary->pending : $acc_summary->completed;
       $projected = $stats->balance + $info->diff;
-      if ($projected > $first_entry->payee->max) {
-        throw new MaxLimitViolation(limit: $first_entry->payee->max, projected: $projected);
+      if ($projected > $main_entry->payee->max) {
+        throw new MaxLimitViolation(limit: $main_entry->payee->max, projected: $projected);
       }
-      elseif ($projected < $first_entry->payer->min) {
-        throw new MinLimitViolation(limit: $first_entry->payer->min, projected: $projected);
+      elseif ($projected < $main_entry->payer->min) {
+        throw new MinLimitViolation(limit: $main_entry->payer->min, projected: $projected);
       }
     }
     $this->state = TransactionInterface::STATE_VALIDATED;
@@ -102,8 +128,10 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
 
   /**
    * Insert the transaction for the first time
+   * @return bool
+   *   FALSE if the transaction is in a temporary state
    */
-  function insert() : int {
+  function insert() : bool {
     // for first time transactions...
     $workflow = $this->getWorkflow();
     // The transaction is in 'validated' state.
@@ -133,9 +161,11 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
 
   /**
    * @param string $target_state
+   * @return bool
+   *   TRUE if a new version of the transaction was saved. FALSE if the transaction was deleted (transactions in validated state only)
    * @throws WorkflowViolation
    */
-  function changeState(string $target_state) : int {
+  function changeState(string $target_state) : bool {
     global $user;
     // If the logged in account is local, then at least one of the local accounts must be local.
     // No leaf account can manipulate transactions which only bridge this ledger.
@@ -148,12 +178,12 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     }
     if ($target_state == 'null' and $this->state == 'validated') {
       $this->delete();
-      return 200;
+      return FALSE;
     }
     if ($user->admin or $this->getWorkflow()->canTransitionToState($user->id, $this, $target_state)) {
       $this->state = $target_state;
       $this->saveNewVersion();
-      return 201;
+      return TRUE;
     }
     throw new WorkflowViolation(
       type: $this->type,
@@ -231,7 +261,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     global $config, $user;
     foreach ($rows as $row) {
       // Could this be done earlier?
-      if (!$row->quant and !$config['zero_payments']) {
+      if (!$row->quant and !$config->zeroPayments) {
         throw new CCOtherViolation("Zero transactions not allowed on this node.");
       }
       $row->isAdditional = $additional;

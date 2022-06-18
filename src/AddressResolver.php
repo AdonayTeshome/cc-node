@@ -2,11 +2,11 @@
 namespace CCNode;
 
 use CreditCommons\AccountStoreInterface;
-use CreditCommons\Exceptions\DoesNotExistViolation;
-use CreditCommons\Exceptions\CCOtherViolation;
 use CreditCommons\Exceptions\PathViolation;
 use CCNode\Accounts\Remote;
 use CCNode\Accounts\User;
+use function \CCNode\accountStore;
+use function CCNode\load_account;
 
 /**
  * Convert all errors into an stdClass, which includes a field showing
@@ -38,7 +38,8 @@ class AddressResolver {
   }
 
   static function create() {
-    return new static(accountStore(), getConfig('abs_path'));
+    global $config;
+    return new static(accountStore(), $config->absPath);
   }
 
 
@@ -63,7 +64,7 @@ class AddressResolver {
   }
 
   // Don't worry about the end of the path, just find the local account
-  function nearestNode(string &$given_path) : User {
+  function nearestNode(string &$given_path) : User|NULL {
     global $user;
     $path_parts = explode('/', $given_path);
     $pos = array_search($this->nodeName, $path_parts);
@@ -72,19 +73,27 @@ class AddressResolver {
     }
     $acc_id = reset($path_parts);
     if ($this->accountStore->has($acc_id)) {
-      return \CCNode\load_account($acc_id, $given_path);
+      return load_account($acc_id, $given_path);
     }
     // the account name wasn't known, so load the trunkward account with the full given path.
-    if ($pos == FALSE and $this->trunkwardName and $user->id <> $this->trunkwardName) {
-      return \CCNode\load_account($this->trunkwardName, $given_path);
+    elseif ($pos == FALSE and $this->trunkwardName and $user->id <> $this->trunkwardName) {
+      return load_account($this->trunkwardName, $given_path);
+    }
+    elseif ($acc_id == '') {
+      // the current node
+      return NULL;
     }
 
     throw new PathViolation(relPath: $given_path, context: 'nearestNode');
   }
 
-  function remoteNode(string &$rel_path) : Remote {
+
+  function remoteNode(string &$rel_path) : Remote|NULL {
     $acc = $this->nearestNode($rel_path);
-    if (!$acc instanceOf Remote) {
+    if (is_null($acc)) {
+      return NULL;
+    }
+    elseif (!$acc instanceOf Remote) {
       throw new PathViolation(relPath: $rel_path, context: 'remoteNode');
     }
     return $acc;
