@@ -53,7 +53,7 @@ To incorporate it in your application, first add this repository to your compose
     "repositories": [
        {
            "type": "gitlab",
-            "url": "git@gitlab.com:credit-commons/cc-php-lib.git"
+            "url": "git@gitlab.com:credit-commons/cc-node.git"
        }
     ]
 
