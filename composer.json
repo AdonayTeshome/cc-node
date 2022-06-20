@@ -21,12 +21,12 @@
     },
     {
       "type": "gitlab",
-      "url": "git@gitlab.com:credit-commons/cc-demo-accountserver.git"
+      "url": "git@gitlab.com:credit-commons/cc-demo-accountstore.git"
     }
   ],
   "require": {
     "credit-commons/cc-php-lib": "@dev",
-    "credit-commons/cc-demo-accountserver": "@dev",
+    "credit-commons/cc-demo-accountstore": "@dev",
     "ext-mysqli": "*",
     "php": "^8.0"
   },
