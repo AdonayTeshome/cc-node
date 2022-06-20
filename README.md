@@ -59,4 +59,4 @@ To incorporate it in your application, first add this repository to your compose
 
 Save and then at the command line:
 
-```$ composer require credit-commons/cc-node```
+    $ composer require credit-commons/cc-node

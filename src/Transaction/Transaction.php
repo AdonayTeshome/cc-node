@@ -94,18 +94,6 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       }
       elseif($config->blogicMod) {// Should really test that it is a url.
         $rows = (new BlogicRequester())->addRows($this->type, $main_entry);
-        // An external Blogic class cannot load user objects so we need to upcast
-        // them carefully to preserve the given path of any remote accounts.
-        foreach ($rows as &$row) {
-          // Try to reuse the already loaded accounts to upcast the new rows.
-          if ($row->payee == $main_entry->payee->id)$row->payee = $main_entry->payee;
-          elseif ($row->payee == $main_entry->payer->id)$row->payee = $main_entry->payer;
-          else $row->payee = load_account($row->payee);
-
-          if ($row->payer == $main_entry->payee->id)$row->payer = $main_entry->payee;
-          elseif ($row->payer == $main_entry->payer->id)$row->payer = $main_entry->payer;
-          else $row->payer = load_account($row->payer);
-        }
       }
       $this->upcastEntries($rows, TRUE);
     }
