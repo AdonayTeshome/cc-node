@@ -353,15 +353,12 @@ function API_calls(Remote $account = NULL) {
 
 /**
  * Get the library of functions for accessing ledger accounts.
+ * Careful if trying to cache the accountstore because filtering 
  */
 function accountStore() : AccountStoreInterface {
   global $config;
-  static $account_store;
-  if (!isset($account_store)) {
-    $class = class_exists($config->accountStore) ? $config->accountStore : '\CCNode\AccountStoreREST';
-    $account_store = new $class();
-  }
-  return $account_store;
+  $class = class_exists($config->accountStore) ? $config->accountStore : '\CCNode\AccountStoreREST';
+  return new $class();
 }
 
 /**

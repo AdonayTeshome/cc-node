@@ -123,7 +123,10 @@ class User extends Account {
 
   /**
    * Get the address for passing trunkwards or branchwards.
+   *
    * @return string
+   *
+   * @todo Would be great to find a way to put this in cc-php-lib
    */
   function foreignId() : string {
     global $config;
@@ -135,7 +138,7 @@ class User extends Account {
   }
 
   //this is overridden by Remote
-  function isAccount() :bool {
+  function isAccount() : bool {
     return TRUE;
   }
 }

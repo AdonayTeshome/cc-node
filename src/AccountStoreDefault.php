@@ -41,10 +41,10 @@ class AccountStoreDefault implements AccountStoreInterface {
     int $offset = 0,
     bool $full = TRUE,
   ) : array {
+    $all = $this->accountManager->accounts;
 
-    $this->accountManager->filtered = $this->accountManager->accounts;
     if ($this->trunkwardAcc) {
-      unset($this->accountManager->filtered[$this->trunkwardAcc]);
+      unset($this->accountManager->accounts[$this->trunkwardAcc]);
     }
     if (!empty($fragment)) {
       $this->accountManager->filterByName($fragment);
@@ -55,8 +55,8 @@ class AccountStoreDefault implements AccountStoreInterface {
     if (!is_null($admin)) {
       $this->accountManager->filterByAdmin($admin);
     }
-    $results = array_slice($this->accountManager->filtered, $offset, $limit);
-
+    $results = array_slice($this->accountManager->accounts, $offset, $limit);
+    $this->accountManager->accounts = $all;
     if ($full) {
       // Upcast to CCNode accounts
       return array_map([$this, 'upcast'], $results);

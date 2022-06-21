@@ -107,7 +107,6 @@ class TransversalTransaction extends Transaction {
     foreach ($this->entries as $e) {
       if ($e->payee->id == $remote_name or $e->payer->id == $remote_name) {
         $clone = clone($e);
-        unset($e->transaction); //no longer needed and clutters the debug.
         $entries[] = $clone;
       }
     }

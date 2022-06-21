@@ -80,7 +80,6 @@ class Entry extends BaseEntry implements \JsonSerializable {
     $flat = [
       'payee' => $this->payee->foreignId(),
       'payer' => $this->payer->foreignId(),
-      'author' => $this->author,
       'quant' => $this->quant,
       'description' => $this->description,
       'metadata' => $this->metadata
@@ -91,6 +90,20 @@ class Entry extends BaseEntry implements \JsonSerializable {
       $flat[$role] = $this->metadata->{$name} ?? $name;
     }
     return $flat;
+  }
+
+  /**
+   * Prepare a version of the transaction to send to the Blogic module
+   */
+  public function toBlogic($type) : array {
+    return [
+      'payee' => $this->payee->foreignId(),
+      'payer' => $this->payer->foreignId(),
+      'quant' => $this->quant,
+      'description' => $this->description,
+      'metadata' => $this->metadata,
+      'type' => $type
+    ];
   }
 
   /**

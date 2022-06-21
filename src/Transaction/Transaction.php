@@ -82,19 +82,20 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     if (!$user->admin and !$workflow->canTransitionToState($user->id, $this, $desired_state)) {
       throw new WorkflowViolation(type: $this->type, from: $this->state, to: $desired_state);
     }
-    $main_entry = $this->entries[0];
+    $blogic_entry = $this->entries[0]->toBlogic($this->type);
     // Add fees, etc by calling on the blogic module, either internally or via REST API
     // @todo make the same function name for both.
     if ($config->blogicMod) {
       if (class_exists($config->blogicMod)) {
         $class = $config->blogicMod;
         $blogic_mod = new $class();
-        $rows = $blogic_mod->addRows($this->type, $main_entry);
-        // The internal blogic class should return entries with ful account objects
+        $rows = $blogic_mod->addRows(...$blogic_entry);
       }
       elseif($config->blogicMod) {// Should really test that it is a url.
-        $rows = (new BlogicRequester())->addRows($this->type, $main_entry);
+        // The Blogic service will know itself which account to put fees in.
+        $rows = (new BlogicRequester())->addRows(...$blogic_entry);
       }
+      // The Blogic returns entries with upcast account objects
       $this->upcastEntries($rows, TRUE);
     }
     foreach ($this->sum() as $acc_id => $info) {
@@ -103,11 +104,13 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       $acc_summary = $account->getSummary(TRUE);
       $stats = $config->validatePending ? $acc_summary->pending : $acc_summary->completed;
       $projected = $stats->balance + $info->diff;
-      if ($projected > $main_entry->payee->max) {
-        throw new MaxLimitViolation(limit: $main_entry->payee->max, projected: $projected);
+      $payee = $this->entries[0]->payee;
+      $payer = $this->entries[0]->payer;
+      if ($projected > $payee->max) {
+        throw new MaxLimitViolation(limit: $payee->max, projected: $projected);
       }
-      elseif ($projected < $main_entry->payer->min) {
-        throw new MinLimitViolation(limit: $main_entry->payer->min, projected: $projected);
+      elseif ($projected < $payer->min) {
+        throw new MinLimitViolation(limit: $payer->min, projected: $projected);
       }
     }
     $this->state = TransactionInterface::STATE_VALIDATED;

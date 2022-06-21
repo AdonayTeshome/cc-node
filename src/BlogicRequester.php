@@ -1,15 +1,15 @@
 <?php
 
 namespace CCNode;
-use CreditCommons\Requester;
 use CCNode\Transaction\Transaction;
 use CCNode\Transaction\Entry;
-use CCNode\CCBlogicInterface;
+use CreditCommons\BlogicInterface;
+use CreditCommons\Requester;
 
 /**
  * Calls to the business logic service.
  */
-class BlogicRequester extends Requester implements CCBlogicInterface {
+class BlogicRequester extends Requester implements BlogicInterface {
 
   function __construct() {
     global $config;
@@ -23,36 +23,20 @@ class BlogicRequester extends Requester implements CCBlogicInterface {
    * @return \stdClass[]
    *   Simplified entries with names only for payee, payer, author.
    */
-  public function addRows(string $type, \stdClass $main_entry) : array {
+  public function addRows(string $type, string $payee, string $payer, int $quant, \stdClass $metadata = NULL, string $description = '') : array {
+    $query = [
+      'payee' => $payee->id,
+      'payer' => $payer->id,
+      'type' => $type,
+      'quant' => $quant,
+      'description' => $description,
+      'metadata' => $metadata
+    ];
     $rows = $this
       ->setBody($main_entry)
       ->setMethod('post')
-      ->request(200, $type);
-
-    // The external Blogic class does not know about remote account relative paths,
-    // replace them from the original entry to preserve the given path of any remote accounts.
-    foreach ($rows as &$row) {
-      // Try to reuse the already loaded accounts to upcast the new rows.
-      if ($row->payee == $main_entry->payee->id) {
-        $row->payee = $main_entry->payee;
-      }
-      elseif ($row->payee == $main_entry->payer->id) {
-        $row->payee = $main_entry->payer;
-      }
-      else {
-        $row->payee = load_account($row->payee);
-      }
-
-      if ($row->payer == $main_entry->payee->id) {
-        $row->payer = $main_entry->payee;
-      }
-      elseif ($row->payer == $main_entry->payer->id) {
-        $row->payer = $main_entry->payer;
-      }
-      else {
-        $row->payer = load_account($row->payer);
-      }
-    }
+      ->addField
+      ->request(200, '?'. http_build_query($query)); // use func_get_args?
     return $rows;
   }
 
