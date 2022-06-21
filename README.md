@@ -1,6 +1,6 @@
 # Credit Commons node (reference implementation)
 
-This package implements the CreditCommonsInterface which can be found
+This package implements the CreditCommonsInterface. Include it with composer if you want to incorporate a credit commons ledger into your PHP application.
 
 ## Intent
 Develop federable Mutual Credit software that could serve world economy.
@@ -15,7 +15,9 @@ The vision here serves the overall [Credit Commons vision](https://gitlab.com/cr
 The current version of the protocol requires that each incoming request includes headers with the account id and a key. Those credentials are then passed to the accountstore for authentication. The accountStore returns a simple authenticated user object or the client is assumed to be anonymous.
 
 ### Workflow
-Transactions move between states in a workflow path. Each possible transition has access control which depends on the user's relationship to the transaction, e.g. payer, payee, author or admin. Every time the transaction changes state it is written to the ledger and the ledger hashchain updated.
+Transactions move between states in a workflow path. Each possible transition has access control which depends on the user's relationship to the transaction, e.g. payer, payee, author or admin. Every time the transaction changes state it is written to the ledger and the ledger hashchain updated. 
+
+For now, the workflows.json file should be edited by hand.
 
 ### Object model
 The main objects are the transaction and the account. These have subclasses to cover the cases of transversal transactions (which span many nodes) and remote accounts (which trade and identify themselves using a local account.)
@@ -48,15 +50,81 @@ In order to relay a transaction accross the tree, the node needs to know its pos
 
 ## Installation
 This is not a standalone app or a REST server.
-To incorporate it in your application, first add this repository to your composer.json
+If you don't already have a composer.json, save one to your application root containing this:
 
-    "repositories": [
-       {
-           "type": "gitlab",
-            "url": "git@gitlab.com:credit-commons/cc-node.git"
-       }
-    ]
+    {
+      "name": "some-name-space/my-application"
+      "repositories": [
+        {
+          "type": "gitlab",
+          "url": "git@gitlab.com:credit-commons/cc-node"
+        }
+      ],
+      "require": {
+        "credit-commons/cc-node": "@dev",
+      }
+    }
+
+If have a composer.json file already, add the above repository to composer.json
 
 Save and then at the command line:
 
-    $ composer require credit-commons/cc-node
+    $ composer require credit-commons/cc-node: @dev
+    $ composer update
+
+Composer will download some respositories into vendor/credit-commons.
+
+
+## Deployment
+
+Some things to consider as you start integratig the node into your application.
+
+The Credit Commons requires that all currency values are expressed as integers. This is to make conversion a bit easier. So if you want values like 9.99, it should be stored as 999 and then divided by 100 when you want to display it. A display format is planned.
+
+Transactions consist of some metadata and then one or more 'Entry's. This complicates the data structure, but enable fees to be added to transactions.
+
+The Credit Commons is only interested in account names or wallet names, which is the value entered into a transaction form and the same value which is written in the ledger.
+
+Support for migrating existing transactions will be forthcoming.
+
+This guide does not (yet) cover the business logic module, which adds payments to every transaction. This module is optional, so leave the config value blank for now.
+
+If you are not already using composer, put this near the start of your application:
+
+    require_once './vendor/autoload.php';
+
+### Account store.
+
+The first thing is to tell the node what accounts you have on your system. That means writing a class which implmements the [AccountstoreInterface](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/AccountStoreInterface.php). 
+
+Use the [AccountStoreTemplate](t.b.d) class to get started. Keep all the function definitions and return types the same.
+
+### Configuration
+You need to initiate the Credit Commons node with your config. Config is an object with some fixed property names like in [ConfigFromIni](https://gitlab.com/credit-commons/cc-node/-/blob/master/src/ConfigFromIni.php)
+The easiest way is just to declare the class and hardcode the properties
+
+    class MyConfigClass implements CCNode\ConfigInterface {
+      function __construct() {
+        $this->accountStore = MyAccountstoreClassName;
+        //etc
+      }
+You can find more about what the config values mean in  node.ini.
+
+### Initiation
+Before doing an operation, initiate the credit commons object like this:
+
+    $cc_config = new MyConfigClass();
+    $creditcommons = new \CCNode\Node($cc_config);
+
+You are now ready to read and write to the leder.
+
+### Saving a transaction
+You need to populate a \CCNode\Transaction object, and then pass it to the $creditcommons object which will save it to the db. The transaction object checks the types of all fields and throw informative errors to help. The fields are shown in [\CreditCommons\BaseTransaction](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/BaseTransaction.php)
+Note that the $entries property is an array. Each entry must be prepared as well. The entry properties are shown in [\CreditCommons\BaseEntry](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/BaseEntry.php)
+
+So prepare an stdClass with the transaction properties including an array of stdClass with the entry properties.
+
+There are two classes of transaction, called Transaction and TransversalTransaction. The latter is any transaction that involves at least one Remote account (an account with a url). So you must decide which class and then:
+    \CCNode\TransversalTransaction::create($data);
+
+

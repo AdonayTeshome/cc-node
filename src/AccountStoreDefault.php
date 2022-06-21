@@ -14,12 +14,12 @@ use AccountStore\UserRecord;
  */
 class AccountStoreDefault implements AccountStoreInterface {
 
-  private $trunkwardAcc;
+  private $trunkwardAccName;
   private $accountManager;
 
   function __construct() {
     global $config;
-    $this->trunkwardAcc = $config->trunkwardAcc;
+    $this->trunkwardAccName = $config->trunkwardAcc;
     $this->accountManager = new AccountManager('./accounts.json');
   }
 
@@ -44,7 +44,7 @@ class AccountStoreDefault implements AccountStoreInterface {
     $all = $this->accountManager->accounts;
 
     if ($this->trunkwardAcc) {
-      unset($this->accountManager->accounts[$this->trunkwardAcc]);
+      unset($this->accountManager->accounts[$this->trunkwardAccName]);
     }
     if (!empty($fragment)) {
       $this->accountManager->filterByName($fragment);
@@ -113,10 +113,10 @@ class AccountStoreDefault implements AccountStoreInterface {
    * @return Account
    */
   private static function upcast(Record $record) : Account {
-    global $user, $config;
+    global $user;
     if (!empty($record->url)) {
       $upS = $user ? ($record->id == $user->id) : TRUE;
-      $trunkward = $record->id == $config->trunkwardAcc;
+      $trunkward = $record->id == $this->trunkwardAccName;
       if ($trunkward and $upS) {
         $class = 'UpstreamTrunkward';
       }
