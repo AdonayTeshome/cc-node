@@ -2,7 +2,7 @@
 ;url of the policy service e.g. http://accounts.ccnode.com OR name of class which implements CreditCommons\AccountStoreInterface
 account_store = \CCNode\AccountStoreDefault
 ;url of the blogic service e.g. http://blogic.ccnode.com OR name of class which implements CreditCommons\BlogicInterface(optional)
-blogic_mod = \CCnode\BlogicDemo
+blogic_mod = \CCNode\BlogicDemo
 
 [db]
 db[server] = "localhost"
