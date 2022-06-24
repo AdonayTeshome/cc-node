@@ -17,13 +17,15 @@ class ConfigFromIni implements ConfigInterface {
     $this->absPath = $ini_file['abs_path']??'mynode';
     $tree = explode('/', $this->absPath);
     $this->nodeName = end($tree);
-    $this->trunkwardAcc = '';
     if (count($tree) > 1) {
       $this->conversionRate = $ini_file['conversion_rate'];
       $this->privacy = $ini_file['priv']; // Array
       $this->timeOut = $ini_file['timeout'];
       $this->validatedWindow = $ini_file['validated_window'];
       $this->trunkwardAcc = prev($tree);
+    }
+    else {
+      $this->trunkwardAcc = '';
     }
     $this->displayFormat = $ini_file['display_format']; //Not implemented.
   }

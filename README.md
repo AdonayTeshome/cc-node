@@ -15,7 +15,7 @@ The vision here serves the overall [Credit Commons vision](https://gitlab.com/cr
 The current version of the protocol requires that each incoming request includes headers with the account id and a key. Those credentials are then passed to the accountstore for authentication. The accountStore returns a simple authenticated user object or the client is assumed to be anonymous.
 
 ### Workflow
-Transactions move between states in a workflow path. Each possible transition has access control which depends on the user's relationship to the transaction, e.g. payer, payee, author or admin. Every time the transaction changes state it is written to the ledger and the ledger hashchain updated. 
+Transactions move between states in a workflow path. Each possible transition has access control which depends on the user's relationship to the transaction, e.g. payer, payee, author or admin. Every time the transaction changes state it is written to the ledger and the ledger hashchain updated.
 
 For now, the workflows.json file should be edited by hand.
 
@@ -89,38 +89,58 @@ Support for migrating existing transactions will be forthcoming.
 
 This guide does not (yet) cover the business logic module, which adds payments to every transaction. This module is optional, so leave the config value blank for now.
 
-If you are not already using composer, put this near the start of your application:
+### Setting/refreshing the database TODO
+Basically run the sql in install.sql
+This can be done via the command line. search "run sql queries from text file."
 
-    require_once './vendor/autoload.php';
+    mysqldump -uUSER -pPASS install.sql > DBNAME
 
 ### Account store.
 
-The first thing is to tell the node what accounts you have on your system. That means writing a class which implmements the [AccountstoreInterface](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/AccountStoreInterface.php). 
+The first thing is to tell the node what accounts you have on your system. That means writing a class which implmements the [AccountstoreInterface](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/AccountStoreInterface.php).
 
 Use the [AccountStoreTemplate](t.b.d) class to get started. Keep all the function definitions and return types the same.
 
 ### Configuration
-You need to initiate the Credit Commons node with your config. Config is an object with some fixed property names like in [ConfigFromIni](https://gitlab.com/credit-commons/cc-node/-/blob/master/src/ConfigFromIni.php)
-The easiest way is just to declare the class and hardcode the properties
+You need to initiate the Credit Commons node with a config class, which has all the right property names like in [ConfigFromIni](https://gitlab.com/credit-commons/cc-node/-/blob/master/src/ConfigFromIni.php)
+
+You can just declare a config class and set the values there. The class would look like:
 
     class MyConfigClass implements CCNode\ConfigInterface {
       function __construct() {
-        $this->accountStore = MyAccountstoreClassName;
-        //etc
+        $this->accountStore = 'MyAccountstoreClassName';
+        // Etc.
       }
+    }
+    $cc_config = new MyConfigClass;
+
+Or you can store the config in an ini file and set the config values from that
+Copy ```vendor/credit-commons/cc-node/node.ini.example``` to ```node.ini``` in your application root or somewhere convenient.
+
+    class MyConfigClass implements CCNode\ConfigInterface {
+      function __construct(array $values) {
+        $this->accountStore = $values['account_store'];
+        // Etc.
+      }
+    }
+    $cc_config = new MyConfigClass(parse_ini_file('node.ini'));
+
 You can find more about what the config values mean in  node.ini.
 
 ### Initiation
-Before doing an operation, initiate the credit commons object like this:
+If you are not already using composer, put this near the start of your application:
 
-    $cc_config = new MyConfigClass();
+    require_once './vendor/autoload.php';
+
+Before doing any ledger operation, initiate the credit commons object like this:
+
     $creditcommons = new \CCNode\Node($cc_config);
 
 You are now ready to read and write to the leder.
 
 ### Saving a transaction
-You need to populate a \CCNode\Transaction object, and then pass it to the $creditcommons object which will save it to the db. The transaction object checks the types of all fields and throw informative errors to help. The fields are shown in [\CreditCommons\BaseTransaction](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/BaseTransaction.php)
-Note that the $entries property is an array. Each entry must be prepared as well. The entry properties are shown in [\CreditCommons\BaseEntry](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/BaseEntry.php)
+You need to convert your transaction into a \CCNode\Transaction object, and then pass it to the $creditcommons to save it to the db. The transaction object checks the types of all fields and throw informative errors to help. The fields are shown in [\CreditCommons\BaseTransaction](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/BaseTransaction.php)
+Note that $transaction->entries is an array. Each entry must be prepared as well. The entry properties are shown in [\CreditCommons\BaseEntry](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/BaseEntry.php)
 
 So prepare an stdClass with the transaction properties including an array of stdClass with the entry properties.
 
