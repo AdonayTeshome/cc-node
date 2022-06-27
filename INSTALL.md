@@ -12,7 +12,7 @@
   * Download this package from gitlab to your server.
   * Navigate to the current directory and do ``composer install --no-dev``
   * Create 3 virtualhosts in your web server configuration as indicated in the section below. The blogic service adds transaction fees and is optional. Don't forget to restart your web server.
-  * Ensure your web server can write files nodes.ini, error_log, AccountStore/accountstore.ini, AccountStore/store.json
+  * Be aware that you may want your web server to write files nodes.ini, error_log, and for the example accountstore: accountstore.ini, accountstore.json
   * Tell your browser these domains and subdomains are hosted locally and not online. Usually this is done by appending to /etc/hosts something like ``127.0.0.1 myccnode accounts.myccnode blogic.myccnode`` replacing myccnode for your virtualhost name.
   * In your browser go to ``http://myccnode/config`` and enter the db credentials.
   * On submission you will be directed to the AccountStore config where you can add to the default three accounts.

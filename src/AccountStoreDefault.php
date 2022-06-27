@@ -20,7 +20,7 @@ class AccountStoreDefault implements AccountStoreInterface {
   function __construct() {
     global $config;
     $this->trunkwardAccName = $config->trunkwardAcc;
-    $this->accountManager = new AccountManager('./accounts.json');
+    $this->accountManager = new AccountManager('./accountstore.json');
   }
 
   /**
