@@ -5,9 +5,9 @@ namespace CCNode;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Account;
 use CreditCommons\AccountStoreInterface;
-use AccountStore\AccountManager;
-use AccountStore\Record;
-use AccountStore\UserRecord;
+use Examples\AccountManager;
+use Examples\Record;
+use Examples\UserRecord;
 
 /**
  * Handle requests & responses from the ledger to the DefaultAccountStore.
