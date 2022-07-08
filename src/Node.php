@@ -30,7 +30,7 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function accountNameFilter(string $rel_path = '', $limit = 10): array {
-    global $user;
+    global $user, $config;
     $node_name = $this->config->nodeName;
     $trunkward_acc_id = $this->config->trunkwardAcc;
     $remote_node = AddressResolver::create()->nodeAndFragment($rel_path);
@@ -42,10 +42,11 @@ class Node implements CreditCommonsInterface {
         }
       }
     }
-    else {// Match names from here to the trunk.
+    else {// Match names on each node from here to the trunk.
       $trunkward_names = [];
       if ($trunkward_acc_id and $user->id <> $trunkward_acc_id) {
-        $trunkward_names = load_account($trunkward_acc_id, $rel_path)->autocomplete();
+        $acc = load_account($trunkward_acc_id, $rel_path);
+        $trunkward_names = $acc->autocomplete();
       }
       // Local names.
       $filtered = accountStore()->filter(fragment: trim($rel_path, '/'));
@@ -54,6 +55,9 @@ class Node implements CreditCommonsInterface {
         $name = $acc->id;
         // Exclude the logged in account
         if ($user instanceOf RemoteAccountInterface and $name == $user->id) continue;
+        // Exclude the trunkwards account'
+        if ($name == $config->trunkwardAcc) continue;
+        // Add a slash to the leafward accounts to indicate they are nodes not accounts
         if ($acc instanceOf RemoteAccountInterface) $name .= '/';
         if ($user instanceOf RemoteAccountInterface) {
           $local[] = $node_name."/$name";
@@ -132,11 +136,16 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function getAccountLimits(string $acc_id): array {
-    $account = AddressResolver::create()->nearestNode($acc_id);
-    if ($account instanceof Remote and !$account->isAccount()) {// All the accounts on a remote node
-      $results = $account->getAllLimits();
+    $account = AddressResolver::create()->getLocalAccount($acc_id);
+    if ($account instanceof Remote) {
+      if ($account->isAccount()) {// All the accounts on a remote node
+        $results = [$account->getLimits()];
+      }
+      else {
+        $results = $account->getAllLimits();
+      }
     }
-    elseif ($account instanceOf User) {
+    elseif ($account) {
       $results = [$account->getLimits()];
     }
     else {// All accounts on the current node.
@@ -149,11 +158,11 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function getAccountSummary(string $acc_id = ''): array {
-    $account = AddressResolver::create()->nearestNode($acc_id);
+    $account = AddressResolver::create()->getLocalAccount($acc_id);
     if ($account instanceOf Remote and !$account->isAccount()) {
       $results = $account->getAllSummaries();
     }
-    elseif ($account instanceOf User) {
+    elseif ($account) {
       $results = [$account->getSummary()];
     }
     else {// All accounts on the current node.
@@ -304,31 +313,17 @@ function permitted_operations() : array {
  * @return CreditCommons\Account
  * @throws DoesNotExistViolation
  *
- * @todo make sure this is used whenever possible because it is cached.
  * @todo This doesn't seem like a good place to throw a violation.
  */
-function load_account(string $local_acc_id = NULL, string $given_path = NULL) : Account {
+function load_account(string $local_acc_id = NULL, string $rel_path = '') : Account {
   global $config;
-  static $fetched = [];
-  if ($config->devMode) {
-    $fetched = [];
+  if (strpos(needle: '/', haystack: $local_acc_id)) {
+    throw new CCFailure("Can't load unresolved account name: $local_acc_id");
   }
-  if (!isset($fetched[$local_acc_id])) {
-    if (strpos(needle: '/', haystack: $local_acc_id)) {
-      throw new CCFailure("Can't load unresolved account name: $local_acc_id");
-    }
-    if ($local_acc_id and accountStore()->has($local_acc_id)) {
-      $fetched[$local_acc_id] = accountStore()->fetch($local_acc_id);
-    }
-    else {
-      throw new DoesNotExistViolation(type: 'account', id: $local_acc_id);
-    }
+  if ($local_acc_id and accountStore()->has($local_acc_id)) {
+    return accountStore()->fetch($local_acc_id, $rel_path);
   }
-  // Sometimes an already loaded account turns out to have a relative path.
-  if ($given_path) {
-    $fetched[$local_acc_id]->givenPath = $given_path;
-  }
-  return $fetched[$local_acc_id];
+  throw new DoesNotExistViolation(type: 'account', id: $local_acc_id);
 }
 
 /**
@@ -353,12 +348,12 @@ function API_calls(Remote $account = NULL) {
 
 /**
  * Get the library of functions for accessing ledger accounts.
- * Careful if trying to cache the accountstore because filtering 
+ * Careful if trying to cache the accountstore because filtering
  */
 function accountStore() : AccountStoreInterface {
   global $config;
   $class = class_exists($config->accountStore) ? $config->accountStore : '\CCNode\AccountStoreREST';
-  return new $class();
+  return new $class($config->trunkwardAcc);
 }
 
 /**

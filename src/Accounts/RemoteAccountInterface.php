@@ -17,12 +17,6 @@ interface RemoteAccountInterface {
   function getLastHash() : string;
 
   /**
-   * The path to the remote account relative to this account on the local ledger.
-   * @return string
-   */
-  function relPath() : string;
-
-  /**
    * Check if this Account points to a remote account, rather than a remote node.
    * @return bool
    *   TRUE if this object references a remote account, not a whole node

@@ -19,7 +19,7 @@ class User extends Account {
     parent::__construct($id, $min, $max);
   }
 
-  static function create(\stdClass $data) : User {
+  static function create(\stdClass $data, string $rel_path = '') : User {
     $data->admin = $data->admin??FALSE;
     static::validateFields($data);
     return new static($data->id, $data->min, $data->max, $data->admin);
@@ -117,8 +117,9 @@ class User extends Account {
     return (object)['min' => $this->min, 'max' => $this->max];
   }
 
-  function relPath() {
-    return '';
+  //this is overridden by Remote
+  function isAccount() : bool {
+    return TRUE;
   }
 
   /**
@@ -130,16 +131,7 @@ class User extends Account {
    */
   function foreignId() : string {
     global $config;
-    $parts =  [$config->nodeName, $this->id];
-    if ($r = $this->relPath()) {
-      $parts[] = $r;
-    }
-    return implode('/', $parts);
-  }
-
-  //this is overridden by Remote
-  function isAccount() : bool {
-    return TRUE;
+    return $config->nodeName .'/'. $this->id;
   }
 }
 

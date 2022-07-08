@@ -17,7 +17,7 @@ class Remote extends User implements RemoteAccountInterface {
    * The path from the node this account references, to a leaf account
    * @var string
    */
-  public string $givenPath = '';
+  public string $relPath = '';
 
   function __construct(
     string $id,
@@ -32,31 +32,18 @@ class Remote extends User implements RemoteAccountInterface {
     parent::__construct($id, $min, $max, FALSE);
   }
 
-  static function create(\stdClass $data) : User {
+  static function create(\stdClass $data, string $rel_path = '') : User {
     static::validateFields($data);
-    return new static($data->id, $data->min, $data->max, $data->url);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  function relPath() : string {
-    $parts = explode('/', $this->givenPath);
-    // remove everything including the node name.
-    $pos = array_search($this->id, $parts);
-    if (FALSE !== $pos) {
-      $parts = array_slice($parts, $pos+1);
-    }
-
-    \CCNode\debug("RelPath of Trunkward is ". implode('/', $parts).' - ' . print_R($this, 1));
-    return implode('/', $parts);
+    $acc = new static($data->id, $data->min, $data->max, $data->url);
+    $acc->relPath = $rel_path;
+    return $acc;
   }
 
   /**
    * {@inheritdoc}
    */
   public function isAccount() : bool {
-    return substr($this->givenPath, -1) <> '/';
+    return substr($this->relPath, -1) <> '/';
   }
 
   /**
@@ -101,14 +88,14 @@ class Remote extends User implements RemoteAccountInterface {
    * {@inheritdoc}
    */
   function autocomplete() : array {
-    return $this->api()->accountNameFilter($this->relPath());
+    return $this->api()->accountNameFilter($this->relPath);
   }
 
   /**
    * {@inheritdoc}
    */
   public function retrieveTransaction(string $uuid, $full = TRUE) : \CreditCommons\BaseTransaction|array {
-    $result = $this->API()->getTransaction($uuid, $this->relPath(), $full);
+    $result = $this->API()->getTransaction($uuid, $this->relPath, $full);
     if (is_array($result)) {
       $this->convertIncomingEntries($result);
       // DO we need responsemode on each of these?
@@ -130,7 +117,7 @@ class Remote extends User implements RemoteAccountInterface {
     }
     else {
       // An account on another (branchward) node
-      $result = $this->API()->getAccountSummary($this->relPath());
+      $result = $this->API()->getAccountSummary($this->relPath);
       $result = reset($result);
     }
     return $result;
@@ -141,15 +128,17 @@ class Remote extends User implements RemoteAccountInterface {
    */
   function getAllSummaries() : array {
     // the relPath should have a slash at the end of it.
-    return $this->API()->getAccountSummary($this->relPath());
+    return $this->API()->getAccountSummary($this->relPath);
   }
 
   /**
    * {@inheritdoc}
    */
   function getLimits($force_local = FALSE) : \stdClass {
-    if ($this->isAccount()) {
-      $result = $this->API()->getAccountLimits($this->relPath());
+    if ($this->relPath) {
+      $result = $this->API()->getAccountLimits($this->relPath);
+      // Always returns an array
+      $result = reset($result);
     }
     else {
       $result = parent::getLimits();
@@ -158,15 +147,15 @@ class Remote extends User implements RemoteAccountInterface {
   }
 
   function getAllLimits() : array {
-    // the relPath should have a slash at the end of it.
-    return $this->API()->getAccountLimits($this->relPath());
+    // the relPath should always have a slash at the end of it.
+    return $this->API()->getAccountLimits($this->relPath);
   }
 
   /**
    * {@inheritdoc}
    */
   function getHistory(int $samples = -1) : array {
-    if ($path = $this->relPath()) {
+    if ($path = $this->relPath) {
       $result = (array)$this->api()->getAccountHistory($path, $samples);
       if ($rate = $this->trunkwardConversionRate) {
         $result = array_map(function ($v) use ($rate) {return ceil($v/$rate);}, $result);
@@ -196,5 +185,23 @@ class Remote extends User implements RemoteAccountInterface {
     return new NodeRequester($this->url, $config->nodeName, $this->getLastHash());
   }
 
+
+  /**
+   * Get the address for passing trunkwards or branchwards.
+   *
+   * @return string
+   *
+   * @todo Would be great to find a way to put this in cc-php-lib
+   */
+  function foreignId() : string {
+    global $config;
+    $parts =  [$config->nodeName, $this->id];
+    if ($r = $this->relPath) {
+      // Add the leafward part of the path
+      $parts[] = $r;
+    }
+    return implode('/', $parts);
+  }
+  
 }
 

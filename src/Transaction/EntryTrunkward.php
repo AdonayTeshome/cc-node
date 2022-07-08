@@ -29,7 +29,6 @@ class EntryTrunkward extends EntryTransversal {
       'quant' => $this->quant,
       'description' => $this->description,
       'metadata' => (object)[],
-      'isPrimary' => $this->isPrimary// this isn't properly in the API at the moment.
     ];
 
     if ($this->transaction->trunkwardResponse()) {
@@ -40,7 +39,6 @@ class EntryTrunkward extends EntryTransversal {
       }
     }
     $array['quant'] = $this->transaction->trunkwardResponse() ? $this->trunkward_quant : $this->quant;
-
     return $array;
   }
 

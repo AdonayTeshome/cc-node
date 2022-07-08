@@ -164,7 +164,7 @@ trait StorageTrait {
     foreach (['payee', 'payer'] as $role) {
       $$role = $entry->{$role}->id;
       if ($entry->{$role} instanceof Remote) {
-        $entry->metadata->{$$role} = $entry->{$role}->givenPath;
+        $entry->metadata->{$$role} = $entry->{$role}->foreignId();
       }
     }
     $metadata = serialize($entry->metadata);
@@ -351,7 +351,7 @@ trait StorageTrait {
    * @return array
    */
   static function getAccountSummaries($include_virgin_wallets = FALSE) : array {
-    $results = $all_balances = [];
+    $results = $balances = [];
         $balances = [];
     $result = Db::query("SELECT uid1, uid2, diff, state, is_primary "
       . "FROM transaction_index "

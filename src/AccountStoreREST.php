@@ -27,11 +27,11 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
   private $cached = [];
   private $trunkwardAcc;
 
-  function __construct() {
+  function __construct(string $trunkward_acc_name) {
     global $config;
     parent::__construct($config->accountStore);
     $this->options[RequestOptions::HEADERS]['Accept'] = 'application/json';
-    $this->trunkwardAcc = $config->trunkwardAcc;
+    $this->trunkwardAcc = $trunkward_acc_name;
   }
 
   /**
@@ -95,7 +95,7 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
   /**
    * {@inheritDoc}
    */
-  function fetch(string $name) : Account {
+  function fetch(string $name, string $rel_path = '') : Account {
     $path = urlencode($name);
     try{
       $result = $this->localRequest($path);
@@ -109,7 +109,7 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
     catch (\Exception $e) {
       throw new CCFailure("AccountStore returned a ".$e->getCode() ." from $name: ".$e->getMessage());
     }
-    return $this->upcast($result);
+    return $this->upcast($result, $rel_path);
   }
 
   /**
@@ -171,7 +171,7 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
   /**
    * {@inheritdoc}
    */
-  public static function anonAccount() : Account {
+  public function anonAccount() : Account {
     $obj = ['id' => '-anon-', 'max' => 0, 'min' => 0, 'status' => 1];
     return User::create((object)$obj);
   }
@@ -182,10 +182,13 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
    * @param \stdClass $data
    * @return Account
    */
-  private function upcast(\stdclass $data) : Account {
-    $class = self::determineAccountClass($data);
-    $this->cached[$data->id] = $class::create($data);
-    return $this->cached[$data->id];
+  private function upcast(\stdclass $data, string $rel_path = '') : Account {
+    if (!isset($this->cached[$data->id][$rel_path])) {
+      $class = self::determineAccountClass($data, $rel_path);
+      $acc = $class::create($data, $rel_path);
+      $this->cached[$data->id][$rel_path] = $acc;
+    }
+    return $this->cached[$data->id][$rel_path];
   }
 
   /**
@@ -195,7 +198,7 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
    * @param \stdClass $data
    * @return string
    */
-  private static function determineAccountClass(\stdClass $data) : string {
+  private static function determineAccountClass(\stdClass $data, string $rel_path = '') : string {
     global $user, $config;
     if (!empty($data->url)) {
       $upS = $user ? ($data->id == $user->id) : TRUE;

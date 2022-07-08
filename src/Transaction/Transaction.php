@@ -251,6 +251,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
   public function upcastEntries(array $rows, bool $additional = FALSE) : void {
     global $config, $user;
     foreach ($rows as $row) {
+
       // Could this be done earlier?
       if (!$row->quant and !$config->zeroPayments) {
         throw new CCOtherViolation("Zero transactions not allowed on this node.");

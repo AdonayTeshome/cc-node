@@ -32,9 +32,9 @@ class Entry extends BaseEntry implements \JsonSerializable {
   ) {
     parent::__construct($payee, $payer, $quant, $author, $metadata, $description);
     foreach ([$payee, $payer] as $acc) {
-      // Ideally this check would be a little more 'hard-wired' but that would require big architecture changes
-      if ($acc instanceOf Remote and !$acc->relPath()) {
-        throw new WrongAccountViolation($acc->id);
+      // Ideally this check would be in the account object but that could make it hard to load remote accounts for local use.
+      if ($acc instanceOf Remote and !$acc->relPath) {
+        throw new WrongAccountViolation($acc->foreignId());
       }
     }
   }
@@ -60,7 +60,7 @@ class Entry extends BaseEntry implements \JsonSerializable {
       $data->metadata,
       $data->isAdditional,
       $data->isPrimary,
-      $data->description
+      substr($data->description, 0, 255) // To comply with mysql tinytext field.
     );
     if ($entry instanceOf EntryTransversal) {
       $entry->setTransaction($transaction);
@@ -93,9 +93,10 @@ class Entry extends BaseEntry implements \JsonSerializable {
   }
 
   /**
-   * Prepare a version of the transaction to send to the Blogic module
+   * Prepare a version of the entry to send to the Blogic module.
    */
   public function toBlogic($type) : array {
+    // Foreign ids are used so they can be upcast later.
     return [
       'payee' => $this->payee->foreignId(),
       'payer' => $this->payer->foreignId(),
@@ -125,13 +126,13 @@ class Entry extends BaseEntry implements \JsonSerializable {
       // the payee/payer is one local or remote account and not a remote node - i.e. with a slash at the end.
       if ($row->payee instanceOf Remote) {
         if (!$row->payee->isAccount()) {
-          throw new WrongAccountViolation($row->payee->givenPath);
+          throw new WrongAccountViolation($row->payee->foreignId());
         }
         $class = 'TransversalTransaction';
       }
       elseif ($row->payer instanceOf Remote) {
         if (!$row->payer->isAccount()) {
-          throw new WrongAccountViolation($row->payer->givenPath);
+          throw new WrongAccountViolation($row->payer->foreignId());
         }
         $class = 'TransversalTransaction';
       }

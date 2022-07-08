@@ -25,21 +25,17 @@ class Trunkward extends Remote {
     }
   }
 
+  //
   function foreignId() : string {
-    return $this->relPath();
+    return $this->relPath;
+    global $config;
+    $fid = array_filter([
+      $config->nodeName,
+      $this->id,
+      $this->relPath
+    ]);
+    return implode('/', $fid);
   }
-
-  function relPath() : string {
-    $parts = explode('/', $this->givenPath);
-
-    if (reset($parts) == $this->id) {
-      // This account is _assumed_ to be trunkwards.
-      return substr($this->givenPath, strlen($this->id) + 1);
-    }
-    \CCNode\debug("RelPath of Trunkward is $this->givenPath - " . print_R($this, 1));
-    return $this->givenPath;
-  }
-
 
   /**
    * Convert the quantities if entries are coming from the trunk
@@ -48,7 +44,6 @@ class Trunkward extends Remote {
    */
   public function convertIncomingEntries(array &$entries) : void {
     if ($rate = $this->trunkwardConversionRate) {
-      \CCNode\debug('convertIncomingEntries - check these really are from or for the trunk');
       foreach ($entries as &$e) {
         $e->trunkward_quant = $e->quant;
         $e->quant = ceil($e->quant / $rate);
@@ -56,7 +51,6 @@ class Trunkward extends Remote {
       }
     }
   }
-
 
   /**
    * {@inheritdoc}
@@ -66,7 +60,6 @@ class Trunkward extends Remote {
     $this->convertSummary($summary);
     return $summary;
   }
-
 
   /**
    * {@inheritdoc}
@@ -86,7 +79,6 @@ class Trunkward extends Remote {
    * @return void
    */
   private function convertSummary(\stdClass $summary) : void {
-    \CCNode\debug('Converting AccountSummary FROM trunkwards.');
     if ($rate = $this->trunkwardConversionRate) {
       $summary->pending->receiveTrunkward($rate);
       $summary->completed->receiveTrunkward($rate);
@@ -124,7 +116,6 @@ class Trunkward extends Remote {
    * @return void
    */
   private function convertLimits(\stdClass &$limits) : void {
-    \CCNode\debug('Converting limits FROM trunkwards.');
     if ($rate = $this->trunkwardConversionRate) {
       $limits->min = ceil($limits->min / $rate);
       $limits->max = ceil($limits->max / $rate);

@@ -1,8 +1,8 @@
 <?php
 
 namespace CCNode\Transaction;
+
 use CCNode\Transaction\Entry;
-use CCNode\Accounts\Remote;
 
 /**
  * Transversal entries have different classes (and hence methods) according to
@@ -41,14 +41,12 @@ class EntryTransversal extends Entry {
     return $flat;
   }
 
-  // unused?
-  private function isGoingBackToClient() : bool {
-    return $this->transaction->responseMode and
-      $user->id == $transaction->trunkwardAccount and
-      !$user instanceOf Remote;
-  }
-
-  protected function includeMetaData() {
+  /**
+   * Include the metadata unless we are responding to a request from trunkward and privacy settings forbid.
+   *
+   * @return bool
+   */
+  protected function includeMetaData() : bool {
     global $user, $config;
     if ($user == $this->transaction->trunkwardAccount and $this->transaction->responseMode == TRUE) {
       return $config->privacy['metadata'];

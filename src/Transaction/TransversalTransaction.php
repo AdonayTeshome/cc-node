@@ -71,8 +71,6 @@ class TransversalTransaction extends Transaction {
     parent::buildvalidate();
     if ($this->downstreamAccount) {
       $rows = $this->downstreamAccount->buildValidateRelayTransaction($this);
-\CCNode\debug('received from downstream...');
-\CCNode\debug($rows);
       Entry::upcastAccounts($rows);
       $this->upcastEntries($rows, TRUE);
     }
@@ -150,7 +148,6 @@ class TransversalTransaction extends Transaction {
    * @return stdClass
    */
   public function jsonSerialize() : array {
-    global $user;
     $array = parent::jsonSerialize();
     if ($adjacentNode = $this->responseMode ? $this->upstreamAccount : $this->downstreamAccount) {
       $array['entries'] = $this->filterFor($adjacentNode);
@@ -164,8 +161,6 @@ class TransversalTransaction extends Transaction {
       // Forward the whole transaction minus a few properties.
       unset($array['status'], $array['workflow'], $array['payeeHash'], $array['payerHash'], $array['transitions']);
     }
-    \CCNode\debug('serializing...');
-    \CCNode\debug($array);
     return $array;
   }
 
