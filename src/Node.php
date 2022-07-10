@@ -6,7 +6,6 @@ use CCNode\Workflows;
 use CCNode\Accounts\Branch;
 use CCNode\AddressResolver;
 use CCNode\Accounts\Remote;
-use CCNode\Accounts\User;
 use CCNode\Accounts\Trunkward;
 use CCNode\Accounts\RemoteAccountInterface;
 use CCNode\Transaction\Transaction;
@@ -183,14 +182,15 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    * get local or remote transaction
    */
-  public function getTransaction(string $uuid, bool $full = TRUE): BaseTransaction | array {
-    if (!$full) {
-      $result = array_values(StandaloneEntry::loadByUuid($uuid));
-    }
-    else {
-      $result = Transaction::loadByUuid($uuid);
-      $result->responseMode = TRUE;// there's nowhere tidier to do this.
-    }
+  public function getTransaction(string $uuid): BaseTransaction {
+    $result = Transaction::loadByUuid($uuid);
+    $result->responseMode = TRUE;// there's nowhere tidier to do this.
+    return $result;
+  }
+
+  public function getTransactionEntries(string $uuid): array {
+    $result = array_values(StandaloneEntry::loadByUuid($uuid));
+    $result->responseMode = TRUE;// there's nowhere tidier to do this.
     return $result;
   }
 
