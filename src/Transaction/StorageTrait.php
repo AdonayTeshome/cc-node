@@ -8,7 +8,7 @@ use CCNode\Transaction\EntryTrunkward;
 use CCNode\Accounts\Remote;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\CCFailure;
-use CreditCommons\Exceptions\CCOtherViolation;
+use CreditCommons\Exceptions\PermissionViolation;
 use CCNode\Db;
 use function CCNode\accountStore;
 
@@ -46,8 +46,7 @@ trait StorageTrait {
     while ($row = $result->fetch_object()) {
       if ($tx->state == 'validated' and $row->author <> $user->id and !$user->admin and $row->is_primary) {
         // deny the transaction exists to all but its author and admins
-        // Note this is a bit misleading but permission error has fields that we can't populate from here.
-        throw new CCOtherViolation("Transaction $uuid has not yet been confirmed by its creator");
+        throw new PermissionViolation();
       }
       $row->metadata = unserialize($row->metadata);
       $tx->entries[] = $row;
@@ -164,7 +163,7 @@ trait StorageTrait {
     foreach (['payee', 'payer'] as $role) {
       $$role = $entry->{$role}->id;
       if ($entry->{$role} instanceof Remote) {
-        $entry->metadata->{$$role} = $entry->{$role}->foreignId();
+        $entry->metadata->{$$role} = $entry->{$role}->relPath;
       }
     }
     $metadata = serialize($entry->metadata);
@@ -197,8 +196,10 @@ trait StorageTrait {
    * @note you can't filter on metadata here.
    */
   static function filter(
-    string $sort = 'written,desc',
-    string $pager = '0,10',
+    string $sort = 'written',
+    string $dir = 'desc',
+    int $limit = 25,
+    int $offset = 0,
     string $payer = NULL,
     string $payee = NULL,
     string $involving = NULL,
@@ -216,7 +217,7 @@ trait StorageTrait {
       $states = [$state];
     }
     if (isset($type) and !isset($types)) {
-      $type = [$type];
+      $types = [$type];
     }
     // Get only the latest version of each row in the transactions table.
     $query = "SELECT e.id, t.uuid FROM transactions t "
@@ -294,13 +295,7 @@ trait StorageTrait {
     if (isset($conditions)) {
       $query .= ' WHERE '.implode(' AND ', $conditions);
     }
-    list($f, $dir) = explode(',', $sort);
-    // @todo check that $f is a field.
-    $query .= " ORDER BY $f ".strtoUpper($dir??'desc').", is_primary DESC";
-
-    if (isset($pager)) {
-      $query .= " LIMIT $pager ";
-    }
+    $query .= " ORDER BY $sort ".strtoUpper($dir).", is_primary DESC LIMIT $offset, $limit";
 
     $query_result = Db::query($query);
     $results = [];
