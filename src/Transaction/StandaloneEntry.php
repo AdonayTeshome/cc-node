@@ -2,6 +2,8 @@
 namespace CCNode\Transaction;
 
 use CCNode\Db;
+use CreditCommons\Exceptions\DoesNotExistViolation;
+use CreditCommons\Exceptions\PermissionViolation;
 
 /**
  * Transaction entry in a flat format.
@@ -13,6 +15,8 @@ class StandaloneEntry extends \CreditCommons\StandaloneEntry {
    * @return static[]
    */
   static function loadByUuid(string $uuid) : array {
+    global $user;
+    $ids = [];
     $query = "SELECT e.id FROM transactions t "
       . "INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver "
       . "LEFT JOIN entries e ON t.id = e.txid "
@@ -22,7 +26,16 @@ class StandaloneEntry extends \CreditCommons\StandaloneEntry {
     while ($row = $result->fetch_object()){
       $ids[] = $row->id;
     }
-    return static::load($ids);
+    if (empty($ids)) {
+      throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
+    }
+    $entries = static::load($ids);
+    // We just check the first (primary) entry
+    if (reset($entries)->state == 'validated' and reset($entries)->author <> $user->id and !$user->admin) {
+      // deny the transaction exists to all but its author and admins
+      throw new PermissionViolation();
+    }
+    return $entries;
   }
 
   /**
