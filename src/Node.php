@@ -21,6 +21,9 @@ use CreditCommons\BaseTransaction;
 use CreditCommons\NewTransaction;
 use CreditCommons\Account;
 
+/**
+ * @todo i just noticed these are all static functions as long as $config is a global
+ */
 class Node implements CreditCommonsInterface {
 
   function __construct(private \CCNode\ConfigInterface $config) {}
@@ -89,14 +92,10 @@ class Node implements CreditCommonsInterface {
   /**
    * {@inheritDoc}
    */
-  public function filterTransactions(array $params): array {
-    if (isset($params['entries']) and $params['entries'] === 'true') {
-      $entries = TRUE;
-    }
-    else {
-      $entries = FALSE;
-    }
+  public function filterTransactions(array $params = []): array {
+    $entries =  isset($params['entries']) and $params['entries'] === 'true';
     unset($params['entries']);
+
     $uuids = Transaction::filter(...$params);
     $results = [];
 
@@ -177,10 +176,8 @@ class Node implements CreditCommonsInterface {
     return permitted_operations();
   }
 
-
   /**
    * {@inheritDoc}
-   * get local or remote transaction
    */
   public function getTransaction(string $uuid): BaseTransaction {
     $result = Transaction::loadByUuid($uuid);
@@ -188,18 +185,20 @@ class Node implements CreditCommonsInterface {
     return $result;
   }
 
+  /**
+   * {@inheritDoc}
+   */
   public function getTransactionEntries(string $uuid): array {
-    $result = array_values(StandaloneEntry::loadByUuid($uuid));
-    $result->responseMode = TRUE;// there's nowhere tidier to do this.
-    return $result;
+    return array_values(StandaloneEntry::loadByUuid($uuid));
   }
 
   /**
    * {@inheritDoc}
    */
-  public function getWorkflows(): array {
-    // Todo need to instantiate workflows with the Trunkward requester if there is one.
-    return (new Workflows())->loadAll();
+  public static function getWorkflows(): array {
+    // @todo need to instantiate workflows with the Trunkward requester if there is one.
+    // @note this assumes workflows is in the same directory as the called file.
+    return (new Workflows('workflows.json'))->loadAll();
   }
 
   /**
@@ -348,7 +347,7 @@ function API_calls(Remote $account = NULL) {
 
 /**
  * Get the library of functions for accessing ledger accounts.
- * Careful if trying to cache the accountstore because filtering
+ * Careful if trying to cache the accountstore
  */
 function accountStore() : AccountStoreInterface {
   global $config;

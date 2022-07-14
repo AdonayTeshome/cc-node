@@ -4,7 +4,6 @@ namespace CCNode\Transaction;
 
 use CCNode\Transaction\Entry;
 use CCNode\BlogicRequester;
-use CCNode\Workflows;
 use CCNode\Accounts\Remote;
 use CCNode\Accounts\Branch;
 use CCNode\Accounts\Trunkward;
@@ -22,12 +21,17 @@ use function CCNode\load_account;
 class Transaction extends BaseTransaction implements \JsonSerializable {
   use \CCNode\Transaction\StorageTrait;
 
+  /**
+   * The full workflow object.
+   * @var Workflow
+   */
   protected $workflow;
+
   /**
    * The database ID of the transaction, (for linking to the entries table)
    * @var int
    */
-  protected int $txID;
+  protected int $txID = 0;
 
   /**
    * FALSE for request, TRUE for response mode
@@ -63,7 +67,9 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     $data->written = $data->written??'';
     static::validateFields($data);
     $t = new static($data->uuid, $data->written, $data->type, $data->state, $data->entries, $data->version);
-    $t->txID = $data->txID??0;
+    if (isset($data->txID)) {
+      $t->txID = $data->txID;
+    }
     return $t;
   }
 
@@ -235,7 +241,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    */
   protected function getWorkflow() : Workflow {
     if (!$this->workflow) {
-      $this->workflow = (new Workflows())->get($this->type);
+      $this->workflow = Node::getWorkflows()->get($this->type);
     }
     return $this->workflow;
   }

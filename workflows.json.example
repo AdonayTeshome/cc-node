@@ -91,7 +91,7 @@
   },
   {
     "id": "3rdparty",
-    "label": "3rdparty transaction",
+    "label": "3rd Party",
     "summary": "Admin creates instantly with no confirmation",
     "active": "1",
     "creation": {
