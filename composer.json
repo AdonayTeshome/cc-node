@@ -27,8 +27,12 @@
   },
   "autoload": {
     "psr-4": {
-      "CCNode\\": "src",
-      "CCNode\\Tests\\": "tests"
+      "CCNode\\": "src"
     }
+  },
+  "scripts": {
+    "post-create-project-cmd": [
+      "cp -r vendor/credit-commons/cc-node/ui ui"
+    ]
   }
 }
