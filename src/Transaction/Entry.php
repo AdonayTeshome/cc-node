@@ -5,7 +5,6 @@ use CCNode\AddressResolver;
 use CCNode\Accounts\Remote;
 use CreditCommons\BaseEntry;
 use CreditCommons\Account;
-use CreditCommons\Exceptions\WrongAccountViolation;
 
 /**
  * Determine the account types for entries.
@@ -31,12 +30,6 @@ class Entry extends BaseEntry implements \JsonSerializable {
     public string $description = '',
   ) {
     parent::__construct($payee, $payer, $quant, $author, $metadata, $description);
-    foreach ([$payee, $payer] as $acc) {
-      // Ideally this check would be in the account object but that could make it hard to load remote accounts for local use.
-      if ($acc instanceOf Remote and !$acc->relPath) {
-        throw new WrongAccountViolation($acc->foreignId());
-      }
-    }
   }
 
   /**
@@ -115,7 +108,6 @@ class Entry extends BaseEntry implements \JsonSerializable {
    * @todo this might be tidier if it just does one Entry at a time.
    */
   static function upcastAccounts(array &$rows) : string {
-    $class = 'Transaction';
     $addressResolver = AddressResolver::create();
     foreach ($rows as &$row) {
       $payee_addr = $row->metadata->{$row->payee}??$row->payee;
@@ -124,17 +116,11 @@ class Entry extends BaseEntry implements \JsonSerializable {
       $row->payer = $addressResolver->localOrRemoteAcc($payer_addr);
       // @todo refactor the address resolver so that we can be sure by now that
       // the payee/payer is one local or remote account and not a remote node - i.e. with a slash at the end.
-      if ($row->payee instanceOf Remote) {
-        if (!$row->payee->isAccount()) {
-          throw new WrongAccountViolation($row->payee->foreignId());
-        }
+      if ($row->payee instanceOf Remote or $row->payer instanceOf Remote) {
         $class = 'TransversalTransaction';
       }
-      elseif ($row->payer instanceOf Remote) {
-        if (!$row->payer->isAccount()) {
-          throw new WrongAccountViolation($row->payer->foreignId());
-        }
-        $class = 'TransversalTransaction';
+      else {
+        $class = 'Transaction';
       }
     }
     return '\\CCNode\\Transaction\\'.$class;
