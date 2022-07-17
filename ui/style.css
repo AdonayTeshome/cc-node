@@ -30,6 +30,7 @@ table {
     table-layout: auto;
     line-height: 1.8em;
     border-spacing: 3px;
+    vertical-align: top;
 }
 table th {
     padding: 2px 5px;

@@ -163,7 +163,7 @@ trait StorageTrait {
     foreach (['payee', 'payer'] as $role) {
       $$role = $entry->{$role}->id;
       if ($entry->{$role} instanceof Remote) {
-        $entry->metadata->{$$role} = $entry->{$role}->relPath;
+        $entry->metadata->{$$role} = $entry->{$role}->foreignId;
       }
     }
     $metadata = serialize($entry->metadata);

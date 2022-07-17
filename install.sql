@@ -10,8 +10,9 @@ CREATE TABLE transactions (
   written DATETIME
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-ALTER TABLE transactions
-  ADD PRIMARY KEY (id);
+ALTER TABLE `transactions`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uuid version` (`uuid`,`version`);
 
 ALTER TABLE transactions
   MODIFY id int(11) NOT NULL AUTO_INCREMENT;

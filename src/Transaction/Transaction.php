@@ -88,40 +88,62 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     if (!$user->admin and !$workflow->canTransitionToState($user->id, $this, $desired_state)) {
       throw new WorkflowViolation(type: $this->type, from: $this->state, to: $desired_state);
     }
-    $blogic_entry = $this->entries[0]->toBlogic($this->type);
     // Add fees, etc by calling on the blogic module, either internally or via REST API
     // @todo make the same function name for both.
     if ($config->blogicMod) {
-      if (class_exists($config->blogicMod)) {
-        $class = $config->blogicMod;
-        $blogic_mod = new $class();
-        $rows = $blogic_mod->addRows(...$blogic_entry);
-      }
-      elseif($config->blogicMod) {// Should really test that it is a url.
-        // The Blogic service will know itself which account to put fees in.
-        $rows = (new BlogicRequester())->addRows(...$blogic_entry);
-      }
-      // The Blogic returns entries with upcast account objects
-      $this->upcastEntries($rows, TRUE);
+      $this->callBlogic();
     }
-    foreach ($this->sum() as $acc_id => $info) {
-      // Note only in the accounts in the main entry are limit-checked.
-      $account = load_account($acc_id);
-      $acc_summary = $account->getSummary(TRUE);
+    $this->validate();
+  }
+
+  /**
+   * Check the transaction doesn't transgress balance limits
+   *
+   * @throws MaxLimitViolation
+   * @throws MinLimitViolation
+   */
+  function validate() {
+    global $config;
+    list($payee_diff, $payer_diff) = $this->sum();
+    $payee = $this->entries[0]->payee;
+    if ($payee->max or $payee->min) {
+      $acc_summary = $payee->getSummary(TRUE);
       $stats = $config->validatePending ? $acc_summary->pending : $acc_summary->completed;
-      $projected = $stats->balance + $info->diff;
-      $payee = $this->entries[0]->payee;
-      $payer = $this->entries[0]->payer;
-      if ($projected > $payee->max) {
+      $projected = $stats->balance + $this->sum($payee->id);
+      if ($payee_diff > 0 and $projected > $payee->max) {
         throw new MaxLimitViolation(limit: $payee->max, projected: $projected);
       }
-      elseif ($projected < $payer->min) {
-        throw new MinLimitViolation(limit: $payer->min, projected: $projected);
+    }
+    $payer = $this->entries[0]->payer;
+    if ($payer->max or $payer->min) {
+      $acc_summary = $payer->getSummary(TRUE);
+      $stats = $config->validatePending ? $acc_summary->pending : $acc_summary->completed;
+      $projected = $stats->balance + $this->sum($payer->id);
+      if ($payer_diff < 0 and $projected < $payer->min) {
+        throw new MaxLimitViolation(limit: $payer->max, projected: $projected);
       }
     }
     $this->state = TransactionInterface::STATE_VALIDATED;
   }
 
+  /**
+   * Call whatever Blogic class and upcast and append any resulting rows.
+   */
+  private function callBlogic() {
+    global $config;
+    $blogic_entry = $this->entries[0]->toBlogic($this->type);
+    if (class_exists($config->blogicMod)) {
+      $class = $config->blogicMod;
+      $blogic_mod = new $class();
+      $rows = $blogic_mod->addRows(...$blogic_entry);
+    }
+    elseif($config->blogicMod) {// Should really test that it is a url.
+      // The Blogic service will know itself which account to put fees in.
+      $rows = (new BlogicRequester())->addRows(...$blogic_entry);
+    }
+    // The Blogic returns entries with upcast account objects
+    $this->upcastEntries($rows, TRUE);
+  }
 
   /**
    * Insert the transaction for the first time
@@ -190,25 +212,25 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
   }
 
   /**
-   * Add up all the transactions and return the differences in balances for
-   * every involved user.
+   * Calculate the total difference this transaction makes to an account balance.
    *
-   * @param Transaction $transaction
-   * @return array
-   *   The differences, keyed by account name.
+   * @param string $acc_id
+   *   The account whose diff is needed.
+   *
+   * @return int
+   *   The total difference caused by this transaction to the account balance
    */
-  private function sum() : array {
-    $accounts = [];
+  private function sum(string $acc_id) : int {
+    $diff = 0;
     foreach ($this->entries as $entry) {
-      $accounts[$entry->payee->id] = $entry->payee;
-      $accounts[$entry->payer->id] = $entry->payer;
-      $sums[$entry->payer->id][] = -$entry->quant;
-      $sums[$entry->payee->id][] = $entry->quant;
+      if ($acc_id == $entry->payee->id) {
+        $diff += $entry->quant;
+      }
+      elseif ($acc_id == $entry->payer->id) {
+        $diff -= $entry->quant;
+      }
     }
-    foreach ($sums as $localName => $diffs) {
-      $accounts[$localName]->diff = array_sum($diffs);
-    }
-    return $accounts;
+    return $diff;
   }
 
   /**

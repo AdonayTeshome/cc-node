@@ -1,7 +1,7 @@
 <?php require './login.php';
 // Make a filterable table with all transactions
 $all_accounts = $node->getAccountSummary();
-asort($all_accounts);
+ksort($all_accounts);
 ?>
 <form method="GET">
   Show details: <select name="account">
@@ -19,6 +19,7 @@ if (isset($_GET['account'])) {
 else {
   // Print all accounts and balances.
   print allAccounts($all_accounts);
+  ?><a href="addaccount.php">Add Account...</a><?php
 }
 
 // generate a display summarising one account's trade.
