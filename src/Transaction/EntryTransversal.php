@@ -23,8 +23,7 @@ class EntryTransversal extends Entry {
   /**
    * Convert the entry for sending to another node.
    */
-  public function jsonSerialize() : array {
-    global $user;
+  public function jsonSerialize() : mixed {
     $flat = [
       'quant' => $this->quant,
       'description' => $this->description,
@@ -47,9 +46,9 @@ class EntryTransversal extends Entry {
    * @return bool
    */
   protected function includeMetaData() : bool {
-    global $user, $config;
-    if ($user == $this->transaction->trunkwardAccount and $this->transaction->responseMode == TRUE) {
-      return $config->privacy['metadata'];
+    global $cc_user, $cc_config;
+    if ($cc_user == $this->transaction->trunkwardAccount and $this->transaction->responseMode == TRUE) {
+      return $cc_config->privacy['metadata'];
     }
     else return TRUE;
   }

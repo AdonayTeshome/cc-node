@@ -40,7 +40,6 @@ class User extends Account {
    * @note this isn't part of the core API
    */
   function getHistory(int $samples = -1) : array {
-    global $config;
     $points = [];
     $result = Transaction::accountHistory($this->id) ;
     // Database is storing timestamps as 'Y-m-d H:i:s.0'
@@ -130,8 +129,8 @@ class User extends Account {
    * @todo Would be great to find a way to put this in cc-php-lib
    */
   function foreignId() : string {
-    global $config;
-    return $config->nodeName .'/'. $this->id;
+    global $cc_config;
+    return $cc_config->nodeName .'/'. $this->id;
   }
 }
 

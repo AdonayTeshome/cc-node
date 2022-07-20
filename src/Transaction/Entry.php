@@ -69,7 +69,7 @@ class Entry extends BaseEntry implements \JsonSerializable {
    * Entries return to the client with account names collapsed to a relative name
    * @return array
    */
-  public function jsonSerialize() : array {
+  public function jsonSerialize() : mixed {
     $flat = [
       'payee' => $this->payee->foreignId(),
       'payer' => $this->payer->foreignId(),

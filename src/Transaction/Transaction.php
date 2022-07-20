@@ -2,6 +2,7 @@
 
 namespace CCNode\Transaction;
 
+use CCNode\Node;
 use CCNode\Transaction\Entry;
 use CCNode\BlogicRequester;
 use CCNode\Accounts\Remote;
@@ -16,7 +17,6 @@ use CreditCommons\Exceptions\WorkflowViolation;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\TransactionInterface;
 use CreditCommons\BaseTransaction;
-use function CCNode\load_account;
 
 class Transaction extends BaseTransaction implements \JsonSerializable {
   use \CCNode\Transaction\StorageTrait;
@@ -78,19 +78,20 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * Validate the transaction in its workflow's 'creation' state
    */
   function buildValidate() : void {
-    global $config, $user;
+    global $cc_config, $cc_user;
 
     $workflow = $this->getWorkflow();
     if (!$workflow->active) {
+      // not allowed to make new transactions with non-active workflows
       throw new DoesNotExistViolation(type: 'workflow', id: $this->type);
     }
     $desired_state = $workflow->creation->state;
-    if (!$user->admin and !$workflow->canTransitionToState($user->id, $this, $desired_state)) {
+    if (!$cc_user->admin and !$workflow->canTransitionToState($cc_user->id, $this, $desired_state)) {
       throw new WorkflowViolation(type: $this->type, from: $this->state, to: $desired_state);
     }
     // Add fees, etc by calling on the blogic module, either internally or via REST API
     // @todo make the same function name for both.
-    if ($config->blogicMod) {
+    if ($cc_config->blogicMod) {
       $this->callBlogic();
     }
     $this->validate();
@@ -103,13 +104,13 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * @throws MinLimitViolation
    */
   function validate() {
-    global $config;
-    list($payee_diff, $payer_diff) = $this->sum();
+    global $cc_config;
     $payee = $this->entries[0]->payee;
     if ($payee->max or $payee->min) {
       $acc_summary = $payee->getSummary(TRUE);
-      $stats = $config->validatePending ? $acc_summary->pending : $acc_summary->completed;
-      $projected = $stats->balance + $this->sum($payee->id);
+      $stats = $cc_config->validatePending ? $acc_summary->pending : $acc_summary->completed;
+      $payee_diff = $this->sum($payee->id);
+      $projected = $stats->balance + $payee_diff;
       if ($payee_diff > 0 and $projected > $payee->max) {
         throw new MaxLimitViolation(limit: $payee->max, projected: $projected);
       }
@@ -117,8 +118,9 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     $payer = $this->entries[0]->payer;
     if ($payer->max or $payer->min) {
       $acc_summary = $payer->getSummary(TRUE);
-      $stats = $config->validatePending ? $acc_summary->pending : $acc_summary->completed;
-      $projected = $stats->balance + $this->sum($payer->id);
+      $stats = $cc_config->validatePending ? $acc_summary->pending : $acc_summary->completed;
+      $payer_diff = $this->sum($payer->id);
+      $projected = $stats->balance + $payer_diff;
       if ($payer_diff < 0 and $projected < $payer->min) {
         throw new MaxLimitViolation(limit: $payer->max, projected: $projected);
       }
@@ -130,14 +132,14 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * Call whatever Blogic class and upcast and append any resulting rows.
    */
   private function callBlogic() {
-    global $config;
+    global $cc_config;
     $blogic_entry = $this->entries[0]->toBlogic($this->type);
-    if (class_exists($config->blogicMod)) {
-      $class = $config->blogicMod;
+    if (class_exists($cc_config->blogicMod)) {
+      $class = $cc_config->blogicMod;
       $blogic_mod = new $class();
       $rows = $blogic_mod->addRows(...$blogic_entry);
     }
-    elseif($config->blogicMod) {// Should really test that it is a url.
+    elseif($cc_config->blogicMod) {// Should really test that it is a url.
       // The Blogic service will know itself which account to put fees in.
       $rows = (new BlogicRequester())->addRows(...$blogic_entry);
     }
@@ -185,10 +187,10 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * @throws WorkflowViolation
    */
   function changeState(string $target_state) : bool {
-    global $user;
+    global $cc_user;
     // If the logged in account is local, then at least one of the local accounts must be local.
     // No leaf account can manipulate transactions which only bridge this ledger.
-    if ($this->entries[0]->payer instanceOf Remote and $this->entries[0]->payee instanceOf Remote and !$user instanceOf Remote) {
+    if ($this->entries[0]->payer instanceOf Remote and $this->entries[0]->payee instanceOf Remote and !$cc_user instanceOf Remote) {
       throw new WorkflowViolation(
         type: $this->type,
         from: $this->state,
@@ -199,7 +201,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       $this->delete();
       return FALSE;
     }
-    if ($user->admin or $this->getWorkflow()->canTransitionToState($user->id, $this, $target_state)) {
+    if ($cc_user->admin or $this->getWorkflow()->canTransitionToState($cc_user->id, $this, $target_state)) {
       $this->state = $target_state;
       $this->saveNewVersion();
       return TRUE;
@@ -240,7 +242,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    *
    * @return array
    */
-  public function jsonSerialize() : array {
+  public function jsonSerialize() : mixed {
     return [
       'uuid' => $this->uuid,
       'written' => $this->written,
@@ -252,9 +254,9 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     ];
   }
 
-  private function transitions() {
-    global $user;
-    return $this->getWorkflow()->getTransitions($user->id, $this, $user->admin);
+  protected function transitions() : array {
+    global $cc_user;
+    return $this->transitions = $this->getWorkflow()->getTransitions($cc_user->id, $this, $cc_user->admin);
   }
 
   /**
@@ -262,10 +264,11 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * @todo Sort out
    */
   protected function getWorkflow() : Workflow {
-    if (!$this->workflow) {
-      $this->workflow = Node::getWorkflows()->get($this->type);
+    global $cc_workflows;
+    if (isset($cc_workflows[$this->type])) {
+      return $cc_workflows[$this->type];
     }
-    return $this->workflow;
+    throw new DoesNotExistViolation(type: 'workflow', id: $this->type);
   }
 
 
@@ -277,17 +280,17 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    *   The created entries
    */
   public function upcastEntries(array $rows, bool $additional = FALSE) : void {
-    global $config, $user;
+    global $cc_config, $cc_user;
     foreach ($rows as $row) {
 
       // Could this be done earlier?
-      if (!$row->quant and !$config->zeroPayments) {
+      if (!$row->quant and !$cc_config->zeroPayments) {
         throw new CCOtherViolation("Zero transactions not allowed on this node.");
       }
       $row->isAdditional = $additional;
       $row->isPrimary = empty($this->entries);
       if (empty($row->author)) {
-        $row->author = $user->id;
+        $row->author = $cc_user->id;
       }
       if($row->payee instanceOf Branch and $row->payer instanceOf Branch) {
         // both accounts are leafwards, the current node is at the apex of the route.

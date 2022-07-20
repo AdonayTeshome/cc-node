@@ -25,13 +25,14 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
    * @var Account[]
    */
   private $cached = [];
-  private $trunkwardAcc;
 
-  function __construct(string $trunkward_acc_name) {
-    global $config;
-    parent::__construct($config->accountStore);
+  private $trunkwardAcc = NULL;
+
+  function __construct() {
+    global $cc_config;
+    parent::__construct($cc_config->accountStore);
     $this->options[RequestOptions::HEADERS]['Accept'] = 'application/json';
-    $this->trunkwardAcc = $trunkward_acc_name;
+    $this->trunkwardAcc = $cc_config->trunkwardAcc;
   }
 
   /**
@@ -59,8 +60,8 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
     int $offset = 0,
     bool $full = TRUE
   ) : array {
-    global $config;
-    if ($config->devMode) {
+    global $cc_config;
+    if ($cc_config->devMode) {
       // Because phpunit mode makes lots of requests with the same object.
       $this->options[RequestOptions::QUERY] = [];//
     }
@@ -199,10 +200,10 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
    * @return string
    */
   private static function determineAccountClass(\stdClass $data, string $rel_path = '') : string {
-    global $user, $config;
+    global $cc_user, $cc_config;
     if (!empty($data->url)) {
-      $upS = $user ? ($data->id == $user->id) : TRUE;
-      $trunkward = $data->id == $config->trunkwardAcc;
+      $upS = $cc_user ? ($data->id == $cc_user->id) : TRUE;
+      $trunkward = $data->id == $cc_config->trunkwardAcc;
       if ($trunkward and $upS) {
         $class = 'UpstreamTrunkward';
       }

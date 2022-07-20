@@ -181,8 +181,8 @@ class Remote extends User implements RemoteAccountInterface {
    * {@inheritdoc}
    */
   private function API() : NodeRequester {
-    global $config;
-    return new NodeRequester($this->url, $config->nodeName, $this->getLastHash());
+    global $cc_config;
+    return new NodeRequester($this->url, $cc_config->nodeName, $this->getLastHash());
   }
 
 
@@ -194,14 +194,18 @@ class Remote extends User implements RemoteAccountInterface {
    * @todo Would be great to find a way to put this in cc-php-lib
    */
   function foreignId() : string {
-    global $config;
-    $parts =  [$config->nodeName, $this->id];
+    global $cc_config;
+    $parts = [];
+    if ($cc_config->trunkwardAcc) {
+      $parts[] = $cc_config->nodeName;
+    }
+    $parts[] = $this->id;
     if ($r = $this->relPath) {
       // Add the leafward part of the path
       $parts[] = $r;
     }
     return implode('/', $parts);
   }
-  
+
 }
 

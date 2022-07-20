@@ -26,21 +26,19 @@ class AddressResolver {
   private $accountStore;
   private $nodeName;
   private $trunkwardName;
-  private $userId;
   private $cache = [];
 
   function __construct(AccountStoreInterface $accountStore, string $absolute_path) {
-    global $user;
+    global $cc_user;
     $this->accountStore = $accountStore;
     $parts = explode('/', $absolute_path);
     $this->nodeName = array_pop($parts);
     $this->trunkwardName = array_pop($parts);
-    $this->userId = $user->id;
   }
 
   static function create() {
-    global $config;
-    return new static(accountStore(), $config->absPath);
+    global $cc_config;
+    return new static(accountStore(), $cc_config->absPath);
   }
 
   /**
@@ -82,7 +80,7 @@ class AddressResolver {
    * @note this is called really repetitively during transaction creation.
    */
   function getLocalAccount(string &$given_path) : User|NULL {
-    global $user;
+    global $cc_user;
     if (!isset($this->cache[$given_path])) {
       $path_parts = explode('/', $given_path);
       $pos = array_search($this->nodeName, $path_parts);
@@ -106,7 +104,7 @@ class AddressResolver {
         $this->cache[$given_path] = load_account($acc_id, $rel_path);
       }
       // Load the trunkward account always with the full given path.
-      elseif ($pos == FALSE and $this->trunkwardName and $user->id <> $this->trunkwardName) {
+      elseif ($pos == FALSE and $this->trunkwardName and $cc_user->id <> $this->trunkwardName) {
         $this->cache[$given_path] = load_account($this->trunkwardName, $given_path);
       }
       else {

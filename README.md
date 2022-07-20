@@ -49,8 +49,19 @@ In order to relay a transaction accross the tree, the node needs to know its pos
           - UpstreamTrunkward
 
 ## Installation
-This is not a standalone app or a REST server.
-If you don't already have a composer.json, save one to your application root containing this:
+If you have a list of users on another platform you'll need to write your own accountStore class and extend your app to allow configuration of balance limits, otherwise the default accountStore reads from accountStore.json which is kept in the web root.
+Similarly the business logic is done with a class that you can write.
+Edit workflows.json to your requirements.
+
+###As a REST server
+1. Set up a virtualhost
+1. Download cc-server into the web root
+1. run ```composer install```
+1. Configuration UI is at config/index.php or edit node.ini directly.
+
+###As a component in a php app
+
+You'll need a composer.json in your app's root containing at least the following lines.
 
     {
       "name": "some-name-space/my-application"
@@ -65,19 +76,18 @@ If you don't already have a composer.json, save one to your application root con
       }
     }
 
-If have a composer.json file already, add the above repository to composer.json
-
-Save and then at the command line:
+At the command line:
 
     $ composer require credit-commons/cc-node: @dev
     $ composer update
 
 Composer will download some respositories into vendor/credit-commons.
+See node.ini for configuration.
+See more in 'integration', below.
 
+## Integration considerations
 
-## Deployment
-
-Some things to consider as you start integratig the node into your application.
+Some things to consider as you start integrating the node into your application.
 
 The Credit Commons requires that all currency values are expressed as integers. This is to make conversion a bit easier. So if you want values like 9.99, it should be stored as 999 and then divided by 100 when you want to display it. A display format is planned.
 
@@ -89,6 +99,8 @@ Support for migrating existing transactions will be forthcoming.
 
 This guide does not (yet) cover the business logic module, which adds payments to every transaction. This module is optional, so leave the config value blank for now.
 
+##Integration
+
 ### Setting/refreshing the database TODO
 Basically run the sql in install.sql
 This can be done via the command line. search "run sql queries from text file."
@@ -97,7 +109,7 @@ This can be done via the command line. search "run sql queries from text file."
 
 ### Account store.
 
-The first thing is to tell the node what accounts you have on your system. That means writing a class which implmements the [AccountstoreInterface](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/AccountStoreInterface.php).
+The main task thing is to tell the node what accounts you have on your system. That means writing a class which implements the [AccountstoreInterface](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/AccountStoreInterface.php).
 
 Use the [AccountStoreTemplate](t.b.d) class to get started. Keep all the function definitions and return types the same.
 
@@ -109,7 +121,7 @@ You can just declare a config class and set the values there. The class would lo
     class MyConfigClass implements CCNode\ConfigInterface {
       function __construct() {
         $this->accountStore = 'MyAccountstoreClassName';
-        // Etc.
+        // etc...
       }
     }
     $cc_config = new MyConfigClass;
@@ -120,15 +132,15 @@ Copy ```vendor/credit-commons/cc-node/node.ini.example``` to ```node.ini``` in y
     class MyConfigClass implements CCNode\ConfigInterface {
       function __construct(array $values) {
         $this->accountStore = $values['account_store'];
-        // Etc.
+        // etc...
       }
     }
     $cc_config = new MyConfigClass(parse_ini_file('node.ini'));
 
-You can find more about what the config values mean in  node.ini.
+You can find more about what the config values mean in node.ini.
 
 ### Initiation
-If you are not already using composer, put this near the start of your application:
+If you are not already using composer, put this in your code before any credit commons code is run:
 
     require_once './vendor/autoload.php';
 
@@ -136,9 +148,14 @@ Before doing any ledger operation, initiate the credit commons object like this:
 
     $creditcommons = new \CCNode\Node($cc_config);
 
-You are now ready to read and write to the leder.
+The $creditcommons object is what reads and writes to the ledger.
 
 ### Saving a transaction
+Retrieve the payee/payer users
+Use them to make an Entry
+User the entry to make a transaction
+Validate and save the transaction
+
 You need to convert your transaction into a \CCNode\Transaction object, and then pass it to the $creditcommons to save it to the db. The transaction object checks the types of all fields and throw informative errors to help. The fields are shown in [\CreditCommons\BaseTransaction](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/BaseTransaction.php)
 Note that $transaction->entries is an array. Each entry must be prepared as well. The entry properties are shown in [\CreditCommons\BaseEntry](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/BaseEntry.php)
 

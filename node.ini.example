@@ -15,6 +15,9 @@ abs_path = "trunkward_node/my_cc_node"
 ;Conversion rate with the parent
 conversion_rate = 1.000
 
+;filesystem path to json representation of workflows array
+workflows_filepath = /home/credcom/html/workflows.json
+
 [privacy]
 ;Which types of data can be shared with the rest of the tree.
 priv[metadata] = 0

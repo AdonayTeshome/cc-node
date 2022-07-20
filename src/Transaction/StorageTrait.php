@@ -25,7 +25,7 @@ trait StorageTrait {
    * @return \Transaction
    */
   static function loadByUuid($uuid) : Transaction {
-    global $user;
+    global $cc_user;
     // Select the latest version
     $q = "SELECT id as txID, uuid, written, version, type, state "
       . "FROM transactions "
@@ -44,7 +44,7 @@ trait StorageTrait {
       throw new CCFailure("Database entries table has no rows for $uuid");
     }
     while ($row = $result->fetch_object()) {
-      if ($tx->state == 'validated' and $row->author <> $user->id and !$user->admin and $row->is_primary) {
+      if ($tx->state == 'validated' and $row->author <> $cc_user->id and !$cc_user->admin and $row->is_primary) {
         // deny the transaction exists to all but its author and admins
         throw new PermissionViolation();
       }
@@ -68,10 +68,10 @@ trait StorageTrait {
    * @note No database errors are anticipated.
    */
   public function saveNewVersion() : int {
-    global $user;
+    global $cc_user;
     if ($this->state == 'validated') {
       // No user would ever need more than one transaction in validated state.
-      $this->deleteValidated($user->id);
+      $this->deleteValidatedByUser($cc_user->id);
     }
 
     $now = date(self::$timeFormat);
@@ -79,7 +79,7 @@ trait StorageTrait {
     $this->version++;
 
     $query = "INSERT INTO transactions (uuid, version, type, state, scribe, written) "
-    . "VALUES ('$this->uuid', $this->version, '$this->type', '$this->state', '$user->id', '$this->written')";
+    . "VALUES ('$this->uuid', $this->version, '$this->type', '$this->state', '$cc_user->id', '$this->written')";
     $success = Db::query($query);
 
     $new_id = Db::query("SELECT LAST_INSERT_ID() as id")->fetch_object()->id;
@@ -88,8 +88,8 @@ trait StorageTrait {
     return $new_id;
   }
 
-  function deleteValidated(string $acc_id) {
-    $result = Db::query("SELECT id FROM transactions where state = 'validated' and scribe = '$acc_id'")->fetch_object();
+  function deleteValidatedByUser(string $acc_id) {
+    $result = Db::query("SELECT id FROM transactions where state = 'validated' and scribe = '$acc_id' AND uuid <> '$this->uuid'")->fetch_object();
     if ($result) {
       Db::query("DELETE FROM transactions WHERE id = $result->id");
       Db::query("DELETE FROM entries WHERE txid = $result->id");
@@ -100,8 +100,8 @@ trait StorageTrait {
    * suitable for calling by cron.
    */
   static function cleanValidated() {
-    global $config;
-    $cutoff_moment = date(self::$timeFormat, time() - $config->validatedWindow);
+    global $cc_config;
+    $cutoff_moment = date(self::$timeFormat, time() - $cc_config->validatedWindow);
 
     $result = Db::query("SELECT id FROM transactions where state = 'validated' and written < '$cutoff_moment'");
     foreach ($result->fetch_all() as $row) {
@@ -163,7 +163,7 @@ trait StorageTrait {
     foreach (['payee', 'payer'] as $role) {
       $$role = $entry->{$role}->id;
       if ($entry->{$role} instanceof Remote) {
-        $entry->metadata->{$$role} = $entry->{$role}->foreignId;
+        $entry->metadata->{$$role} = $entry->{$role}->foreignId();
       }
     }
     $metadata = serialize($entry->metadata);
@@ -177,8 +177,9 @@ trait StorageTrait {
     }
   }
 
-
-  //This can only be done on transactions in state validated and possibly local transactions.
+  /**
+   * {@inheritdoc}
+   */
   function delete() {
     Db::query("DELETE FROM transactions WHERE uuid = '$this->uuid'");
     Db::query("DELETE FROM entries WHERE txid = '$this->txID'");
@@ -212,7 +213,7 @@ trait StorageTrait {
     string $before = NULL,
     string $after = NULL,
   ) : array {
-    global $user;
+    global $cc_user;
     if (isset($state) and !isset($states)) {
       $states = [$state];
     }
@@ -273,7 +274,7 @@ trait StorageTrait {
       }
       if (in_array('validated', $states)) {
         // only the author can see transactions in the validated state.
-        $conditions[]  = "(state = 'validated' AND author = '$user->id')";
+        $conditions[]  = "(state = 'validated' AND author = '$cc_user->id')";
       }
       else {
         // transactions with version 0 are validated but not confirmed by their creator.
@@ -284,8 +285,9 @@ trait StorageTrait {
     }
     else {
       $conditions[] = "state <> 'erased'";
+      $conditions[] = "(state <> 'validated' OR (state = 'validated' AND author = '$cc_user->id'))";
     }
-    $conditions[] ="(t.version > 0 OR e.author = '$user->id')";
+    $conditions[] ="(t.version > 0 OR e.author = '$cc_user->id')";
     if (isset($types)) {
       $conditions[] = self::manyCondition('type', $types);
     }

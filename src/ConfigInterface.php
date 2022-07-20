@@ -8,6 +8,7 @@ namespace CCNode;
  * @property string $blogicMod
  * @property string $zeroPayments
  * @property string $validatePending
+ * @property string $workflowsFile
  * @property string $devMode
  * @property string $absPath
  * @property string $nodeName

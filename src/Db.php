@@ -16,12 +16,12 @@ class Db {
    * @return bool false on failure / mysqli MySQLi object instance on success.
    */
   public static function connect($db = '', $user = NULL, $pass = NULL, $server = NULL) : \mysqli {
-    global $config;
+    global $cc_config;
     if(!isset(static::$connection) or $db) {
-      $db = $db ?: $config->dbCreds['name'];
-      $db_user = $user?:$config->dbCreds['user'];
-      $db_pass = isset($pass)?$pass:$config->dbCreds  ['pass'];
-      $db_server = $server?:$config->dbCreds['server'];
+      $db = $db ?: $cc_config->dbCreds['name'];
+      $db_user = $user?:$cc_config->dbCreds['user'];
+      $db_pass = isset($pass)?$pass:$cc_config->dbCreds  ['pass'];
+      $db_server = $server?:$cc_config->dbCreds['server'];
       static::$connection = new \mysqli($db_server, $db_user, $db_pass, $db);
     }
     return static::$connection;
@@ -61,17 +61,9 @@ class Db {
     return $result;
   }
 
-  /**
-   * Remove from the temp table.
-   * @param type $uuid
-   */
-  public static function delete($uuid) {
-    static::query("DELETE FROM temp where uuid = '$uuid'");
-  }
-
   public static function printAll() {
-    global $config;
-    $html = static::printTable($config['node_name'], 'users').static::printTable($config['node_name'], 'temp').static::printTable($config['node_name'], 'ledger');
+    global $cc_config;
+    $html = static::printTable($cc_config->nodeName, 'users').static::printTable($cc_config->nodeName, 'temp').static::printTable($config['node_name'], 'ledger');
     return $html ? : "the database is empty";
   }
 

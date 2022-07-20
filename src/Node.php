@@ -2,11 +2,9 @@
 
 namespace CCNode;
 
-use CCNode\Workflows;
 use CCNode\Accounts\Branch;
 use CCNode\AddressResolver;
 use CCNode\Accounts\Remote;
-use CCNode\Accounts\Trunkward;
 use CCNode\Accounts\RemoteAccountInterface;
 use CCNode\Transaction\Transaction;
 use CCNode\Transaction\StandaloneEntry;
@@ -15,21 +13,38 @@ use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\UnavailableNodeFailure;
 use CreditCommons\BaseTransaction;
 use CreditCommons\NewTransaction;
+use CreditCommons\Workflow;
 
 /**
- * @todo i just noticed these are all static functions as long as $config is a global
+ * In order to implement the same CreditCommonsInterface for internal and
+ * external purposes, we avoid injecting variables by allowing a few globals:
+ * $cc_user, $cc_workflows, $cc_config
  */
 class Node implements CreditCommonsInterface {
 
-  function __construct(private \CCNode\ConfigInterface $config) {}
+  function __construct(array $ini_array) {
+    global $cc_workflows, $cc_config;
+    $cc_config = new ConfigFromIni($ini_array);
+
+    $wfs = json_decode(file_get_contents($cc_config->workflowsFile));
+    if (empty($wfs)) {
+      throw new \CreditCommons\Exceptions\CCFailure('Bad json workflows file: '.$cc_config->workflowsFile);
+    }
+    // @todo This loads only from the local file, but we need to load everything
+    // from cached trunkward workflows as well.
+    foreach ($wfs as $wf) {
+      $workflow = new Workflow($wf);
+      $cc_workflows[$wf->id] = $workflow;
+    }
+  }
 
   /**
    * {@inheritDoc}
    */
   public function accountNameFilter(string $rel_path = '', $limit = 10): array {
-    global $user, $config;
-    $node_name = $this->config->nodeName;
-    $trunkward_acc_id = $this->config->trunkwardAcc;
+    global $cc_user, $cc_config;
+    $node_name = $cc_config->nodeName;
+    $trunkward_acc_id = $cc_config->trunkwardAcc;
     $remote_node = AddressResolver::create()->nodeAndFragment($rel_path);
     if ($remote_node) {// Match names on a specific node.
       $acc_ids = $remote_node->autocomplete();
@@ -41,7 +56,7 @@ class Node implements CreditCommonsInterface {
     }
     else {// Match names on each node from here to the trunk.
       $trunkward_names = [];
-      if ($trunkward_acc_id and $user->id <> $trunkward_acc_id) {
+      if ($trunkward_acc_id and $cc_user->id <> $trunkward_acc_id) {
         $acc = load_account($trunkward_acc_id, $rel_path);
         $trunkward_names = $acc->autocomplete();
       }
@@ -51,12 +66,12 @@ class Node implements CreditCommonsInterface {
       foreach ($filtered as $acc) {
         $name = $acc->id;
         // Exclude the logged in account
-        if ($user instanceOf RemoteAccountInterface and $name == $user->id) continue;
+        if ($cc_user instanceOf RemoteAccountInterface and $name == $cc_user->id) continue;
         // Exclude the trunkwards account'
-        if ($name == $config->trunkwardAcc) continue;
+        if ($name == $cc_config->trunkwardAcc) continue;
         // Add a slash to the leafward accounts to indicate they are nodes not accounts
         if ($acc instanceOf RemoteAccountInterface) $name .= '/';
-        if ($user instanceOf RemoteAccountInterface) {
+        if ($cc_user instanceOf RemoteAccountInterface) {
           $local[] = $node_name."/$name";
         }
         else {
@@ -73,13 +88,13 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function buildValidateRelayTransaction(\CreditCommons\TransactionInterface $transaction): array {
-    global $user;
+    global $cc_user;
     $transaction->buildValidate();
     $saved = $transaction->insert();
     // Return only the additional entries which are relevant to the upstream node.
     // @todo this could be more elegant.
     return array_filter(
-      $transaction->filterFor($user),
+      $transaction->filterFor($cc_user),
       function($e) {return $e->isAdditional();}
     );
   }
@@ -110,7 +125,8 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function getAbsolutePath(): array {
-    $node_names[] = $this->config->nodeName;
+    global $cc_config;
+    $node_names[] = $cc_config->nodeName;
     if ($trunkward = \CCNode\API_calls()) {
       $node_names = array_merge($trunkward->getAbsolutePath(), $node_names);
     }
@@ -190,27 +206,26 @@ class Node implements CreditCommonsInterface {
   /**
    * {@inheritDoc}
    */
-  public static function getWorkflows(): array {
-    // @todo need to instantiate workflows with the Trunkward requester if there is one.
-    // @note this assumes workflows is in the same directory as the called file.
-    return (new Workflows('workflows.json'))->loadAll();
+  public function getWorkflows(): array {
+    global $cc_workflows;
+    return $cc_workflows;
   }
 
   /**
    * {@inheritDoc}
    */
   public function handshake(): array {
-    global $user;
+    global $cc_user, $cc_config;
     $results = [];
     // This ensures the handshakes only go one level deep.
-    if ($user instanceOf Accounts\User) {
+    if ($cc_user instanceOf Accounts\User) {
       // filter excludes the trunkwards account
       $remote_accounts = AccountStore()->filter(local: FALSE);
-      if($trunkw = $this->config->trunkwardAcc) {
+      if($trunkw = $cc_config->trunkwardAcc) {
         $remote_accounts[] = AccountStore()->fetch($trunkw);
       }
       foreach ($remote_accounts as $acc) {
-        if ($acc->id == $user->id) {
+        if ($acc->id == $cc_user->id) {
           continue;
         }
         try {
@@ -250,49 +265,5 @@ class Node implements CreditCommonsInterface {
     return Transaction::loadByUuid($uuid)->changeState($target_state);
   }
 
-}
 
-/**
- * @todo put these functions in an always included file so they needn't be called with the namespace.
- */
-
-/**
- * Access control for each API method.
- *
- * Anyone can see what endpoints they can user, any authenticated user can check
- * the workflows and the connectivity of adjacent nodes. But most operations are
- * only accessible to direct members and leafward member, making this node quite
- * private with respect to the rest of the tree.
- * @param Accounts\User $user
- * @return string[]
- *   A list of the api method names the current user can access.
- * @todo make this more configurable.
- */
-function permitted_operations() : array {
-  global $user;
-  $permitted[] = 'permittedEndpoints';
-  if ($user->id <> '-anon-') {
-    $permitted[] = 'handshake';
-    $permitted[] = 'workflows';
-    $permitted[] = 'newTransaction';
-    $permitted[] = 'absolutePath';
-    $permitted[] = 'stateChange';
-    $map = [
-      'filterTransactions' => 'transactions',
-      'getTransaction' => 'transactions',
-      'accountHistory' => 'transactions',
-      'accountLimits' => 'acc_summaries',
-      'accountNameFilter' => 'acc_ids',
-      'accountSummary' => 'acc_summaries'
-    ];
-    foreach ($map as $method => $perm) {
-      if (!$user instanceOf Trunkward or $this->config->privacy[$perm]) {
-        $permitted[] = $method;
-      }
-    }
-    if ($user instanceof Remote) {
-      $permitted[] = 'relayTransaction';
-    }
-  }
-  return array_intersect_key(CreditCommonsInterface::OPERATIONS, array_flip($permitted));
 }

@@ -13,15 +13,15 @@ class EntryTrunkward extends EntryTransversal {
   public int $trunkward_quant;
 
   static function create(\stdClass $data, $transaction) : BaseEntry {
-    global $config;
+    global $cc_config;
     $e = parent::create($data, $transaction);
     if (!isset($e->trunkward_quant)) {
-      $e->trunkward_quant = $data->trunkward_quant ?? ceil($e->quant * $config->conversionRate);
+      $e->trunkward_quant = $data->trunkward_quant ?? ceil($e->quant * $cc_config->conversionRate);
     }
     return $e;
   }
 
-  public function jsonSerialize() : array {
+  public function jsonSerialize() : mixed {
     // Calculate metadata for relaying trunkward
     $array = [
       'payee' => $this->payee->foreignId(),

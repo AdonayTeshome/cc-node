@@ -19,22 +19,17 @@ class Trunkward extends Remote {
     public string $url
    ) {
     parent::__construct($id, $min, $max, $url);
-    global $config;
-    if ($config->conversionRate <> 1) {
-      $this->trunkwardConversionRate = $config->conversionRate;
+    global $cc_config;
+    if ($cc_config->conversionRate <> 1) {
+      $this->trunkwardConversionRate = $cc_config->conversionRate;
     }
   }
 
-  //
+  /**
+   * {@inheritDoc}
+   */
   function foreignId() : string {
     return $this->relPath;
-    global $config;
-    $fid = array_filter([
-      $config->nodeName,
-      $this->id,
-      $this->relPath
-    ]);
-    return implode('/', $fid);
   }
 
   /**

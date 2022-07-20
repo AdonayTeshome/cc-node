@@ -1,11 +1,8 @@
 <?php
-
+die('fff');
 ini_set('display_errors', 1);
 session_start();
 require_once '../vendor/autoload.php';
-global $config;
-$config = new \CCNode\ConfigFromIni(parse_ini_file('../node.ini'));
-$node = new \CCNode\Node($config);
 if ($_POST) {
   include_once('../vendor/credit-commons/cc-node/src/Node.php');
   $username = filter_var($_POST["user_name"], FILTER_SANITIZE_STRING);
@@ -20,7 +17,6 @@ elseif(isset($_GET['logout'])) {
   session_destroy();
   header("Location: index.php");
 }
-if (isset($_SESSION["user"])) $user = \CCNode\load_account($_SESSION["user"]);
 ?><!DOCTYPE html>
 <html lang="en">
   <head>
@@ -35,7 +31,12 @@ if (isset($_SESSION["user"])) $user = \CCNode\load_account($_SESSION["user"]);
       <li><a href="register.php">Register</a></li>
       <?php if(isset($user)): ?><li><a href="index.php?logout">Log out (<?php print $user->id; ?>)</a></li><?php endif; ?>
     </ul><hr />
-    <?php if (isset($_SESSION["user"])) return; ?>
+    <?php
+    if (isset($_SESSION["user"])) {
+      $node = new \CCNode\Node(parse_ini_file('../node.ini'), $_SESSION["user"]);// makes globals
+      return;
+    }
+    ?>
     <div>
         <form method="post">
             <div class="login-box">

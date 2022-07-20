@@ -15,7 +15,7 @@ class StandaloneEntry extends \CreditCommons\StandaloneEntry {
    * @return static[]
    */
   static function loadByUuid(string $uuid) : array {
-    global $user;
+    global $cc_user;
     $ids = [];
     $query = "SELECT e.id FROM transactions t "
       . "INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver "
@@ -31,7 +31,7 @@ class StandaloneEntry extends \CreditCommons\StandaloneEntry {
     }
     $entries = static::load($ids);
     // We just check the first (primary) entry
-    if (reset($entries)->state == 'validated' and reset($entries)->author <> $user->id and !$user->admin) {
+    if (reset($entries)->state == 'validated' and reset($entries)->author <> $cc_user->id and !$cc_user->admin) {
       // deny the transaction exists to all but its author and admins
       throw new PermissionViolation();
     }

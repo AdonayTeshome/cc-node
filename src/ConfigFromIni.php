@@ -13,6 +13,8 @@ class ConfigFromIni implements ConfigInterface {
     $this->validatePending = $ini_file['validate_pending']??true;
     $this->devMode = $ini_file['dev_mode']??false;
 
+    $this->workflowsFile = $ini_file['workflows_filepath'];
+
     // The rest are only used when there are remote accounts.
     $this->absPath = $ini_file['abs_path']??'mynode';
     $tree = explode('/', $this->absPath);

@@ -25,8 +25,8 @@ class TransversalTransaction extends Transaction {
     array $entries,
     public int $version
   ) {
-    global $user, $config;
-    $this->upstreamAccount = $user instanceof Remote ? $user : NULL;
+    global $cc_user, $cc_config;
+    $this->upstreamAccount = $cc_user instanceof Remote ? $cc_user : NULL;
     $payer = $entries[0]->payer;
     $payee = $entries[0]->payee;
     // Find the downstream account
@@ -48,10 +48,10 @@ class TransversalTransaction extends Transaction {
       }
     }
     /// Set the trunkward account only if it is used.
-    if ($this->upstreamAccount and $this->upstreamAccount->id == $config->trunkwardAcc) {
+    if ($this->upstreamAccount and $this->upstreamAccount->id == $cc_config->trunkwardAcc) {
       $this->trunkwardAccount = $this->upstreamAccount;
     }
-    elseif ($this->downstreamAccount and $this->downstreamAccount->id == $config->trunkwardAcc) {
+    elseif ($this->downstreamAccount and $this->downstreamAccount->id == $cc_config->trunkwardAcc) {
       $this->trunkwardAccount = $this->downstreamAccount;
     }
     $this->upcastEntries($entries);
@@ -82,7 +82,6 @@ class TransversalTransaction extends Transaction {
    * {@inheritDoc}
    */
   public function saveNewVersion() : int {
-    global $user;
     $id = parent::saveNewVersion();
     if ($this->version > 0) {
       $this->writeHashes($id);
@@ -136,6 +135,13 @@ class TransversalTransaction extends Transaction {
     return md5($string);
   }
 
+  function delete() {
+    if ($this->state <> static::STATE_VALIDATED) {
+      throw new CCFailure('Cannot delete transversal transactions.');
+    }
+    parent::delete();
+  }
+
   /**
    * Send the whole transaction downstream for building.
    * Or send the entries back upstream
@@ -147,7 +153,7 @@ class TransversalTransaction extends Transaction {
    *
    * @return stdClass
    */
-  public function jsonSerialize() : array {
+  public function jsonSerialize() : mixed {
     $array = parent::jsonSerialize();
     if ($adjacentNode = $this->responseMode ? $this->upstreamAccount : $this->downstreamAccount) {
       $array['entries'] = $this->filterFor($adjacentNode);

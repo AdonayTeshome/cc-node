@@ -12,7 +12,7 @@ use CreditCommons\Requester;
 class BlogicRequester extends Requester implements BlogicInterface {
 
   function __construct() {
-    global $config;
+    global $cc_config;
     parent::__construct($config->blogicMod);
   }
 
