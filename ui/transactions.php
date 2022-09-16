@@ -53,6 +53,10 @@ $transactions = $node->filterTransactions($params);
     <option value="25" <?php if ($_GET['limit'] == 25) print 'selected';?>>25</option>
     <option value="100" <?php if ($_GET['limit'] == 100) print 'selected';?>>100</option>
   </select>
+  <p><!-- returns YYYY-MM-DD -->
+    From <input type="date" name="since" />
+    To <input type="date" name="until" />
+  </p>
   </p>
   <input type="submit" />
 </form>

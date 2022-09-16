@@ -9,6 +9,7 @@ use CCNode\Accounts\Remote;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\PermissionViolation;
+use CreditCommons\Exceptions\InvalidFieldsViolation;
 use CCNode\Db;
 use function CCNode\accountStore;
 
@@ -27,7 +28,7 @@ trait StorageTrait {
   static function loadByUuid($uuid) : Transaction {
     global $cc_user;
     // Select the latest version
-    $q = "SELECT id as txID, uuid, written, version, type, state "
+    $q = "SELECT id as txID, uuid, written, scribe, version, type, state "
       . "FROM transactions "
       . "WHERE uuid = '$uuid' "
       . "ORDER BY version DESC "
@@ -187,7 +188,8 @@ trait StorageTrait {
 
   /**
    * @param array $params
-   *   valid keys: state, payer, payee, involving, type, before, after, description, format
+   *   Valid fields: payer, payee, involving, type, types, state, states, since, until, author, description
+   *   Other params: sort (field name), dir (asc or desc), limit, offset
    *
    * @return string[]
    *   A list of transaction uuids
@@ -204,16 +206,29 @@ trait StorageTrait {
     string $payer = NULL,
     string $payee = NULL,
     string $involving = NULL,
-    string $author = NULL,
+    string $scribe = NULL,
     string $description = NULL,
     string $states = NULL,//comma separated
     string $state = NULL,//todo should we pass an array here?
     string $types = NULL,//comma separated
     string $type = NULL,//todo should we pass an array here?
-    string $before = NULL,
-    string $after = NULL,
+    string $since = NULL,
+    string $until = NULL,
   ) : array {
     global $cc_user;
+    // Validation
+    foreach (['since', 'until'] as $time) {
+      if (isset($$time)) {
+        if (preg_match(static::REGEX_DATE, $$time)) {
+          continue;
+        }
+        elseif (preg_match(static::REGEX_DATE, $$time)) {
+          $$time .= ' 00:00:00';
+          continue;
+        }
+        throw new InvalidFieldsViolation(type: 'transactionFilter', fields: [$time]);
+      }
+    }
     if (isset($state) and !isset($states)) {
       $states = [$state];
     }
@@ -243,16 +258,21 @@ trait StorageTrait {
         $conditions[]  = "payee = '$payee'";
       }
     }
-    if (isset($author)) {
-      $conditions[]  = "author = '$author'";
+    if (isset($scribe)) {
+      $conditions[]  = "scribe = '$scribe'";
     }
     if (isset($involving)) {
       if ($col = strpos($involving, '/')) {
         $conditions[] = "( metadata LIKE '%$payer%'";
       }
-      else {
+      elseif (strpos($involving, ',')) {
+        $items = explode(',', $involving);
+        $as_string = implode("','", explode(',', $involving));
         // At the moment metadata only stores the real address of remote parties.
-        $conditions[]  = "(payee = '$involving' OR payer = '$involving')";
+        $conditions[]  = "(payee IN ('$as_string') OR payer IN ('$as_string'))";
+      }
+      else {
+        $conditions[]  = "(payee = '$involving') OR payer = '$involving')";
       }
     }
     if (isset($description)) {
@@ -260,12 +280,12 @@ trait StorageTrait {
     }
     // NB this uses the date the transaction was last written, not created.
     // to use the created date would require joining the current query to transactions where version =1
-    if (isset($before)) {
-      $date = date(self::$timeFormat, strtotime($before));
+    if (isset($until)) {
+      $date = date(self::$timeFormat, strtotime($until));
       $conditions[]  = "written < '$date'";
     }
-    if (isset($after)) {
-      $date = date(self::$timeFormat, strtotime($after));
+    if (isset($since)) {
+      $date = date(self::$timeFormat, strtotime($since));
       $conditions[]  = "written > '$date'";
     }
     if (isset($states)) {

@@ -95,7 +95,6 @@ class AddressResolver {
       else {
         $rel_path = implode('/', $path_parts);
       }
-
       if ($acc_id == '') {
         // the current node
         $this->cache[$given_path] = NULL;

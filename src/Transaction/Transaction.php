@@ -2,7 +2,6 @@
 
 namespace CCNode\Transaction;
 
-use CCNode\Node;
 use CCNode\Transaction\Entry;
 use CCNode\BlogicRequester;
 use CCNode\Accounts\Remote;
@@ -12,7 +11,6 @@ use CreditCommons\Workflow;
 use CreditCommons\NewTransaction;
 use CreditCommons\Exceptions\MaxLimitViolation;
 use CreditCommons\Exceptions\MinLimitViolation;
-use CreditCommons\Exceptions\CCOtherViolation;
 use CreditCommons\Exceptions\WorkflowViolation;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\TransactionInterface;
@@ -21,11 +19,14 @@ use CreditCommons\BaseTransaction;
 class Transaction extends BaseTransaction implements \JsonSerializable {
   use \CCNode\Transaction\StorageTrait;
 
+  const REGEX_DATE = '/[0-9]{4}-[0|1]?[0-9]-[0-3][0-9]/';
+  const REGEX_TIME = '/[0-2][0-9]:[0-5][0-9]:[0-5][0-9]/';
+
   /**
    * The full workflow object.
    * @var Workflow
    */
-  protected $workflow;
+  protected Workflow $workflow;
 
   /**
    * The database ID of the transaction, (for linking to the entries table)
@@ -40,16 +41,24 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
   public bool $responseMode = FALSE;
 
   /**
+   * FALSE for request, TRUE for response mode
+   * @var Bool
+   */
+  public string $scribe;
+
+  /**
    * Create a new transaction from a few required fields defined upstream.
    * @param NewTransaction $new
    * @return TransactionInterface
    */
   public static function createFromLeaf(NewTransaction $new) : TransactionInterface {
+    global $cc_user;
     $data = new \stdClass;
     $data->uuid = $new->uuid;
     $data->type = $new->type;
     $data->state = TransactionInterface::STATE_INITIATED;
     $data->version = -1;
+    $data->scribe = $cc_user->id;
     $data->entries = [(object)[
       'payee' => $new->payee,
       'payer' => $new->payer,
@@ -256,14 +265,14 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
 
   protected function transitions() : array {
     global $cc_user;
-    return $this->transitions = $this->getWorkflow()->getTransitions($cc_user->id, $this, $cc_user->admin);
+    return $this->getWorkflow()->getTransitions($cc_user->id, $this, $cc_user->admin);
   }
 
   /**
    * Load this transaction's workflow from the local json storage.
    * @todo Sort out
    */
-  protected function getWorkflow() : Workflow {
+  public function getWorkflow() : Workflow {
     global $cc_workflows;
     if (isset($cc_workflows[$this->type])) {
       return $cc_workflows[$this->type];
@@ -280,13 +289,8 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    *   The created entries
    */
   public function upcastEntries(array $rows, bool $additional = FALSE) : void {
-    global $cc_config, $cc_user;
+    global $cc_user;
     foreach ($rows as $row) {
-
-      // Could this be done earlier?
-      if (!$row->quant and !$cc_config->zeroPayments) {
-        throw new CCOtherViolation("Zero transactions not allowed on this node.");
-      }
       $row->isAdditional = $additional;
       $row->isPrimary = empty($this->entries);
       if (empty($row->author)) {

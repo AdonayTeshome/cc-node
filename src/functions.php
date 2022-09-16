@@ -66,7 +66,7 @@ function accountStore() : AccountStoreInterface {
   else {
     throw new CCFailure('Invalid accountStore setting: '.$cc_config->accountStore);
   }
-  return new $class;
+  return new $class($cc_config->trunkwardAcc);
 }
 
 /**

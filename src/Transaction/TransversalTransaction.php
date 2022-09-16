@@ -23,7 +23,8 @@ class TransversalTransaction extends Transaction {
     public string $type,
     public string $state,
     array $entries,
-    public int $version
+    public int $version,
+    public string $scribe
   ) {
     global $cc_user, $cc_config;
     $this->upstreamAccount = $cc_user instanceof Remote ? $cc_user : NULL;
@@ -58,6 +59,8 @@ class TransversalTransaction extends Transaction {
   }
 
   public static function createFromUpstream(\stdClass $data) : TransactionInterface {
+    global $cc_user;
+    $data->scribe = $cc_user->id;
     $data->state = TransactionInterface::STATE_INITIATED;
     $transaction_class = Entry::upcastAccounts($data->entries);
     return $transaction_class::create($data);
@@ -171,14 +174,16 @@ class TransversalTransaction extends Transaction {
   }
 
   /**
-   * Load this transaction's workflow from the local json storage.
-   * @todo Sort out
+   * Load this transaction's workflow from the local json storage, then restrict
+   * the workflow as for a remote transaction.
    */
-  protected function getWorkflow() : \CreditCommons\Workflow {
+  public function getWorkflow() : \CreditCommons\Workflow {
     $workflow = parent::getWorkflow();
     if ($this->upstreamAccount instanceOf Remote) {
-      // Would have nice to cache this
-      $workflow->creation->by = ['author'];// This is tautological, exactly what we need actually.
+      // Remote accounts can ONLY be created by their authors, and only signed
+      // by participants, not admins. However this contradicts
+      // Workflow::getTransitions which allows admin to do anything.
+      $workflow->creation->by = ['author'];
       foreach ($workflow->states as &$state) {
         foreach ($state as $target_state => $info) {
           if (empty($info->signatories)) {
@@ -219,5 +224,13 @@ class TransversalTransaction extends Transaction {
       }
     }
     return FALSE;
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  protected function transitions() : array {
+    global $cc_user;
+    return $this->getWorkflow()->getTransitions($cc_user->id, $this, FALSE);
   }
 }

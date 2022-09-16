@@ -29,6 +29,11 @@ class Entry extends BaseEntry implements \JsonSerializable {
      */
     public string $description = '',
   ) {
+    global $cc_config;
+    // Could this be done earlier?
+    if (empty($quant) and !$cc_config->zeroPayments) {
+      throw new CCOtherViolation("Zero transactions not allowed on this node.");
+    }
     parent::__construct($payee, $payer, $quant, $author, $metadata, $description);
   }
 

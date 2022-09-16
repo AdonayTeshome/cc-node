@@ -15,7 +15,7 @@ abs_path = "trunkward_node/my_cc_node"
 ;Conversion rate with the parent
 conversion_rate = 1.000
 
-;filesystem path to json representation of workflows array
+;filesystem path to json representation of workflows array @todo this should be relative, ideally
 workflows_filepath = /home/credcom/html/workflows.json
 
 [privacy]

@@ -25,7 +25,6 @@ class Node implements CreditCommonsInterface {
   function __construct(array $ini_array) {
     global $cc_workflows, $cc_config;
     $cc_config = new ConfigFromIni($ini_array);
-
     $wfs = json_decode(file_get_contents($cc_config->workflowsFile));
     if (empty($wfs)) {
       throw new \CreditCommons\Exceptions\CCFailure('Bad json workflows file: '.$cc_config->workflowsFile);
@@ -61,7 +60,7 @@ class Node implements CreditCommonsInterface {
         $trunkward_names = $acc->autocomplete();
       }
       // Local names.
-      $filtered = accountStore()->filter(fragment: trim($rel_path, '/'));
+      $filtered = accountStore()->filter(fragment: trim($rel_path, '/'), full: TRUE);
       $local = [];
       foreach ($filtered as $acc) {
         $name = $acc->id;

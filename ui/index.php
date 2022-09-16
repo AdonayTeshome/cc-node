@@ -1,5 +1,5 @@
-<?php require './login.php';
-
+<?php
+require 'login.php';
 $accounts = $node->getAccountSummary();
 
 $data = [];
