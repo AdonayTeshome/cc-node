@@ -2,19 +2,19 @@
 
 namespace CCNode\Transaction;
 
-use CCNode\Transaction\Entry;
 use CCNode\BlogicRequester;
 use CCNode\Accounts\Remote;
 use CCNode\Accounts\Branch;
 use CCNode\Accounts\Trunkward;
+use CCNode\Transaction\Entry;
 use CreditCommons\Workflow;
 use CreditCommons\NewTransaction;
+use CreditCommons\BaseTransaction;
+use CreditCommons\TransactionInterface;
 use CreditCommons\Exceptions\MaxLimitViolation;
 use CreditCommons\Exceptions\MinLimitViolation;
 use CreditCommons\Exceptions\WorkflowViolation;
 use CreditCommons\Exceptions\DoesNotExistViolation;
-use CreditCommons\TransactionInterface;
-use CreditCommons\BaseTransaction;
 
 class Transaction extends BaseTransaction implements \JsonSerializable {
   use \CCNode\Transaction\StorageTrait;
@@ -51,7 +51,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * @param NewTransaction $new
    * @return TransactionInterface
    */
-  public static function createFromLeaf(NewTransaction $new) : TransactionInterface {
+  public static function createFromNew(NewTransaction $new) : TransactionInterface {
     global $cc_user;
     $data = new \stdClass;
     $data->uuid = $new->uuid;
@@ -75,7 +75,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     $data->version = $data->version??-1;
     $data->written = $data->written??'';
     static::validateFields($data);
-    $t = new static($data->uuid, $data->written, $data->type, $data->state, $data->entries, $data->version);
+    $t = new static($data->uuid, $data->written, $data->type, $data->state, $data->entries, $data->version, $data->scribe);
     if (isset($data->txID)) {
       $t->txID = $data->txID;
     }
@@ -85,8 +85,11 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
   /**
    * Call the business logic, append entries.
    * Validate the transaction in its workflow's 'creation' state
+   *
+   * @return Entry[]
+   *   Any new rows added by the business logic
    */
-  function buildValidate() : void {
+  function buildValidate() : array {
     global $cc_config, $cc_user;
 
     $workflow = $this->getWorkflow();
@@ -101,9 +104,10 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     // Add fees, etc by calling on the blogic module, either internally or via REST API
     // @todo make the same function name for both.
     if ($cc_config->blogicMod) {
-      $this->callBlogic();
+      $rows = $this->callBlogic();
     }
     $this->validate();
+    return $rows;
   }
 
   /**
@@ -140,8 +144,9 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
   /**
    * Call whatever Blogic class and upcast and append any resulting rows.
    */
-  private function callBlogic() {
+  private function callBlogic() : array {
     global $cc_config;
+    // This feels a bit inelegant.
     $blogic_entry = $this->entries[0]->toBlogic($this->type);
     if (class_exists($cc_config->blogicMod)) {
       $class = $cc_config->blogicMod;
@@ -154,6 +159,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     }
     // The Blogic returns entries with upcast account objects
     $this->upcastEntries($rows, TRUE);
+    return $rows;
   }
 
   /**
@@ -210,6 +216,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       $this->delete();
       return FALSE;
     }
+
     if ($cc_user->admin or $this->getWorkflow()->canTransitionToState($cc_user->id, $this, $target_state)) {
       $this->state = $target_state;
       $this->saveNewVersion();

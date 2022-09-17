@@ -91,9 +91,12 @@ class Entry extends BaseEntry implements \JsonSerializable {
   }
 
   /**
-   * Prepare a version of the entry to send to the Blogic module.
+   * Prepare a version of the entry ( main entry only) to send to the Blogic module.
    */
   public function toBlogic($type) : array {
+    if (!$this->isPrimary) {
+      throw new \CreditCommons\Exceptions\CCFailure('Can only send primary entries to Blogic');
+    }
     // Foreign ids are used so they can be upcast later.
     return [
       'payee' => $this->payee->foreignId(),

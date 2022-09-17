@@ -87,7 +87,7 @@ class Trunkward extends Remote {
    */
   function getLimits($force_local = FALSE) : \stdClass {
     $limits = parent::getLimits($force_local);
-    if ($this->isAccount()) {
+    if (!$this->isNode()) {
       $this->convertLimits($limits);// convert values from trunkward nodes.
     }
     return $limits;

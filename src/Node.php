@@ -8,6 +8,7 @@ use CCNode\Accounts\Remote;
 use CCNode\Accounts\RemoteAccountInterface;
 use CCNode\Transaction\Transaction;
 use CCNode\Transaction\StandaloneEntry;
+use CreditCommons\TransactionInterface;
 use CreditCommons\CreditCommonsInterface;
 use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\UnavailableNodeFailure;
@@ -32,8 +33,7 @@ class Node implements CreditCommonsInterface {
     // @todo This loads only from the local file, but we need to load everything
     // from cached trunkward workflows as well.
     foreach ($wfs as $wf) {
-      $workflow = new Workflow($wf);
-      $cc_workflows[$wf->id] = $workflow;
+      $cc_workflows[$wf->id] = new Workflow($wf);
     }
   }
 
@@ -86,21 +86,6 @@ class Node implements CreditCommonsInterface {
   /**
    * {@inheritDoc}
    */
-  public function buildValidateRelayTransaction(\CreditCommons\TransactionInterface $transaction): array {
-    global $cc_user;
-    $transaction->buildValidate();
-    $saved = $transaction->insert();
-    // Return only the additional entries which are relevant to the upstream node.
-    // @todo this could be more elegant.
-    return array_filter(
-      $transaction->filterFor($cc_user),
-      function($e) {return $e->isAdditional();}
-    );
-  }
-
-  /**
-   * {@inheritDoc}
-   */
   public function filterTransactions(array $params = []): array {
     $entries =  isset($params['entries']) and $params['entries'] === 'true';
     unset($params['entries']);
@@ -146,7 +131,7 @@ class Node implements CreditCommonsInterface {
   public function getAccountLimits(string $acc_id): array {
     $account = AddressResolver::create()->getLocalAccount($acc_id);
     if ($account instanceof Remote) {
-      if ($account->isAccount()) {// All the accounts on a remote node
+      if (!$account->isNode()) {// All the accounts on a remote node
         $results = [$account->getLimits()];
       }
       else {
@@ -167,7 +152,7 @@ class Node implements CreditCommonsInterface {
    */
   public function getAccountSummary(string $acc_id = ''): array {
     $account = AddressResolver::create()->getLocalAccount($acc_id);
-    if ($account instanceOf Remote and !$account->isAccount()) {
+    if ($account instanceOf Remote and $account->isNode()) {
       $results = $account->getAllSummaries();
     }
     elseif ($account) {
@@ -206,8 +191,10 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function getWorkflows(): array {
-    global $cc_workflows;
+    global $cc_workflows, $cc_config;
     return $cc_workflows;
+    // bit confused about this right now...
+    return [$cc_config->nodeName => $cc_workflows];
   }
 
   /**
@@ -248,14 +235,25 @@ class Node implements CreditCommonsInterface {
   /**
    * {@inheritDoc}
    */
-  public function submitNewTransaction(NewTransaction $new_transaction): BaseTransaction {
-    $transaction = Transaction::createFromLeaf($new_transaction); // in state 'init'
+  public function __submitNewTransaction(NewTransaction $new_transaction) : TransactionInterface {
+    $transaction = Transaction::createFromNew($new_transaction); // in state 'init'
     // Validate the transaction in its workflow's 'creation' state
     $transaction->buildValidate();
     // It is written according to the workflow's creation->confirm property
+    /** var bool $written */
     $written = $transaction->insert();
     return $transaction;
   }
+
+  /**
+   * {@inheritDoc}
+   */
+  public function buildValidateRelayTransaction(TransactionInterface $transaction) : array {
+    $new_rows = $transaction->buildValidate();
+    $saved = $transaction->insert();
+    return $new_rows;
+  }
+
 
   /**
    * {@inheritDoc}

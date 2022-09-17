@@ -116,11 +116,6 @@ class User extends Account {
     return (object)['min' => $this->min, 'max' => $this->max];
   }
 
-  //this is overridden by Remote
-  function isAccount() : bool {
-    return TRUE;
-  }
-
   /**
    * Get the address for passing trunkwards or branchwards.
    *

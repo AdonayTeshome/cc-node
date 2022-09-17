@@ -42,8 +42,8 @@ class Remote extends User implements RemoteAccountInterface {
   /**
    * {@inheritdoc}
    */
-  public function isAccount() : bool {
-    return substr($this->relPath, -1) <> '/';
+  public function isNode() : bool {
+    return substr($this->relPath, -1) == '/';
   }
 
   /**

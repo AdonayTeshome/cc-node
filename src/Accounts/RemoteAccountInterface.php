@@ -3,33 +3,12 @@
 namespace CCNode\Accounts;
 
 use CCNode\Transaction\Transaction;
+use CreditCommons\AccountRemoteInterface;
 
 /**
  * Class representing a remote account (or remote node) and managing queries to it.
  */
-interface RemoteAccountInterface {
-
-  /**
-   * Get the last hash pertaining to this account.
-   *
-   * @return array
-   */
-  function getLastHash() : string;
-
-  /**
-   * Check if this Account points to a remote account, rather than a remote node.
-   * @return bool
-   *   TRUE if this object references a remote account, not a whole node
-   *
-   * @todo refactor Address resolver so this isn't necessary in Entry::upcastAccounts
-   */
-  public function isAccount() : bool;
-
-  /**
-   * @return string
-   *   'ok' or the class name of the error
-   */
-  function handshake() : string;
+interface RemoteAccountInterface extends AccountRemoteInterface {
 
   /**
    * Pass a new transaction to the downstream node for building and validation.

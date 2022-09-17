@@ -56,7 +56,6 @@ trait StorageTrait {
 
     // All these values should be validated, so no need to use static::create
     $transaction = $t_class::create($tx);
-
     return $transaction;
   }
 
@@ -272,7 +271,7 @@ trait StorageTrait {
         $conditions[]  = "(payee IN ('$as_string') OR payer IN ('$as_string'))";
       }
       else {
-        $conditions[]  = "(payee = '$involving') OR payer = '$involving')";
+        $conditions[]  = "(payee = '$involving' OR payer = '$involving')";
       }
     }
     if (isset($description)) {
