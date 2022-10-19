@@ -15,6 +15,11 @@ use GuzzleHttp\Exception\RequestException;
 
 /**
  * Handle requests & responses from the ledger to the accountStore.
+ * Uses of the accountStore:
+ * - validating transactions
+ * - autocomplete wallet names
+ * - authorising incoming requests
+ * - looking up the urls of remote accounts.
  */
 class AccountStoreRest extends Requester implements AccountStoreInterface {
 
@@ -38,7 +43,7 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
   /**
    * {@inheritDoc}
    */
-  function checkCredentials(string $name, string $pass) : bool {
+  function compareAuthkey(string $name, string $pass) : bool {
     try {
       $this->localRequest("creds/$name/$pass");
     }
@@ -97,9 +102,8 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
    * {@inheritDoc}
    */
   function fetch(string $name, string $rel_path = '') : Account {
-    $path = urlencode($name);
     try{
-      $result = $this->localRequest($path);
+      $result = $this->localRequest(urlencode($name));
     }
     catch (ClientException $e) {
       if ($e->getCode() == 404) {
@@ -204,7 +208,10 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
     if (!empty($data->url)) {
       $upS = $cc_user ? ($data->id == $cc_user->id) : TRUE;
       $trunkward = $data->id == $cc_config->trunkwardAcc;
-      if ($trunkward and $upS) {
+      if (in_array($data->id, $cc_config->spoofs)) {
+        $class = 'Spoof';
+      }
+      elseif ($trunkward and $upS) {
         $class = 'UpstreamTrunkward';
       }
       elseif ($trunkward and !$upS) {

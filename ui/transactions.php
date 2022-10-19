@@ -7,7 +7,7 @@ $params = array_filter($_GET);
 $params['limit']++; // request one m$paramsore than we want to display
 $transactions = $node->filterTransactions($params);
 ?>
-<h3>Transactions</h3>
+<h3>Filter transactions</h3>
 <form method="GET">
   <p>
     Author: <select name="author">

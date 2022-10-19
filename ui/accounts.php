@@ -19,7 +19,7 @@ if (isset($_GET['account'])) {
 else {
   // Print all accounts and balances.
   print allAccounts($all_accounts);
-  ?><a href="addaccount.php">Add Account...</a><?php
+  ?><!--<a href="addaccount.php">Add Account...</a>--><?php
 }
 
 // generate a display summarising one account's trade.

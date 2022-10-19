@@ -6,6 +6,7 @@ use CCNode\Accounts\Branch;
 use CCNode\AddressResolver;
 use CCNode\Accounts\Remote;
 use CCNode\Accounts\RemoteAccountInterface;
+use CCNode\Accounts\Trunkward;
 use CCNode\Transaction\Transaction;
 use CCNode\Transaction\StandaloneEntry;
 use CreditCommons\TransactionInterface;
@@ -90,15 +91,15 @@ class Node implements CreditCommonsInterface {
     $entries =  isset($params['entries']) and $params['entries'] === 'true';
     unset($params['entries']);
 
-    $uuids = Transaction::filter(...$params);
     $results = [];
-
-    if ($entries) {
-      $results = StandaloneEntry::load(array_keys($uuids));
-    }
-    else {
-      foreach (array_unique($uuids) as $uuid) {
-        $results[$uuid] = Transaction::loadByUuid($uuid);
+    if ($uuids = Transaction::filter(...$params)) {
+      if ($entries) {
+        $results = StandaloneEntry::load(array_keys($uuids));
+      }
+      else {
+        foreach (array_unique($uuids) as $uuid) {
+          $results[$uuid] = Transaction::loadByUuid($uuid);
+        }
       }
     }
     // All entries are returned
@@ -111,8 +112,8 @@ class Node implements CreditCommonsInterface {
   public function getAbsolutePath(): array {
     global $cc_config;
     $node_names[] = $cc_config->nodeName;
-    if ($trunkward = \CCNode\API_calls()) {
-      $node_names = array_merge($trunkward->getAbsolutePath(), $node_names);
+    if ($trunkward_node = \CCNode\API_calls()) {
+      $node_names = array_merge($trunkward_node->getAbsolutePath(), $node_names);
     }
     return $node_names;
   }
@@ -122,7 +123,7 @@ class Node implements CreditCommonsInterface {
    */
   public function getAccountHistory(string $acc_id, $samples = 0): array {
     $account = AddressResolver::create()->localOrRemoteAcc($acc_id);
-    return $account->getHistory($samples);//@todo refactor this.
+    return $account->getHistory($samples);
   }
 
   /**
@@ -132,14 +133,14 @@ class Node implements CreditCommonsInterface {
     $account = AddressResolver::create()->getLocalAccount($acc_id);
     if ($account instanceof Remote) {
       if (!$account->isNode()) {// All the accounts on a remote node
-        $results = [$account->getLimits()];
+        $results = [$account->id => $account->getLimits()];
       }
       else {
         $results = $account->getAllLimits();
       }
     }
     elseif ($account) {
-      $results = [$account->getLimits()];
+      $results = [$account->id => $account->getLimits()];
     }
     else {// All accounts on the current node.
       $results = accountStore()->allLimits(TRUE);
@@ -156,7 +157,7 @@ class Node implements CreditCommonsInterface {
       $results = $account->getAllSummaries();
     }
     elseif ($account) {
-      $results = [$account->getSummary()];
+      $results = [$account->id => $account->getSummary()];
     }
     else {// All accounts on the current node.
       $results = Transaction::getAccountSummaries(TRUE);
@@ -235,25 +236,11 @@ class Node implements CreditCommonsInterface {
   /**
    * {@inheritDoc}
    */
-  public function __submitNewTransaction(NewTransaction $new_transaction) : TransactionInterface {
-    $transaction = Transaction::createFromNew($new_transaction); // in state 'init'
-    // Validate the transaction in its workflow's 'creation' state
-    $transaction->buildValidate();
-    // It is written according to the workflow's creation->confirm property
-    /** var bool $written */
-    $written = $transaction->insert();
-    return $transaction;
-  }
-
-  /**
-   * {@inheritDoc}
-   */
   public function buildValidateRelayTransaction(TransactionInterface $transaction) : array {
     $new_rows = $transaction->buildValidate();
     $saved = $transaction->insert();
     return $new_rows;
   }
-
 
   /**
    * {@inheritDoc}
@@ -262,5 +249,32 @@ class Node implements CreditCommonsInterface {
     return Transaction::loadByUuid($uuid)->changeState($target_state);
   }
 
+  /**
+   * {@inheritDoc}
+   * @note Conversion is always done by the leafward node.
+   */
+  public function convertPrice($node_path) : \stdClass {
+    global $cc_config, $cc_user;
+    $account = AddressResolver::create()->getLocalAccount($node_path);
+    if ($account instanceof RemoteAccountInterface) {
+      $obj = $account->getConversationRate();
+      if ($account instanceof Trunkward) {
+        $obj->rate *= $cc_config->conversionRate;
+      }
+      else {
+        $obj->rate /= $cc_config->conversionRate;
+      }
+    }
+    else {
+      $obj = (object)['symbol' => $cc_config->currSymbol];
+      if ($cc_user instanceof Trunkward) {
+        $obj->rate = 1/$cc_config->conversionRate;
+      }
+      else {
+        $obj->rate = $cc_config->conversionRate;
+      }
+    }
+    return $obj;
+  }
 
 }

@@ -5,6 +5,7 @@ use CCNode\AddressResolver;
 use CCNode\Accounts\Remote;
 use CreditCommons\BaseEntry;
 use CreditCommons\Account;
+use CreditCommons\Exceptions\CCOtherViolation;
 
 /**
  * Determine the account types for entries.
@@ -14,7 +15,7 @@ class Entry extends BaseEntry implements \JsonSerializable {
   function __construct(
     public Account $payee,
     public Account $payer,
-    public int $quant,
+    public float $quant,
     public string $author, // The author is always local and we don't need to cast it into account
     public \stdClass $metadata, // Does not recognise field type: \stdClass
     protected bool $isAdditional,
@@ -74,21 +75,21 @@ class Entry extends BaseEntry implements \JsonSerializable {
    * Entries return to the client with account names collapsed to a relative name
    * @return array
    */
-  public function jsonSerialize() : mixed {
-    $flat = [
-      'payee' => $this->payee->foreignId(),
-      'payer' => $this->payer->foreignId(),
-      'quant' => $this->quant,
-      'description' => $this->description,
-      'metadata' => $this->metadata
-    ];
-    // Calculate metadata for client
-    foreach (['payee', 'payer'] as $role) {
-      $name = $this->{$role}->id;
-      $flat[$role] = $this->metadata->{$name} ?? $name;
-    }
-    return $flat;
-  }
+//  public function jsonSerialize() : mixed {
+//    $flat = [
+//      'payee' => $this->payee->foreignId(),
+//      'payer' => $this->payer->foreignId(),
+//      'quant' => $this->quant,
+//      'description' => $this->description,
+//      'metadata' => $this->metadata
+//    ];
+//    // Calculate metadata for client
+//    foreach (['payee', 'payer'] as $role) {
+//      $name = $this->{$role}->id;
+//      $flat[$role] = $this->metadata->{$name} ?? $name;
+//    }
+//    return $flat;
+//  }
 
   /**
    * Prepare a version of the entry ( main entry only) to send to the Blogic module.
@@ -99,8 +100,8 @@ class Entry extends BaseEntry implements \JsonSerializable {
     }
     // Foreign ids are used so they can be upcast later.
     return [
-      'payee' => $this->payee->foreignId(),
-      'payer' => $this->payer->foreignId(),
+      'payee' => (string)$this->payee,
+      'payer' => (string)$this->payer,
       'quant' => $this->quant,
       'description' => $this->description,
       'metadata' => $this->metadata,
@@ -117,21 +118,43 @@ class Entry extends BaseEntry implements \JsonSerializable {
    */
   static function upcastAccounts(array &$rows) : string {
     $addressResolver = AddressResolver::create();
+    $class = 'Transaction';
     foreach ($rows as &$row) {
-      $payee_addr = $row->metadata->{$row->payee}??$row->payee;
+      $payee_addr = isset($row->metadata->{$row->payee}) ?
+        $row->payee .'/'.$row->metadata->{$row->payee} :
+        $row->payee;
       $row->payee = $addressResolver->localOrRemoteAcc($payee_addr);
-      $payer_addr = $row->metadata->{$row->payer}??$row->payer;
+
+      $payer_addr = isset($row->metadata->{$row->payer}) ?
+        $row->payer .'/'.$row->metadata->{$row->payer} :
+        $row->payer;
       $row->payer = $addressResolver->localOrRemoteAcc($payer_addr);
       // @todo refactor the address resolver so that we can be sure by now that
       // the payee/payer is one local or remote account and not a remote node - i.e. with a slash at the end.
       if ($row->payee instanceOf Remote or $row->payer instanceOf Remote) {
         $class = 'TransversalTransaction';
       }
-      else {
-        $class = 'Transaction';
-      }
     }
     return '\\CCNode\\Transaction\\'.$class;
+  }
+
+  /**
+   * For sending the transaction back to the client.
+   */
+  public function jsonSerialize() : mixed {
+    // Handle according to whether the transaction is going trunkwards or leafwards
+    $array = [
+      'payee' => $this->payee->id,
+      'payer' => $this->payer->id,
+      'quant' => $this->quant,
+      'description' => $this->description,
+      'metadata' => $this->metadata
+    ];
+    unset(
+      $array['metadata']->{$this->payee->id},
+      $array['metadata']->{$this->payer->id}
+    );
+    return $array;
   }
 
 }

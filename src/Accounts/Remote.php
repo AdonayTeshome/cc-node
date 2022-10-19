@@ -4,14 +4,16 @@ namespace CCNode\Accounts;
 
 use CCNode\Accounts\User;
 use CCNode\Transaction\Transaction;
-use CreditCommons\NodeRequester;
 use CCNode\Db;
+use CreditCommons\NodeRequester;
 use CreditCommons\Exceptions\CCFailure;
+use CreditCommons\Exceptions\HashMismatchFailure;
+
 
 /**
  * An account on another node, represented by an account on the current node.
  */
-class Remote extends User implements RemoteAccountInterface {
+abstract class Remote extends User implements RemoteAccountInterface {
 
   /**
    * The path from the node this account references, to a leaf account
@@ -43,7 +45,7 @@ class Remote extends User implements RemoteAccountInterface {
    * {@inheritdoc}
    */
   public function isNode() : bool {
-    return substr($this->relPath, -1) == '/';
+    return empty($this->relPath) or substr($this->relPath, -1) == '/';
   }
 
   /**
@@ -67,7 +69,6 @@ class Remote extends User implements RemoteAccountInterface {
    */
   public function buildValidateRelayTransaction(Transaction $transaction) : array {
     $rows = $this->API()->buildValidateRelayTransaction($transaction);
-    $this->convertIncomingEntries($rows);
     return $rows;
   }
 
@@ -91,22 +92,6 @@ class Remote extends User implements RemoteAccountInterface {
     return $this->api()->accountNameFilter($this->relPath);
   }
 
-  /**
-   * {@inheritdoc}
-   */
-  public function retrieveTransaction(string $uuid, $full = TRUE) : \CreditCommons\BaseTransaction|array {
-    $result = $this->API()->getTransaction($uuid, $this->relPath, $full);
-    if (is_array($result)) {
-      $this->convertIncomingEntries($result);
-      // DO we need responsemode on each of these?
-    }
-    else {
-      $result = TransversalTransaction::createFromDownstream($result);
-      $this->convertIncomingEntries($result->entries);
-      $result->responseMode = TRUE;
-    }
-    return $result;
-  }
 
   /**
    * {@inheritdoc}
@@ -167,20 +152,11 @@ class Remote extends User implements RemoteAccountInterface {
     return $result;
   }
 
-  /**
-   * Convert the quantities if entries are coming from the trunk
-   * @param array $entries
-   *   array of stdClass or Entries.
-   */
-  public function convertIncomingEntries(array &$entries) : void {
-    // @todo only call this when we know it is incoming from Trunk.
-  }
-
 
   /**
    * {@inheritdoc}
    */
-  private function API() : NodeRequester {
+  protected function API() : NodeRequester {
     global $cc_config;
     return new NodeRequester($this->url, $cc_config->nodeName, $this->getLastHash());
   }
@@ -207,5 +183,39 @@ class Remote extends User implements RemoteAccountInterface {
     return implode('/', $parts);
   }
 
+  /**
+   * {@inheritdoc}
+   */
+  function authenticate(string $hash) {
+    if (empty($hash)) {// If there is no history...
+      // this might not be super secure...
+      $query = "SELECT TRUE FROM hash_history "
+        . "WHERE acc = '$this->id'"
+        . "LIMIT 0, 1";
+      $result = Db::query($query)->fetch_object();
+      if ($result == FALSE) return;
+    }
+    else {
+      // Remote nodes connect with a hash of the connected account, which needs to be compared.
+      $query = "SELECT TRUE FROM hash_history WHERE acc = '$this->id' AND hash = '$hash' ORDER BY id DESC LIMIT 0, 1";
+      $result = Db::query($query)->fetch_object();
+      if ($result) return;
+    }
+    throw new HashMismatchFailure($this->id, $hash);
+  }
+
+  function __toString() {
+    return $this->id . '/'.$this->relPath;
+  }
+
+
+  /**
+   * {@inheritdoc}
+   */
+  function getConversationRate() : \stdClass {
+    return $this->api()->convertPrice($this->relPath);
+  }
+
 }
+
 

@@ -23,7 +23,7 @@ CREATE TABLE entries (
   payee varchar(64) NOT NULL,
   payer varchar(64) NOT NULL,
   description tinytext NOT NULL,
-  quant int(11) NOT NULL,
+  quant int(11) NOT NULL comment 'Arithmetic is more efficient with integers',
   trunkward_quant int(11) NOT NULL comment 'This value cannot always be calculated',
   author varchar(32) NOT NULL,
   is_primary int(1) NOT NULL DEFAULT 0,

@@ -6,7 +6,6 @@ use CCNode\Accounts\Trunkward;
 use CCNode\Accounts\Remote;
 use CreditCommons\TransactionInterface;
 use CreditCommons\TransversalTransactionTrait;
-use CreditCommons\AccountRemoteInterface;
 use function \CCNode\API_calls;
 
 /**
@@ -15,9 +14,7 @@ use function \CCNode\API_calls;
  */
 class TransversalTransaction extends Transaction {
 
-  use TransversalTransactionTrait {
-    getHash as protected traitGetHash;
-  }
+  use TransversalTransactionTrait;
 
   public $downstreamAccount;
   public $upstreamAccount;
@@ -66,7 +63,10 @@ class TransversalTransaction extends Transaction {
   }
 
   public static function createFromUpstream(\stdClass $data) : TransactionInterface {
-    global $cc_user;
+    global $cc_user, $cc_config;
+    if ($cc_user->id == $cc_config->trunkwardAcc){
+      Trunkward::convertIncomingEntries($data->entries, $cc_user->id, $cc_config->conversionRate);
+    }
     $data->scribe = $cc_user->id;
     $data->state = TransactionInterface::STATE_INITIATED;
     $transaction_class = Entry::upcastAccounts($data->entries);
@@ -81,23 +81,22 @@ class TransversalTransaction extends Transaction {
     global $cc_user;
     $new_rows = parent::buildvalidate();
     if ($this->downstreamAccount) {
-      $remote_new_rows = $this->downstreamAccount->buildValidateRelayTransaction($this);
-      Entry::upcastAccounts($remote_new_rows);
-      $this->upcastEntries($remote_new_rows, TRUE);
-      $new_rows = array_merge($new_rows, $remote_new_rows);
+      $additional_remote_rows = $this->downstreamAccount->buildValidateRelayTransaction($this);
+      Entry::upcastAccounts($additional_remote_rows);
+      $this->upcastEntries($additional_remote_rows, TRUE);
+      $new_rows = array_merge($new_rows, $additional_remote_rows);
     }
     $this->responseMode = TRUE;
-    // Return only the additional entries which are relevant to the upstream node.
-    // @todo this could be more elegant.
+    // Return only the additional entries which are also relevant to the upstream node.
+    // @todo Could this be more elegant?
     if ($cc_user instanceof Remote) {
       $new_rows = array_filter(
         $this->filterFor($cc_user),
         function($e) {return $e->isAdditional();}
       );
     }
-    return $new_rows;
+    return array_values($new_rows);
   }
-
 
   /**
    * {@inheritDoc}
@@ -110,50 +109,9 @@ class TransversalTransaction extends Transaction {
     return $id;
   }
 
-
   /**
-   * Filter the entries for those that pertain to a certain node.
-   * Make a clone of the transaction with only the entries shared with an
-   * adjacent ledger.
-   *
-   * @param Remote $account
+   * {@inheritDoc}
    */
-  protected function filterFor(Remote $account) : array {
-    // Filter entries for the appropriate adjacent ledger
-    // If this works we can delete all the TransversalEntry Classes.
-    $remote_name = $account->id;
-    foreach ($this->entries as $e) {
-      if ($e->payee->id == $remote_name or $e->payer->id == $remote_name) {
-        $clone = clone($e);
-        $entries[] = $clone;
-      }
-    }
-    return $entries;
-  }
-
-  /**
-   * Produce a hash of all the entries and transaction data in an easily repeatable way.
-   *
-   * @param AccountRemoteInterface $account
-   * @param Entry[] $entries
-   *
-   * @return string
-   *
-   * @todo. I tried to put as much of the hashing code in a \CreditCommons trait
-   * where it is easy to re-use, but there is a problem that TrunkwardEntries
-   * need to hash different $quant, and \CreditCommons so far doesn't handle
-   * remote Entry classes. That's why this function is needed to wrap it.
-   */
-  protected function getHash(AccountRemoteInterface $account, array $entries) : string {
-    $trunkward = $this->trunkwardAccount and $account->id == $this->trunkwardAccount->id;
-    foreach ($entries as $entry) {
-      $e = clone $entry;
-      $e->quant = ($trunkward and $entry instanceOf EntryTrunkward) ? $entry->trunkward_quant : $entry->quant;
-      $cloned_entries[] = $e;
-    }
-    return $this->traitGetHash($account, $cloned_entries);
-  }
-
   function delete() {
     if ($this->state <> static::STATE_VALIDATED) {
       throw new CCFailure('Cannot delete transversal transactions.');
@@ -168,7 +126,6 @@ class TransversalTransaction extends Transaction {
    * To send transactions to another node
    * - filter the entries
    * - remove workflow
-   * - remove actions
    *
    * @return stdClass
    */
@@ -180,9 +137,8 @@ class TransversalTransaction extends Transaction {
     // Relaying downstream
     if ($this->downstreamAccount && !$this->responseMode) {
       // Forward the whole transaction minus a few properties.
-      unset($array['status'], $array['workflow'], $array['payeeHash'], $array['payerHash'], $array['transitions']);
+      unset($array['status'], $array['workflow'], $array['payeeHash'], $array['payerHash']);
     }
-    $array['transitions'] = $this->transitions();
     return $array;
   }
 
@@ -242,7 +198,7 @@ class TransversalTransaction extends Transaction {
   /**
    * {@inheritDoc}
    */
-  protected function transitions() : array {
+  public function transitions() : array {
     global $cc_user;
     // Transactions crossing the trunkwards node don't care about admin rights on this node.
     if ($this->entries[0]->payer instanceof Trunkward or $this->entries[0]->payee instanceof Trunkward) {

@@ -1,5 +1,6 @@
 <?php
 namespace CCNode\Accounts;
+use CCNode\Transaction\Transaction;
 
 /**
  * Class representing an account corresponding to an account on another ledger
@@ -28,22 +29,40 @@ class Trunkward extends Remote {
   /**
    * {@inheritDoc}
    */
-  function foreignId() : string {
+  function TrunkwardId() : string {
     return $this->relPath;
   }
+
+  /**
+   * {@inheritDoc}
+   */
+  function leafwardId() : string {
+    return "$this->id/$this->relPath";
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function buildValidateRelayTransaction(Transaction $transaction) : array {
+    $rows = parent::buildValidateRelayTransaction($transaction);
+    $this->convertIncomingEntries($rows, $this->id, $this->trunkwardConversionRate);
+    return $rows;
+  }
+
 
   /**
    * Convert the quantities if entries are coming from the trunk
    * @param array $entries
    *   array of stdClass or Entries.
    */
-  public function convertIncomingEntries(array &$entries) : void {
-    if ($rate = $this->trunkwardConversionRate) {
-      foreach ($entries as &$e) {
-        $e->trunkward_quant = $e->quant;
-        $e->quant = ceil($e->quant / $rate);
-        $e->author = $this->id;
+  public static function convertIncomingEntries(array &$entries, string $author, float $rate) : void {
+    global $cc_config;
+    foreach ($entries as &$e) {
+      $e->trunkwardQuant = $e->quant;
+      if ($rate <> 1) {
+        $e->quant = round($e->quant / $rate, $cc_config->decimalPlaces);
       }
+      $e->author = $author;
     }
   }
 

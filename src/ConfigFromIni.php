@@ -6,7 +6,7 @@ class ConfigFromIni implements ConfigInterface {
 
   function __construct(array $ini_file) {
     $this->dbCreds = $ini_file['db']; // Array
-    $this->accountStore = $ini_file['account_store']??'\CCNode\AccountStoreDefault';
+    $this->accountStore = $ini_file['account_store']??'\Examples\AccountStore';
 
     $this->blogicMod = $ini_file['blogic_mod']; // optional
     $this->zeroPayments = $ini_file['zero_payments']??false;
@@ -14,6 +14,8 @@ class ConfigFromIni implements ConfigInterface {
     $this->devMode = $ini_file['dev_mode']??false;
 
     $this->workflowsFile = $ini_file['workflows_filepath'];
+    $this->currSymbol = $ini_file['currency_symbol'];
+    $this->decimalPlaces = $ini_file['decimal_places'];
 
     // The rest are only used when there are remote accounts.
     $this->absPath = $ini_file['abs_path']??'mynode';
@@ -28,7 +30,9 @@ class ConfigFromIni implements ConfigInterface {
     }
     else {
       $this->trunkwardAcc = '';
+      $this->conversionRate = 1;
     }
     $this->displayFormat = $ini_file['display_format']; //Not implemented.
+    $this->spoofs = $ini_file['spoof_acc_names'];
   }
 }

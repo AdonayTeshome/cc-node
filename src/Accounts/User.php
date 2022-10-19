@@ -1,9 +1,13 @@
 <?php
 
 namespace CCNode\Accounts;
-use CreditCommons\Account;
+
 use CCNode\TradeStats;
 use CCNode\Transaction\Transaction;
+use CreditCommons\Exceptions\PasswordViolation;
+use CreditCommons\Account;
+use function CCNode\accountStore;
+
 
 /**
  * Class representing a member of the ledger
@@ -112,20 +116,22 @@ class User extends Account {
     ];
   }
 
+  /**
+   * {@inheritdoc}
+   */
   function getLimits($force_local = FALSE) : \stdClass {
     return (object)['min' => $this->min, 'max' => $this->max];
   }
 
   /**
-   * Get the address for passing trunkwards or branchwards.
-   *
-   * @return string
-   *
-   * @todo Would be great to find a way to put this in cc-php-lib
+   * {@inheritdoc}
    */
-  function foreignId() : string {
-    global $cc_config;
-    return $cc_config->nodeName .'/'. $this->id;
+  function authenticate(string $auth_string) {
+    if (!accountStore()->compareAuthkey($this->id, $auth_string)) {
+      //local user with the wrong password
+      throw new PasswordViolation();
+    }
   }
+
 }
 

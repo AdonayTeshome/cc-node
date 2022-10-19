@@ -52,8 +52,11 @@ class AddressResolver {
     if (substr($rel_path, -1) == '/') {
       throw new PathViolation(relPath: $rel_path, context: 'localOrRemoteAcc');
     }
-    $acc = $this->getLocalAccount($rel_path);
-    return $acc;
+    if ($acc = $this->getLocalAccount($rel_path)) {
+      return $acc;
+    }
+    throw new \CreditCommons\Exceptions\CCFailure("Unable to find account for $rel_path");
+    return NULL;
   }
 
   /**

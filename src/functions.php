@@ -23,6 +23,7 @@ use CreditCommons\CreditCommonsInterface;
  * @todo This doesn't seem like a good place to throw a violation.
  */
 function load_account(string $local_acc_id = NULL, string $rel_path = '') : Account {
+
   if (strpos(needle: '/', haystack: $local_acc_id)) {
     throw new CCFailure("Can't load unresolved account name: $local_acc_id");
   }
@@ -57,16 +58,20 @@ function API_calls(Remote $account = NULL) {
  */
 function accountStore() : AccountStoreInterface {
   global $cc_config;
-  if (filter_var($cc_config->accountStore, FILTER_VALIDATE_URL)) {
-    $class = '\CCNode\AccountStoreREST';
+  $class = $cc_config->accountStore;
+  if (filter_var($class, FILTER_VALIDATE_URL)) {
+    $store = new \CCNode\AccountStoreREST(trunkward_acc_name: $cc_config->trunkwardAcc);
   }
   elseif (class_exists($cc_config->accountStore)) {
-    $class = $cc_config->accountStore;
+    // filepath is in the web root, but where are we?
+    $store = new $class(
+      trunkward_acc_name: $cc_config->trunkwardAcc
+    );
   }
   else {
     throw new CCFailure('Invalid accountStore setting: '.$cc_config->accountStore);
   }
-  return new $class($cc_config->trunkwardAcc);
+  return $store;
 }
 
 /**
@@ -84,7 +89,6 @@ function debug($val) {
     FILE_APPEND
   );
 }
-
 
 /**
  * @todo put these functions in an always included file so they needn't be called with the namespace.
@@ -106,6 +110,7 @@ function debug($val) {
 function permitted_operations() : array {
   global $cc_user;
   $permitted[] = 'permittedEndpoints';
+  $permitted[] = 'convertPrice';
   if ($cc_user->id <> '-anon-') {
     $permitted[] = 'handshake';
     $permitted[] = 'workflows';

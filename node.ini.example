@@ -14,6 +14,8 @@ db[pass] = ""
 abs_path = "trunkward_node/my_cc_node"
 ;Conversion rate with the parent
 conversion_rate = 1.000
+currency_symbol = <strong>C$</strong>
+decimal_places = 3
 
 ;filesystem path to json representation of workflows array @todo this should be relative, ideally
 workflows_filepath = /home/credcom/html/workflows.json
@@ -43,3 +45,5 @@ validate_pending = 1
 ;Stop on all notices and warnings.
 ;WARNING if dev_mode is on, then tests will erase the database!!!
 dev_mode=0
+;Allow remote accounts to connect without hash authentication
+spoof_acc_names[] = ''

@@ -4,11 +4,9 @@ namespace CCNode\Transaction;
 
 use CCNode\Accounts\Trunkward;
 use CCNode\Transaction\Entry;
-use CCNode\Transaction\EntryTrunkward;
 use CCNode\Accounts\Remote;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\CCFailure;
-use CreditCommons\Exceptions\PermissionViolation;
 use CreditCommons\Exceptions\InvalidFieldsViolation;
 use CCNode\Db;
 use function CCNode\accountStore;
@@ -26,7 +24,7 @@ trait StorageTrait {
    * @return \Transaction
    */
   static function loadByUuid($uuid) : Transaction {
-    global $cc_user;
+    global $cc_user, $cc_config;
     // Select the latest version
     $q = "SELECT id as txID, uuid, written, scribe, version, type, state "
       . "FROM transactions "
@@ -37,7 +35,8 @@ trait StorageTrait {
     if (!$tx) {
       throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
     }
-    $q = "SELECT payee, payer, description, quant, trunkward_quant, author, metadata, is_primary FROM entries "
+    $multiplier = pow(10, $cc_config->decimalPlaces);
+    $q = "SELECT payee, payer, description, quant/$multiplier as quant, trunkward_quant/$multiplier as trunkwardQuant, author, metadata, is_primary FROM entries "
       . "WHERE txid = $tx->txID "
       . "ORDER BY id ASC";
     $result = Db::query($q);
@@ -46,8 +45,8 @@ trait StorageTrait {
     }
     while ($row = $result->fetch_object()) {
       if ($tx->state == 'validated' and $row->author <> $cc_user->id and !$cc_user->admin and $row->is_primary) {
-        // deny the transaction exists to all but its author and admins
-        throw new PermissionViolation();
+        // Deny the transaction exists to all but its author and admins
+        throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
       }
       $row->metadata = unserialize($row->metadata);
       $tx->entries[] = $row;
@@ -118,15 +117,13 @@ trait StorageTrait {
    */
   protected function writeHashes(int $id) {
     $payee_hash = $payer_hash = '';
-    if ($this->entries[0]->payee instanceOf Remote) {
-      $acc = $this->entries[0]->payee;
-      $entries = $this->filterFor($acc, $acc instanceOf Trunkward);
-      $payee_hash = $this->getHash($acc, $entries);
+    $payee = $this->entries[0]->payee;
+    $payer = $this->entries[0]->payer;
+    if ($payee instanceOf Remote) {
+      $payee_hash = $this->getHash($payee);
     }
-    if ($this->entries[0]->payer instanceOf Remote) {
-      $acc = $this->entries[0]->payer;
-      $entries = $this->filterFor($acc, $acc instanceOf Trunkward);
-      $payer_hash = $this->getHash($acc, $entries);
+    if ($payer instanceOf Remote) {
+      $payer_hash = $this->getHash($payer);
     }
     $query = "UPDATE transactions SET payee_hash = '$payee_hash', payer_hash = '$payer_hash' WHERE id = $id";
     Db::query($query);
@@ -159,19 +156,24 @@ trait StorageTrait {
    * @note No database errors are anticipated.
    */
   private function insertEntry(int $txid, Entry $entry) : int {
+    global $cc_config;
     // Calculate metadata for local storage
     foreach (['payee', 'payer'] as $role) {
       $$role = $entry->{$role}->id;
       if ($entry->{$role} instanceof Remote) {
-        $entry->metadata->{$$role} = $entry->{$role}->foreignId();
+        $entry->metadata->{$$role} = $entry->{$role}->relPath;
       }
     }
     $metadata = serialize($entry->metadata);
     $desc = Db::connect()->real_escape_string($entry->description);
     $primary = $entry->primary??0;
-    $trunkward_quant = $entry instanceOf EntryTrunkward ? $entry->trunkward_quant : 0;
+    $trunkward_quant = 0;
+    $multiplier = pow(10, $cc_config->decimalPlaces);
+    if ($entry->payer instanceOf Trunkward or $entry->payee instanceof Trunkward) {
+      $trunkward_quant = $entry->trunkwardQuant;
+    }
     $q = "INSERT INTO entries (txid, payee, payer, quant, trunkward_quant, description, author, metadata, is_primary) "
-      . "VALUES ($txid, '$payee', '$payer', '$entry->quant', '$trunkward_quant', '$desc', '$entry->author', '$metadata', '$primary')";
+      . "VALUES ($txid, '$payee', '$payer', $entry->quant * $multiplier, $trunkward_quant * $multiplier, '$desc', '$entry->author', '$metadata', '$primary')";
     if ($this->id = Db::query($q)) {
       return (bool)$this->id;
     }
@@ -196,6 +198,7 @@ trait StorageTrait {
    * @note It is not possible to filter by signatures needed or signed because
    * they don't exist, as such, in the db.
    * @note you can't filter on metadata here.
+   * @todo add a filter on quant
    */
   static function filter(
     string $sort = 'written',
@@ -316,7 +319,7 @@ trait StorageTrait {
     if (isset($conditions)) {
       $query .= ' WHERE '.implode(' AND ', $conditions);
     }
-    $query .= " ORDER BY $sort ".strtoUpper($dir).", is_primary DESC LIMIT $offset, $limit";
+    $query .= " ORDER BY $sort ".strtoUpper($dir).", e.id ".strtoUpper($dir).", is_primary DESC LIMIT $offset, $limit";
 
     $query_result = Db::query($query);
     $results = [];
@@ -346,8 +349,10 @@ trait StorageTrait {
    * Written is easier with the current architecture.
    */
   static function accountHistory($acc_id) : \mysqli_result {
+    global $cc_config;
+    $multiplier = pow(10, $cc_config->decimalPlaces);
     Db::query("SET @csum := 0");
-    $query = "SELECT written, (@csum := @csum + diff) as balance "
+    $query = "SELECT written, (@csum := @csum + diff / $multiplier) as balance "
       . "FROM transaction_index "
       . "WHERE uid1 = '$acc_id' "
       . "ORDER BY written ASC";
@@ -355,7 +360,9 @@ trait StorageTrait {
   }
 
   static function accountSummary($acc_id) : \mysqli_result {
-    $query = "SELECT uid2 as partner, income, expenditure, diff, volume, state, is_primary as isPrimary "
+    global $cc_config;
+    $multiplier = pow(10, $cc_config->decimalPlaces);
+    $query = "SELECT uid2 as partner, income / $multiplier as income, expenditure / $multiplier as expenditure, diff / $multiplier as diff, volume / $multiplier as volume, state, is_primary as isPrimary "
       . "FROM transaction_index "
       . "WHERE uid1 = '$acc_id' and state in ('completed', 'pending')";
     return Db::query($query);
@@ -367,9 +374,11 @@ trait StorageTrait {
    * @return array
    */
   static function getAccountSummaries($include_virgin_wallets = FALSE) : array {
+    global $cc_config;
+    $multiplier = pow(10, $cc_config->decimalPlaces);
     $results = $balances = [];
         $balances = [];
-    $result = Db::query("SELECT uid1, uid2, diff, state, is_primary "
+    $result = Db::query("SELECT uid1, uid2, diff / $multiplier as diff, state, is_primary "
       . "FROM transaction_index "
       . "WHERE income > 0");
     while ($row = $result->fetch_object()) {

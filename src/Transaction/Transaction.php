@@ -5,7 +5,6 @@ namespace CCNode\Transaction;
 use CCNode\BlogicRequester;
 use CCNode\Accounts\Remote;
 use CCNode\Accounts\Branch;
-use CCNode\Accounts\Trunkward;
 use CCNode\Transaction\Entry;
 use CreditCommons\Workflow;
 use CreditCommons\NewTransaction;
@@ -265,12 +264,14 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       'state' => $this->state,
       'type' => $this->type,
       'version' => $this->version,
-      'entries' => $this->entries,
-      'transitions' => $this->transitions()
+      'entries' => $this->entries
     ];
   }
 
-  protected function transitions() : array {
+  /**
+   * {@inheritDoc}
+   */
+  public function transitions() : array {
     global $cc_user;
     return $this->getWorkflow()->getTransitions($cc_user->id, $this, $cc_user->admin);
   }
@@ -307,12 +308,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
         // both accounts are leafwards, the current node is at the apex of the route.
         $create_method = ['EntryTransversal', 'create'];
       }
-      elseif ($row->payee instanceOf Trunkward or $row->payer instanceOf Trunkward) {
-        // One of the accounts is trunkward, so this class does conversion of amounts.
-        $create_method = ['EntryTrunkward', 'create'];
-      }
-      elseif ($row->payee instanceOf Branch or $row->payer instanceOf Branch) {
-        // One account is local, one account is further leafwards.
+      elseif ($row->payee instanceOf Remote or $row->payer instanceOf Remote) {
         $create_method = ['EntryTransversal', 'create'];
       }
       else {

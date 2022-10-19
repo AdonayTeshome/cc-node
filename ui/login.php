@@ -1,10 +1,11 @@
 <?php
 session_start();
 require_once '../vendor/autoload.php';
+$node = new \CCNode\Node(parse_ini_file('../node.ini'));
 if ($_POST and !empty($_POST["user_name"]) and !empty($_POST['password'])) {
   include_once('../vendor/credit-commons/cc-node/src/Node.php');
-  if (\CCNode\accountStore()->checkCredentials($_POST["user_name"], $_POST["password"])) {
-    $_SESSION["user"] = $_POST["user_name"];
+  if (\CCNode\accountStore('../accountstore.json')->checkCredentials($_POST["user_name"], $_POST["password"])) {
+    $_SESSION["user"] = $user->id;
   }
   else $_SESSION["errorMessage"] = "Invalid Credentials";
 }
