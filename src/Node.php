@@ -13,8 +13,6 @@ use CreditCommons\TransactionInterface;
 use CreditCommons\CreditCommonsInterface;
 use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\UnavailableNodeFailure;
-use CreditCommons\BaseTransaction;
-use CreditCommons\NewTransaction;
 use CreditCommons\Workflow;
 
 /**
@@ -88,23 +86,46 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function filterTransactions(array $params = []): array {
-    $entries =  isset($params['entries']) and $params['entries'] === 'true';
-    unset($params['entries']);
-
-    $results = [];
-    if ($uuids = Transaction::filter(...$params)) {
-      if ($entries) {
-        $results = StandaloneEntry::load(array_keys($uuids));
-      }
-      else {
-        foreach (array_unique($uuids) as $uuid) {
-          $results[$uuid] = Transaction::loadByUuid($uuid);
-        }
+    $results = $transitions = [];
+    [$uuids, $count] = Transaction::filter($params);
+    if ($uuids) {
+      foreach ($uuids as $uuid) {
+        $t = Transaction::loadByUuid($uuid);
+        $results[] = $t;
+        $transitions[$uuid] = $t->transitions();
       }
     }
     // All entries are returned
-    return array_values($results);
+    return [$count, $results, $transitions, $count];
   }
+
+  public function filterTransactionEntries(array $params = []): array {
+    $results = [];
+    [$uuids, $count] = Transaction::filterEntries($params);
+    if ($uuids) {
+      $results = StandaloneEntry::load(array_keys($uuids));
+    }
+    // All entries are returned
+    return [$count, $results];
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  public function getTransaction(string $uuid): array {
+    $transaction = Transaction::loadByUuid($uuid);
+    $transaction->responseMode = TRUE;// there's nowhere tidier to do this.
+    return [$transaction, $transaction->transitions()];
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  public function getTransactionEntries(string $uuid): array {
+    $entries = StandaloneEntry::loadByUuid($uuid);
+    return array_values($entries);
+  }
+
 
   /**
    * {@inheritDoc}
@@ -175,22 +196,6 @@ class Node implements CreditCommonsInterface {
   /**
    * {@inheritDoc}
    */
-  public function getTransaction(string $uuid): BaseTransaction {
-    $result = Transaction::loadByUuid($uuid);
-    $result->responseMode = TRUE;// there's nowhere tidier to do this.
-    return $result;
-  }
-
-  /**
-   * {@inheritDoc}
-   */
-  public function getTransactionEntries(string $uuid): array {
-    return array_values(StandaloneEntry::loadByUuid($uuid));
-  }
-
-  /**
-   * {@inheritDoc}
-   */
   public function getWorkflows(): array {
     global $cc_workflows, $cc_config;
     return $cc_workflows;
@@ -231,6 +236,18 @@ class Node implements CreditCommonsInterface {
       }
     }
     return $results;
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  public function submitNewTransaction(NewTransaction $new_transaction) : array {
+    $request = $this
+      ->setMethod('post')
+      ->setBody($new_transaction);
+    $code = empty($new_transaction->state) ? 200 : 201;
+    $result = $request->request($code, 'transaction');
+    return [$result->data, $result->meta->transitions];
   }
 
   /**

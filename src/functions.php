@@ -119,7 +119,9 @@ function permitted_operations() : array {
     $permitted[] = 'stateChange';
     $map = [
       'filterTransactions' => 'transactions',
+      'filterTransactionEntries' => 'transactions',
       'getTransaction' => 'transactions',
+      'getEntries' => 'transactions',
       'accountHistory' => 'transactions',
       'accountLimits' => 'acc_summaries',
       'accountNameFilter' => 'acc_ids',

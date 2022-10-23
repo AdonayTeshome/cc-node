@@ -36,7 +36,7 @@ validated_window = 300
 
 [transactions]
 ;How to convert base units to a string for the user. See the README for more details.
-display_format = ''
+#display_format = ''
 ;Whether payments of zero are valid
 zero_payments = 0
 ;Validate transactions against pending balances.

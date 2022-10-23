@@ -188,23 +188,80 @@ trait StorageTrait {
   }
 
   /**
+   * @return string[]
+   *   A list of transaction uuids
+   */
+  static function filter(array $params) : array {
+    $results = [];
+    $sort = $params['sort'];
+    $dir = $params['dir'];
+    $limit = $params['limit'];
+    $offset = $params['offset'];
+    unset($params['sort'], $params['dir'], $params['limit'], $params['offset']);
+    // Get only the latest version of each row in the transactions table.
+    $query = "SELECT t.uuid FROM transactions t "
+      . "INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver "
+      . "RIGHT JOIN entries e ON t.id = e.txid "
+      . static::filterConditions(...$params)
+      . " GROUP BY t.uuid ";
+    $result = Db::query($query);
+    $count = mysqli_num_rows($result);
+    if ($count) {
+      $query .= " ORDER BY $sort ". strtoUpper($dir).", "
+      . "  MAX(e.id) ".strtoUpper($dir)
+      . " LIMIT $offset, $limit";
+      $query_result = Db::query($query);
+      while ($row = $query_result->fetch_object()) {
+        $results[] = $row->uuid;
+      }
+    }
+    else {
+      $count = 0;
+    }
+    return [$results, $count];
+  }
+
+  static function filterEntries(array $params) : array {
+    $results = [];
+    $sort = $params['sort'];
+    $dir = $params['dir'];
+    $limit = $params['limit'];
+    $offset = $params['offset'];
+    unset($params['sort'], $params['dir'], $params['limit'], $params['offset']);
+    // Get only the latest version of each row in the transactions table.
+    $query = "SELECT e.id, t.uuid FROM transactions t "
+      . " INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver "
+      . " LEFT JOIN entries e ON t.id = e.txid "
+      . static::filterConditions(...$params);
+
+    $count = Db::query(str_replace('e.id, t.uuid', 'COUNT(t.uuid) as count', $query))->fetch_object()->count;
+    if ($count) {
+      $query .= " ORDER BY $sort ". strtoUpper($dir).", "
+        . "  e.id ".strtoUpper($dir).", "
+        . "  is_primary DESC "
+        . " LIMIT $offset, $limit";
+      $query_result = Db::query($query);
+      while ($row = $query_result->fetch_object()) {
+        $results[$row->id] = $row->uuid;
+      }
+    }
+    return [$results, $count];
+  }
+
+  /**
    * @param array $params
    *   Valid fields: payer, payee, involving, type, types, state, states, since, until, author, description
    *   Other params: sort (field name), dir (asc or desc), limit, offset
    *
    * @return string[]
-   *   A list of transaction uuids
+   *   subclauses for the WHERE, to be joined by AND
    *
    * @note It is not possible to filter by signatures needed or signed because
    * they don't exist, as such, in the db.
    * @note you can't filter on metadata here.
    * @todo add a filter on quant
    */
-  static function filter(
-    string $sort = 'written',
-    string $dir = 'desc',
-    int $limit = 25,
-    int $offset = 0,
+  private static function filterConditions(
     string $payer = NULL,
     string $payee = NULL,
     string $involving = NULL,
@@ -215,8 +272,8 @@ trait StorageTrait {
     string $types = NULL,//comma separated
     string $type = NULL,//todo should we pass an array here?
     string $since = NULL,
-    string $until = NULL,
-  ) : array {
+    string $until = NULL) : string
+  {
     global $cc_user;
     // Validation
     foreach (['since', 'until'] as $time) {
@@ -237,11 +294,7 @@ trait StorageTrait {
     if (isset($type) and !isset($types)) {
       $types = [$type];
     }
-    // Get only the latest version of each row in the transactions table.
-    $query = "SELECT e.id, t.uuid FROM transactions t "
-      . "INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver "
-      // Means we get one result for each entry, so we use array_unique at the end.
-      . "LEFT JOIN entries e ON t.id = e.txid ";
+    $conditions = [];
     if (isset($payer)) {
       if ($col = strpos($payer, '/')) {
         $conditions[] = "metadata LIKE '%$payer%'";
@@ -316,17 +369,11 @@ trait StorageTrait {
     if (isset($uuid)) {
       $conditions[]  = "t.uuid = '$uuid'";
     }
-    if (isset($conditions)) {
-      $query .= ' WHERE '.implode(' AND ', $conditions);
+    $query = '';
+    if ($conditions) {
+     $query .= ' WHERE '.implode(' AND ', $conditions);
     }
-    $query .= " ORDER BY $sort ".strtoUpper($dir).", e.id ".strtoUpper($dir).", is_primary DESC LIMIT $offset, $limit";
-
-    $query_result = Db::query($query);
-    $results = [];
-    while ($row = $query_result->fetch_object()) {
-      $results[$row->id] = $row->uuid;
-    }
-    return $results;
+    return $query;
   }
 
   /**

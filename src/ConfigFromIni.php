@@ -32,7 +32,7 @@ class ConfigFromIni implements ConfigInterface {
       $this->trunkwardAcc = '';
       $this->conversionRate = 1;
     }
-    $this->displayFormat = $ini_file['display_format']; //Not implemented.
+    #$this->displayFormat = $ini_file['display_format']; //Not implemented.
     $this->spoofs = $ini_file['spoof_acc_names'];
   }
 }
