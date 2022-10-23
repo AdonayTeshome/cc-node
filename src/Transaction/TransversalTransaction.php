@@ -200,8 +200,8 @@ class TransversalTransaction extends Transaction {
    */
   public function transitions() : array {
     global $cc_user;
-    // Transactions crossing the trunkwards node don't care about admin rights on this node.
-    if ($this->entries[0]->payer instanceof Trunkward or $this->entries[0]->payee instanceof Trunkward) {
+    // Admin permission over a transaction can only be granted when payer or payee is local
+    if ($this->entries[0]->payer instanceof Remote and $this->entries[0]->payee instanceof Remote) {
       $admin = FALSE;
     }
     else {
