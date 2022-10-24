@@ -124,7 +124,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       $payee_diff = $this->sum($payee->id);
       $projected = $stats->balance + $payee_diff;
       if ($payee_diff > 0 and $projected > $payee->max) {
-        throw new MaxLimitViolation(limit: $payee->max, projected: $projected);
+        throw new MaxLimitViolation(limit: $payee->max, projected: $projected, accId: $payee->id);
       }
     }
     $payer = $this->entries[0]->payer;
@@ -134,7 +134,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       $payer_diff = $this->sum($payer->id);
       $projected = $stats->balance + $payer_diff;
       if ($payer_diff < 0 and $projected < $payer->min) {
-        throw new MaxLimitViolation(limit: $payer->max, projected: $projected);
+        throw new MaxLimitViolation(limit: $payer->max, projected: $projected, accId: $payer->id);
       }
     }
     $this->state = TransactionInterface::STATE_VALIDATED;

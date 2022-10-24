@@ -110,7 +110,8 @@ class AddressResolver {
         $this->cache[$given_path] = load_account($this->trunkwardName, $given_path);
       }
       else {
-        throw new PathViolation(relPath: $given_path, context: 'getLocalAccount');
+        // There is no local account and no trunkward account.
+        throw new PathViolation(relPath: $given_path, context: 'localAccount');
       }
     }
     return $this->cache[$given_path];

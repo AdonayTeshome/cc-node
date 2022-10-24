@@ -22,7 +22,7 @@ class EntryTransversal extends Entry {
       // If this is coming from trunkwards, $data->trunkwardQuant is already set
       $e->trunkwardQuant = $data->trunkwardQuant;
     }
-    elseif ($cc_config->conversionRate <> 1) {
+    else {
       // If this entry might be sent trunkwards, calculate the value now.
       $e->trunkwardQuant = ceil($e->quant * $cc_config->conversionRate);
     }
