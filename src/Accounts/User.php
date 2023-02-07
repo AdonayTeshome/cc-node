@@ -129,9 +129,20 @@ class User extends Account {
   function authenticate(string $auth_string) {
     if (!accountStore()->compareAuthkey($this->id, $auth_string)) {
       //local user with the wrong password
-      throw new PasswordViolation();
+      throw new PasswordViolation($auth_string);
     }
   }
+
+  function trunkwardPath() : string {
+    global $cc_config;
+    return  "$cc_config->nodeName/$this->id";
+  }
+
+  function leafwardPath() : string {
+    global $cc_config;
+    return  "$cc_config->nodeName/$this->id";
+  }
+
 
 }
 

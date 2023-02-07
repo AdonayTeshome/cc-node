@@ -122,8 +122,7 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function getTransactionEntries(string $uuid): array {
-    $entries = StandaloneEntry::loadByUuid($uuid);
-    return array_values($entries);
+    return StandaloneEntry::loadByUuid($uuid);
   }
 
 
@@ -230,7 +229,7 @@ class Node implements CreditCommonsInterface {
         catch (HashMismatchFailure $e) {
           $results[$acc->id] = 'HashMismatchFailure';
         }
-        catch(\Exception $e) {
+        catch(\Error $e) {
           $results[$acc->id] = get_class($e);
         }
       }
@@ -262,8 +261,9 @@ class Node implements CreditCommonsInterface {
   /**
    * {@inheritDoc}
    */
-  public function transactionChangeState(string $uuid, string $target_state): bool {
-    return Transaction::loadByUuid($uuid)->changeState($target_state);
+  public function transactionChangeState(string $uuid, string $target_state) : void {
+    Transaction::loadByUuid($uuid)
+      ->changeState($target_state);
   }
 
   /**

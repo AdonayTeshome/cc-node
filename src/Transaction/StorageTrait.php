@@ -49,9 +49,15 @@ trait StorageTrait {
         throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
       }
       $row->metadata = unserialize($row->metadata);
+      // replace the full payee and payer path, ready to upcast the row.
+      foreach (['payee', 'payer'] as $role) {
+        if (isset($row->metadata->{$row->{$role}})) {
+          $row->$role = $row->metadata->{$row->{$role}};
+        }
+      }
       $tx->entries[] = $row;
     }
-    $t_class = Entry::upcastAccounts($tx->entries);
+    $t_class = static::upcastEntries($tx->entries);
 
     // All these values should be validated, so no need to use static::create
     $transaction = $t_class::create($tx);
@@ -161,7 +167,7 @@ trait StorageTrait {
     foreach (['payee', 'payer'] as $role) {
       $$role = $entry->{$role}->id;
       if ($entry->{$role} instanceof Remote) {
-        $entry->metadata->{$$role} = $entry->{$role}->relPath;
+        $entry->metadata->{$role} = $entry->{$role}->relPath;
       }
     }
     $metadata = serialize($entry->metadata);
@@ -174,9 +180,7 @@ trait StorageTrait {
     }
     $q = "INSERT INTO entries (txid, payee, payer, quant, trunkward_quant, description, author, metadata, is_primary) "
       . "VALUES ($txid, '$payee', '$payer', $entry->quant * $multiplier, $trunkward_quant * $multiplier, '$desc', '$entry->author', '$metadata', '$primary')";
-    if ($this->id = Db::query($q)) {
-      return (bool)$this->id;
-    }
+    return $this->id = Db::query($q);
   }
 
   /**
@@ -245,7 +249,7 @@ trait StorageTrait {
         $results[$row->id] = $row->uuid;
       }
     }
-    return [$results, $count];
+    return [$results, (int)$count];
   }
 
   /**

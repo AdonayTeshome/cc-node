@@ -27,20 +27,6 @@ class Trunkward extends Remote {
   }
 
   /**
-   * {@inheritDoc}
-   */
-  function TrunkwardId() : string {
-    return $this->relPath;
-  }
-
-  /**
-   * {@inheritDoc}
-   */
-  function leafwardId() : string {
-    return "$this->id/$this->relPath";
-  }
-
-  /**
    * {@inheritdoc}
    */
   public function buildValidateRelayTransaction(Transaction $transaction) : array {
@@ -137,6 +123,15 @@ class Trunkward extends Remote {
     // @todo convert when Sending trunkward. This is not a priority because
     // sending internal info trunkward is strictly optional.
   }
+
+  function trunkwardPath() : string {
+    return $this->relPath;
+  }
+
+  function leafwardPath() : string {
+    return $this->id .'/'. $this->relPath;
+  }
+
 
 }
 

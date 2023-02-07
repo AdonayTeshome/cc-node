@@ -7,21 +7,17 @@ namespace CCNode\Accounts;
  */
 abstract class Branch extends Remote {
 
-  /**
-   * {@inheritDoc}
-   */
-  function trunkwardId() : string {
+  function trunkwardPath() : string {
     global $cc_config;
-    return "$cc_config->nodeName/$this->id/$this->relPath";
+    $path = "$cc_config->nodeName/$this->id";
+    if ($this->relPath) {
+      $path .= '/'.$this->relPath;
+    }
+    return $path;
   }
 
-  /**
-   * {@inheritDoc}
-   */
-  function leafwardId() : string {
-    return $this->relPath;
+  function leafwardPath() : string {
+    return $this->id. '/'.$this->relPath;
   }
-
-
 
 }

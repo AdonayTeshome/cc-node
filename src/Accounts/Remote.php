@@ -68,8 +68,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
    * {@inheritdoc}
    */
   public function buildValidateRelayTransaction(Transaction $transaction) : array {
-    $rows = $this->API()->buildValidateRelayTransaction($transaction);
-    return $rows;
+    return $this->API()->buildValidateRelayTransaction($transaction);
   }
 
   /**
@@ -161,28 +160,6 @@ abstract class Remote extends User implements RemoteAccountInterface {
     return new NodeRequester($this->url, $cc_config->nodeName, $this->getLastHash());
   }
 
-
-  /**
-   * Get the address for passing trunkwards or branchwards.
-   *
-   * @return string
-   *
-   * @todo Would be great to find a way to put this in cc-php-lib
-   */
-  function foreignId() : string {
-    global $cc_config;
-    $parts = [];
-    if ($cc_config->trunkwardAcc) {
-      $parts[] = $cc_config->nodeName;
-    }
-    $parts[] = $this->id;
-    if ($r = $this->relPath) {
-      // Add the leafward part of the path
-      $parts[] = $r;
-    }
-    return implode('/', $parts);
-  }
-
   /**
    * {@inheritdoc}
    */
@@ -217,5 +194,3 @@ abstract class Remote extends User implements RemoteAccountInterface {
   }
 
 }
-
-

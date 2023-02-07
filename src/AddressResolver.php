@@ -3,9 +3,10 @@ namespace CCNode;
 
 use CreditCommons\AccountStoreInterface;
 use CreditCommons\Exceptions\PathViolation;
+use CreditCommons\Exceptions\DoesNotExistViolation;
 use CCNode\Accounts\Remote;
 use CCNode\Accounts\User;
-use function \CCNode\accountStore;
+use function CCNode\accountStore;
 use function CCNode\load_account;
 
 /**
@@ -49,14 +50,17 @@ class AddressResolver {
    * @throws PathViolation
    */
   function localOrRemoteAcc(string &$rel_path) : User {
+    if (empty($rel_path)) {
+      
+    }
     if (substr($rel_path, -1) == '/') {
       throw new PathViolation(relPath: $rel_path, context: 'localOrRemoteAcc');
     }
-    if ($acc = $this->getLocalAccount($rel_path)) {
-      return $acc;
+    $acc = $this->getLocalAccount($rel_path);
+    if (is_null($acc)) {
+      throw new DoesNotExistViolation(type: 'user', id: $rel_path);
     }
-    throw new \CreditCommons\Exceptions\CCFailure("Unable to find account for $rel_path");
-    return NULL;
+    return $acc;
   }
 
   /**
@@ -79,8 +83,6 @@ class AddressResolver {
    * @param string $given_path
    * @return User|NULL
    * @throws PathViolation
-   *
-   * @note this is called really repetitively during transaction creation.
    */
   function getLocalAccount(string &$given_path) : User|NULL {
     global $cc_user;
@@ -98,6 +100,7 @@ class AddressResolver {
       else {
         $rel_path = implode('/', $path_parts);
       }
+
       if ($acc_id == '') {
         // the current node
         $this->cache[$given_path] = NULL;
@@ -106,8 +109,10 @@ class AddressResolver {
         $this->cache[$given_path] = load_account($acc_id, $rel_path);
       }
       // Load the trunkward account always with the full given path.
-      elseif ($pos == FALSE and $this->trunkwardName and $cc_user->id <> $this->trunkwardName) {
-        $this->cache[$given_path] = load_account($this->trunkwardName, $given_path);
+      //elseif ($pos == FALSE and $this->trunkwardName and ($cc_user->id <> $this->trunkwardName)) {
+      elseif ($pos == FALSE and $this->trunkwardName) {
+        $acc = load_account($this->trunkwardName, $given_path);
+        $this->cache[$given_path] = $acc;
       }
       else {
         // There is no local account and no trunkward account.
@@ -117,7 +122,11 @@ class AddressResolver {
     return $this->cache[$given_path];
   }
 
-
+  /**
+   * @param string $rel_path
+   * @return Remote|NULL
+   * @throws PathViolation
+   */
   function remoteNode(string &$rel_path) : Remote|NULL {
     $acc = $this->getLocalAccount($rel_path);
     if (is_null($acc)) {

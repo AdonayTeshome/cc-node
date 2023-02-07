@@ -4,7 +4,6 @@ namespace CCNode\Transaction;
 
 use CCNode\BlogicRequester;
 use CCNode\Accounts\Remote;
-use CCNode\Accounts\Branch;
 use CCNode\Transaction\Entry;
 use CreditCommons\Workflow;
 use CreditCommons\NewTransaction;
@@ -56,29 +55,29 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     $data->uuid = $new->uuid;
     $data->type = $new->type;
     $data->state = TransactionInterface::STATE_INITIATED;
-    $data->version = -1;
+    $data->version = -1; // Corresponds to state init, pre-validated.
     $data->scribe = $cc_user->id;
     $data->entries = [(object)[
       'payee' => $new->payee,
       'payer' => $new->payer,
       'description' => $new->description,
       'metadata' => $new->metadata,
-      'quant' => $new->quant
+      'quant' => $new->quant,
+      'isPrimary' => TRUE
     ]];
-    $transaction_class = Entry::upcastAccounts($data->entries);
+    $transaction_class = static::upcastEntries($data->entries);
     return $transaction_class::create($data);
-    // N.B. This isn't saved yet.
   }
+
 
   static function create(\stdClass $data) : static {
     $data->version = $data->version??-1;
     $data->written = $data->written??'';
-    static::validateFields($data);
-    $t = new static($data->uuid, $data->written, $data->type, $data->state, $data->entries, $data->version, $data->scribe);
+    $transaction = parent::create($data);
     if (isset($data->txID)) {
-      $t->txID = $data->txID;
+      $transaction->txID = $data->txID;
     }
-    return $t;
+    return $transaction;
   }
 
   /**
@@ -143,10 +142,19 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
   /**
    * Call whatever Blogic class and upcast and append any resulting rows.
    */
-  private function callBlogic() : array {
+  protected function callBlogic() : array {
     global $cc_config;
-    // This feels a bit inelegant.
-    $blogic_entry = $this->entries[0]->toBlogic($this->type);
+    // this is rather cumbersome because blogic wants the first entry with
+    // flattened payee and payee and the transaction->type.
+    $first = $this->entries[0];
+    $blogic_entry = [
+      'payee' => (string)$first->payee,
+      'payer' => (string)$first->payer,
+      'quant' => $first->quant,
+      'description' => $first->description,
+      'metadata' => $first->metadata,
+      'type' => $this->type
+    ];
     if (class_exists($cc_config->blogicMod)) {
       $class = $cc_config->blogicMod;
       $blogic_mod = new $class();
@@ -157,7 +165,9 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       $rows = (new BlogicRequester())->addRows(...$blogic_entry);
     }
     // The Blogic returns entries with upcast account objects
-    $this->upcastEntries($rows, TRUE);
+    static::upcastEntries($rows, TRUE);
+
+    $this->entries = array_merge($this->entries, $rows);
     return $rows;
   }
 
@@ -252,8 +262,6 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
 
   /**
    * Export the transaction to json for transport.
-   * - get the actions
-   * - remove some properties.
    *
    * @return array
    */
@@ -290,34 +298,35 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
 
 
   /**
-   * Make entry objects from json entries with users already upcast by Entry::upcastAccounts
+   * Make entry objects from json entries with users already upcast.
+   * - upcast the accounts
+   * - add 'author' and 'isAdditional'
+   * - determine which class each entry is.
+   *
    * @param stdClass[] $rows
-   *   Which are Entry objects flattened by json for transport.
-   * @return Entry[]
-   *   The created entries
+   *   Entry objects received as json.
+   * @param bool $is_additional
+   *   TRUE if these transactions were created (as fees etc.) by the current
+   *   node or downstream, and hence should be passed back upstream
+   * @return string
+   *   The class name of the transaction, normal, or transversal.
    */
-  public function upcastEntries(array $rows, bool $additional = FALSE) : void {
+  protected static function upcastEntries(array &$rows, bool $is_additional = FALSE) : string {
     global $cc_user;
-    foreach ($rows as $row) {
-      $row->isAdditional = $additional;
-      $row->isPrimary = empty($this->entries);
+    $transaction_class = '\CCNode\Transaction\Transaction';
+    foreach ($rows as &$row) {
+      $entry_class = \CCNode\upcastAccounts($row);
+      $row->isAdditional = $is_additional;
       if (empty($row->author)) {
         $row->author = $cc_user->id;
       }
-      if($row->payee instanceOf Branch and $row->payer instanceOf Branch) {
-        // both accounts are leafwards, the current node is at the apex of the route.
-        $create_method = ['EntryTransversal', 'create'];
+      // Transversal entries require the transaction as a parameter.
+      $row = [$entry_class, 'create']($row);
+      if ($entry_class == '\CCNode\\Transaction\\EntryTransversal') {
+        $transaction_class = '\CCNode\\Transaction\\TransversalTransaction';
       }
-      elseif ($row->payee instanceOf Remote or $row->payer instanceOf Remote) {
-        $create_method = ['EntryTransversal', 'create'];
-      }
-      else {
-        $create_method = ['Entry', 'create'];
-      }
-      $create_method[0] = '\CCNode\Transaction\\'.$create_method[0];
-      $row->isPrimary = empty($this->entries);
-      $this->entries[] = $create_method($row, $this);
     }
+    return $transaction_class;
   }
 
 }

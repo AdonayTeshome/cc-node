@@ -23,7 +23,6 @@ use CreditCommons\CreditCommonsInterface;
  * @todo This doesn't seem like a good place to throw a violation.
  */
 function load_account(string $local_acc_id = NULL, string $rel_path = '') : Account {
-
   if (strpos(needle: '/', haystack: $local_acc_id)) {
     throw new CCFailure("Can't load unresolved account name: $local_acc_id");
   }
@@ -77,15 +76,15 @@ function accountStore() : AccountStoreInterface {
 /**
  * Write a message to a debug file.
  */
-function debug($val) {
+function debug($val, $whatis = '') {
   global $cc_config;
   $file = $cc_config->nodeName.'.debug';
   if (!is_scalar($val)) {
     $val = print_r($val, TRUE);
   }
-  $written = file_put_contents(
+  file_put_contents(
     $file,
-    date('H:i:s')."  $val\n",
+    date('H:i:s')." $whatis:  $val\n",
     FILE_APPEND
   );
 }
@@ -137,4 +136,57 @@ function permitted_operations() : array {
     }
   }
   return array_intersect_key(CreditCommonsInterface::OPERATIONS, array_flip($permitted));
+}
+
+
+/**
+ * Generate links first paged listings.
+ *
+ * @param string $endpoint
+ * @param array $params
+ * @param int $total_items
+ * @return array
+ */
+function pager(string $endpoint, array $params, int $total_items) : array {
+  $params = $params +=['offset' => 0, 'limit' => 25];
+  $curr_page = floor($params['offset'] / $params['limit']);
+  $pages = ceil($total_items/$params['limit']);
+  $links = [];
+  if ($pages > 1) {
+    if($curr_page > 0) {
+      $links['first'] = $endpoint .'?'.http_build_query(['offset' => 0] + $params);
+      if($curr_page > 1) {
+        $links['prev'] = $endpoint .'?'.http_build_query(['offset' => ($curr_page -1) * $params['limit']] + $params);
+      }
+    }
+    if ($curr_page < $pages) {
+      $links['next'] = $endpoint .'?'.http_build_query(['offset' => ($curr_page +1) * $params['limit']] + $params);
+      if ($curr_page < ($pages -1)) {
+        $links['last'] = $endpoint .'?'.http_build_query(['offset' => ($pages -1) * $params['limit']] + $params);
+      }
+    }
+  }
+  return $links;
+}
+
+  /**
+   * @param \stdClass &$row
+   * @return string
+   *   The entry classname. (Transversal if any account in any entry is remote)
+   */
+function upcastAccounts(\stdClass $row) : string {
+  $addressResolver = AddressResolver::create();
+  $class = 'Entry';
+  // metadata contains the non-local parts of the address
+  foreach (['payee', 'payer'] as $role) {
+    $acc_path = $row->{$role};
+    if (empty($acc_path)) {
+      // @todo need to validate
+    }
+    $row->{$role} = $addressResolver->localOrRemoteAcc($acc_path);
+    if ($row->{$role} instanceOf Remote) {
+      $class = 'EntryTransversal';
+    }
+  }
+  return '\\CCNode\\Transaction\\'.$class;
 }

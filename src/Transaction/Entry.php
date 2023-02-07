@@ -23,7 +23,7 @@ class Entry extends BaseEntry implements \JsonSerializable {
      * TRUE if this entry was authored by blogicService or downstream.
      * @var bool
      */
-    protected bool $isPrimary,
+    public bool $isPrimary,
     /**
      * TRUE if this entry was authored locally or downstream.
      * @var bool
@@ -46,9 +46,12 @@ class Entry extends BaseEntry implements \JsonSerializable {
    *   payee are already converted to Accounts
    * @return \BaseEntry
    */
-  static function create(\stdClass $data, $transaction) : BaseEntry {
+  static function create(\stdClass $data, Transaction $transaction = NULL) : BaseEntry {
     if (!isset($data->metadata)) {
       $data->metadata = new \stdClass();
+    }
+    if (!isset($data->isPrimary)) {
+      $data->isPrimary = FALSE;
     }
     static::validateFields($data);
     $entry = new static (
@@ -58,84 +61,14 @@ class Entry extends BaseEntry implements \JsonSerializable {
       $data->author,
       $data->metadata,
       $data->isAdditional,
-      $data->isPrimary,
+      $data->isPrimary = 0,
       substr($data->description, 0, 255) // To comply with mysql tinytext field.
     );
-    if ($entry instanceOf EntryTransversal) {
-      $entry->setTransaction($transaction);
-    }
     return $entry;
   }
 
   function isAdditional() : bool {
     return $this->isAdditional;
-  }
-
-  /**
-   * Entries return to the client with account names collapsed to a relative name
-   * @return array
-   */
-//  public function jsonSerialize() : mixed {
-//    $flat = [
-//      'payee' => $this->payee->foreignId(),
-//      'payer' => $this->payer->foreignId(),
-//      'quant' => $this->quant,
-//      'description' => $this->description,
-//      'metadata' => $this->metadata
-//    ];
-//    // Calculate metadata for client
-//    foreach (['payee', 'payer'] as $role) {
-//      $name = $this->{$role}->id;
-//      $flat[$role] = $this->metadata->{$name} ?? $name;
-//    }
-//    return $flat;
-//  }
-
-  /**
-   * Prepare a version of the entry ( main entry only) to send to the Blogic module.
-   */
-  public function toBlogic($type) : array {
-    if (!$this->isPrimary) {
-      throw new \CreditCommons\Exceptions\CCFailure('Can only send primary entries to Blogic');
-    }
-    // Foreign ids are used so they can be upcast later.
-    return [
-      'payee' => (string)$this->payee,
-      'payer' => (string)$this->payer,
-      'quant' => $this->quant,
-      'description' => $this->description,
-      'metadata' => $this->metadata,
-      'type' => $type
-    ];
-  }
-
-  /**
-   * @param array $rows
-   * @return string
-   *   The transaction classname. Transversal if any account in any entry is remote.
-   *
-   * @todo this might be tidier if it just does one Entry at a time.
-   */
-  static function upcastAccounts(array &$rows) : string {
-    $addressResolver = AddressResolver::create();
-    $class = 'Transaction';
-    foreach ($rows as &$row) {
-      $payee_addr = isset($row->metadata->{$row->payee}) ?
-        $row->payee .'/'.$row->metadata->{$row->payee} :
-        $row->payee;
-      $row->payee = $addressResolver->localOrRemoteAcc($payee_addr);
-
-      $payer_addr = isset($row->metadata->{$row->payer}) ?
-        $row->payer .'/'.$row->metadata->{$row->payer} :
-        $row->payer;
-      $row->payer = $addressResolver->localOrRemoteAcc($payer_addr);
-      // @todo refactor the address resolver so that we can be sure by now that
-      // the payee/payer is one local or remote account and not a remote node - i.e. with a slash at the end.
-      if ($row->payee instanceOf Remote or $row->payer instanceOf Remote) {
-        $class = 'TransversalTransaction';
-      }
-    }
-    return '\\CCNode\\Transaction\\'.$class;
   }
 
   /**

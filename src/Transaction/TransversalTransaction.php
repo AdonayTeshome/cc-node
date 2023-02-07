@@ -1,5 +1,6 @@
 <?php
 namespace CCNode\Transaction;
+use CCNode\Transaction\EntryTransversal;
 use CCNode\Transaction\Entry;
 use CCNode\Transaction\Transaction;
 use CCNode\Accounts\Trunkward;
@@ -26,11 +27,13 @@ class TransversalTransaction extends Transaction {
     public string $written,
     public string $type,
     public string $state,
-    array $entries,
+    /** @var Entry[] $entries */
+    public array $entries,
     public int $version,
     public string $scribe
   ) {
     global $cc_user, $cc_config;
+    $this->addTransactionToEntries();
     $this->upstreamAccount = $cc_user instanceof Remote ? $cc_user : NULL;
     $payer = $entries[0]->payer;
     $payee = $entries[0]->payee;
@@ -59,7 +62,7 @@ class TransversalTransaction extends Transaction {
     elseif ($this->downstreamAccount and $this->downstreamAccount->id == $cc_config->trunkwardAcc) {
       $this->trunkwardAccount = $this->downstreamAccount;
     }
-    $this->upcastEntries($entries);
+    $entries[0]->isPrimary = TRUE;
   }
 
   public static function createFromUpstream(\stdClass $data) : TransactionInterface {
@@ -69,9 +72,22 @@ class TransversalTransaction extends Transaction {
     }
     $data->scribe = $cc_user->id;
     $data->state = TransactionInterface::STATE_INITIATED;
-    $transaction_class = Entry::upcastAccounts($data->entries);
+
+    $transaction_class = static::upcastEntries($data->entries);
     return $transaction_class::create($data);
-    // N.B. This isn't saved yet.
+  }
+
+  /**
+   * Ensure all transversal entries have the transaction property.
+   * This is hideous and needs refactoring.
+   */
+  private function addTransactionToEntries() {
+    // Think of a more elegant way to add the $transaction to Transversal entries only.
+    foreach ($this->entries as &$entry) {
+      if ($entry instanceof EntryTransversal) {
+        $entry->transaction = $this;
+      }
+    }
   }
 
   /**
@@ -80,15 +96,17 @@ class TransversalTransaction extends Transaction {
   function buildValidate() : array {
     global $cc_user;
     $new_rows = parent::buildvalidate();
+    $this->addTransactionToEntries();
     if ($this->downstreamAccount) {
-      $additional_remote_rows = $this->downstreamAccount->buildValidateRelayTransaction($this);
-      Entry::upcastAccounts($additional_remote_rows);
-      $this->upcastEntries($additional_remote_rows, TRUE);
-      $new_rows = array_merge($new_rows, $additional_remote_rows);
+      $additional_remote_rows = $this->downstreamAccount
+        ->buildValidateRelayTransaction($this);
+      static::upcastEntries($additional_remote_rows, TRUE);
+      $this->entries = array_merge($this->entries, $additional_remote_rows);
     }
+    $this->addTransactionToEntries();
     $this->responseMode = TRUE;
-    // Return only the additional entries which are also relevant to the upstream node.
-    // @todo Could this be more elegant?
+    // Return the local and remote additional entries which concern the upstream node.
+    // @todo should this go in the parent function?
     if ($cc_user instanceof Remote) {
       $new_rows = array_filter(
         $this->filterFor($cc_user),
@@ -96,6 +114,15 @@ class TransversalTransaction extends Transaction {
       );
     }
     return array_values($new_rows);
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  protected function callBlogic() : array {
+    $rows = parent::callBlogic();
+    $this->addTransactionToEntries();
+    return $rows;
   }
 
   /**
@@ -139,6 +166,7 @@ class TransversalTransaction extends Transaction {
       // Forward the whole transaction minus a few properties.
       unset($array['status'], $array['workflow'], $array['payeeHash'], $array['payerHash']);
     }
+    unset($array['status'], $array['workflow'], $array['payeeHash'], $array['payerHash']);
     return $array;
   }
 
@@ -177,13 +205,13 @@ class TransversalTransaction extends Transaction {
   }
 
   /**
-   * Return TRUE if the response is directed towards the trunk.
+   * Return TRUE if we are generating a trunkwards request or a trunkwards response.
    *
    * @return bool
    *
    * @todo put in an interface
    */
-  public function trunkwardResponse() : bool {
+  public function trunkwards() : bool {
     if ($this->trunkwardAccount) {
       if ($this->trunkwardAccount == $this->upstreamAccount and $this->responseMode == TRUE) {
         return TRUE;

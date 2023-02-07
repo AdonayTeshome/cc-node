@@ -165,7 +165,7 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
       }
       throw $e;
     }
-    $contents = $response->getBody()->getContents();
+    $contents = strval($response->getBody());
     $result = json_decode($contents);
     if ($contents and is_null($result)) {
       throw new CCFailure('Non-json result from account service: '.$contents);
