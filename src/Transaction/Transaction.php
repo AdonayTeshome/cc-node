@@ -2,19 +2,19 @@
 
 namespace CCNode\Transaction;
 
+use CCNode\Transaction\EntryTransversal;
 use CCNode\BlogicRequester;
 use CCNode\Accounts\Remote;
-use CCNode\Transaction\Entry;
+use CCNode\Accounts\Trunkward;
 use CreditCommons\Workflow;
 use CreditCommons\NewTransaction;
-use CreditCommons\BaseTransaction;
 use CreditCommons\TransactionInterface;
 use CreditCommons\Exceptions\MaxLimitViolation;
 use CreditCommons\Exceptions\MinLimitViolation;
 use CreditCommons\Exceptions\WorkflowViolation;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 
-class Transaction extends BaseTransaction implements \JsonSerializable {
+class Transaction extends \CreditCommons\Transaction implements \JsonSerializable {
   use \CCNode\Transaction\StorageTrait;
 
   const REGEX_DATE = '/[0-9]{4}-[0|1]?[0-9]-[0-3][0-9]/';
@@ -39,8 +39,8 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
   public bool $responseMode = FALSE;
 
   /**
-   * FALSE for request, TRUE for response mode
-   * @var Bool
+   * Name of the user who wrote the latest version
+   * @var string
    */
   public string $scribe;
 
@@ -50,13 +50,11 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * @return TransactionInterface
    */
   public static function createFromNew(NewTransaction $new) : TransactionInterface {
-    global $cc_user;
     $data = new \stdClass;
     $data->uuid = $new->uuid;
     $data->type = $new->type;
     $data->state = TransactionInterface::STATE_INITIATED;
     $data->version = -1; // Corresponds to state init, pre-validated.
-    $data->scribe = $cc_user->id;
     $data->entries = [(object)[
       'payee' => $new->payee,
       'payer' => $new->payer,
@@ -65,18 +63,38 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       'quant' => $new->quant,
       'isPrimary' => TRUE
     ]];
-    $transaction_class = static::upcastEntries($data->entries);
-    return $transaction_class::create($data);
+    $transaction = Transaction::create($data);
+    return $transaction;
+  }
+
+  public static function createFromUpstream(\stdClass $data) : TransactionInterface {
+    global $cc_user, $cc_config;
+    if ($cc_user->id == $cc_config->trunkwardAcc){
+      Trunkward::convertIncomingEntries($data->entries, $cc_user->id, $cc_config->conversionRate);
+    }
+    $data->state = TransactionInterface::STATE_INITIATED;
+    return static::create($data);
   }
 
 
   static function create(\stdClass $data) : static {
+    global $cc_user;
+    static::upcastEntries($data->entries);
     $data->version = $data->version??-1;
     $data->written = $data->written??'';
-    $transaction = parent::create($data);
+    static::validateFields($data);
+    $transaction_class = '\CCNode\Transaction\Transaction';
+    foreach ($data->entries as $e) {
+      if ($e instanceOf EntryTransversal) {
+        $transaction_class = '\CCNode\Transaction\TransversalTransaction';
+        break;
+      }
+    }
+    $transaction = new $transaction_class($data->uuid, $data->type, $data->state, $data->entries, $data->written, $data->version);
     if (isset($data->txID)) {
       $transaction->txID = $data->txID;
     }
+    $transaction->scribe = $data->scribe??$cc_user->id;
     return $transaction;
   }
 
@@ -85,7 +103,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * Validate the transaction in its workflow's 'creation' state
    *
    * @return Entry[]
-   *   Any new rows added by the business logic
+   *   Any new rows added by the business logic.
    */
   function buildValidate() : array {
     global $cc_config, $cc_user;
@@ -96,7 +114,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       throw new DoesNotExistViolation(type: 'workflow', id: $this->type);
     }
     $desired_state = $workflow->creation->state;
-    if (!$cc_user->admin and !$workflow->canTransitionToState($cc_user->id, $this, $desired_state)) {
+    if (!$cc_user->admin and !$workflow->canTransitionToState($cc_user->id, $this->state, $this->entries[0], $desired_state)) {
       throw new WorkflowViolation(type: $this->type, from: $this->state, to: $desired_state);
     }
     // Add fees, etc by calling on the blogic module, either internally or via REST API
@@ -104,7 +122,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
     if ($cc_config->blogicMod) {
       $rows = $this->callBlogic();
     }
-    $this->validate();
+    $this->checkLimits();
     return $rows;
   }
 
@@ -114,7 +132,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * @throws MaxLimitViolation
    * @throws MinLimitViolation
    */
-  function validate() {
+  protected function checkLimits() {
     global $cc_config;
     $payee = $this->entries[0]->payee;
     if ($payee->max or $payee->min) {
@@ -133,7 +151,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       $payer_diff = $this->sum($payer->id);
       $projected = $stats->balance + $payer_diff;
       if ($payer_diff < 0 and $projected < $payer->min) {
-        throw new MaxLimitViolation(limit: $payer->max, projected: $projected, accId: $payer->id);
+        throw new MinLimitViolation(limit: $payer->max, projected: $projected, accId: $payer->id);
       }
     }
     $this->state = TransactionInterface::STATE_VALIDATED;
@@ -197,14 +215,6 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
   }
 
   /**
-   *  Add an additional entry to the transaction.
-   */
-  function addEntry(Entry $entry) : void {
-    $entry->additional = TRUE;
-    $this->entries[] = $entry;
-  }
-
-  /**
    * @param string $target_state
    * @return bool
    *   TRUE if a new version of the transaction was saved. FALSE if the transaction was deleted (transactions in validated state only)
@@ -226,7 +236,7 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
       return FALSE;
     }
 
-    if ($cc_user->admin or $this->getWorkflow()->canTransitionToState($cc_user->id, $this, $target_state)) {
+    if ($cc_user->admin or $this->getWorkflow()->canTransitionToState($cc_user->id, $this->state, $this->entries[0], $target_state)) {
       $this->state = $target_state;
       $this->saveNewVersion();
       return TRUE;
@@ -261,22 +271,6 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
   }
 
   /**
-   * Export the transaction to json for transport.
-   *
-   * @return array
-   */
-  public function jsonSerialize() : mixed {
-    return [
-      'uuid' => $this->uuid,
-      'written' => $this->written,
-      'state' => $this->state,
-      'type' => $this->type,
-      'version' => $this->version,
-      'entries' => $this->entries
-    ];
-  }
-
-  /**
    * {@inheritDoc}
    */
   public function transitions() : array {
@@ -308,25 +302,31 @@ class Transaction extends BaseTransaction implements \JsonSerializable {
    * @param bool $is_additional
    *   TRUE if these transactions were created (as fees etc.) by the current
    *   node or downstream, and hence should be passed back upstream
-   * @return string
-   *   The class name of the transaction, normal, or transversal.
+   * @return bool
+   *   TRUE if any of the Entries is transversal.
    */
-  protected static function upcastEntries(array &$rows, bool $is_additional = FALSE) : string {
+  protected static function upcastEntries(array &$rows, bool $is_additional = FALSE) : bool {
     global $cc_user;
-    $transaction_class = '\CCNode\Transaction\Transaction';
+    $transversal_transaction = FALSE;
     foreach ($rows as &$row) {
-      $entry_class = \CCNode\upcastAccounts($row);
+      $transversal_row = \CCNode\upcastAccounts($row);
       $row->isAdditional = $is_additional;
       if (empty($row->author)) {
         $row->author = $cc_user->id;
       }
+      $entry_class = 'CCNode\Transaction\Entry';
+      if ($transversal_row) {
+        $entry_class .= 'Transversal';
+        $transversal_transaction = TRUE;
+      }
       // Transversal entries require the transaction as a parameter.
       $row = [$entry_class, 'create']($row);
-      if ($entry_class == '\CCNode\\Transaction\\EntryTransversal') {
-        $transaction_class = '\CCNode\\Transaction\\TransversalTransaction';
-      }
     }
-    return $transaction_class;
+    return $transversal_transaction;
+  }
+
+  public function jsonSerialize(): mixed {
+    return $this->jsonDisplayable();
   }
 
 }

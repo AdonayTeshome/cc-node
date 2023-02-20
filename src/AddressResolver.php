@@ -51,7 +51,7 @@ class AddressResolver {
    */
   function localOrRemoteAcc(string &$rel_path) : User {
     if (empty($rel_path)) {
-      
+
     }
     if (substr($rel_path, -1) == '/') {
       throw new PathViolation(relPath: $rel_path, context: 'localOrRemoteAcc');

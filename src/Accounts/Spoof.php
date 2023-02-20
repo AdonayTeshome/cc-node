@@ -84,11 +84,6 @@ class Spoof extends Branch {
     return $result;
   }
 
-  // Last hash is always the account key.
-  function getlastHash() : string {
-    return $this->key;
-  }
-
   function authenticate(string $auth_string) {
     if (!accountStore()->compareAuthkey($this->id, $auth_string)) {
       //local user with the wrong password

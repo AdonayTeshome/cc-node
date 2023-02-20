@@ -5,7 +5,7 @@
     "summary": "The author bills another account, who must confirm.",
     "active": true,
     "creation": {
-      "by" : ["payee"],
+      "by" : "payee",
       "state": "pending",
       "label": "Create",
       "confirm": true
@@ -35,7 +35,7 @@
     "summary": "The author credits another account, who must confirm.",
     "active": true,
     "creation": {
-      "by" : ["payer"],
+      "by" : "payer",
       "state": "pending",
       "label": "Create",
       "confirm": true
@@ -65,7 +65,7 @@
     "summary": "This workflow is not available for new transactions. (Needed for testing.)",
     "active": true,
     "creation": {
-      "by" : ["payer"],
+      "by" : "payer",
       "state": "pending",
       "label": "Create",
       "confirm": false
@@ -95,7 +95,7 @@
     "summary": "Admin creates instantly with no confirmation",
     "active": true,
     "creation": {
-      "by" : [],
+      "by" : "admin",
       "state": "completed",
       "label": "Create",
       "confirm": false

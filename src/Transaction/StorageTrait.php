@@ -6,15 +6,15 @@ use CCNode\Accounts\Trunkward;
 use CCNode\Transaction\Entry;
 use CCNode\Accounts\Remote;
 use CreditCommons\Exceptions\DoesNotExistViolation;
+use CreditCommons\Exceptions\PermissionViolation;
 use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\InvalidFieldsViolation;
 use CCNode\Db;
 use function CCNode\accountStore;
 
 /**
- * Transaction storage functions
+ * Read and write transactions (and entries) from the database
  */
-
 trait StorageTrait {
 
   static $timeFormat = 'Y-m-d H:i:s';
@@ -35,8 +35,8 @@ trait StorageTrait {
     if (!$tx) {
       throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
     }
-    $multiplier = pow(10, $cc_config->decimalPlaces);
-    $q = "SELECT payee, payer, description, quant/$multiplier as quant, trunkward_quant/$multiplier as trunkwardQuant, author, metadata, is_primary FROM entries "
+    $q = "SELECT payee, payer, description, quant as quant, trunkward_quant as trunkwardQuant, author, metadata, is_primary as isPrimary "
+      . "FROM entries "
       . "WHERE txid = $tx->txID "
       . "ORDER BY id ASC";
     $result = Db::query($q);
@@ -44,24 +44,20 @@ trait StorageTrait {
       throw new CCFailure("Database entries table has no rows for $uuid");
     }
     while ($row = $result->fetch_object()) {
-      if ($tx->state == 'validated' and $row->author <> $cc_user->id and !$cc_user->admin and $row->is_primary) {
+      if ($tx->state == 'validated' and $row->author <> $cc_user->id and !$cc_user->admin and $row->isPrimary) {
         // Deny the transaction exists to all but its author and admins
-        throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
+        throw new PermissionViolation();
       }
       $row->metadata = unserialize($row->metadata);
       // replace the full payee and payer path, ready to upcast the row.
       foreach (['payee', 'payer'] as $role) {
         if (isset($row->metadata->{$row->{$role}})) {
-          $row->$role = $row->metadata->{$row->{$role}};
+          $row->$role .= '/'.$row->metadata->{$row->{$role}};
         }
       }
       $tx->entries[] = $row;
     }
-    $t_class = static::upcastEntries($tx->entries);
-
-    // All these values should be validated, so no need to use static::create
-    $transaction = $t_class::create($tx);
-    return $transaction;
+    return Transaction::create($tx);
   }
 
   /**
@@ -89,10 +85,35 @@ trait StorageTrait {
 
     $new_id = Db::query("SELECT LAST_INSERT_ID() as id")->fetch_object()->id;
     $this->writeEntries($new_id);
+
+    Db::query("DELETE FROM transaction_index WHERE uuid = '$this->uuid'");
+    if (in_array($this->state, static::COUNTED_STATES)) {
+      $this->writeIndex($new_id);
+    }
     $this->responseMode = TRUE; // Feels awkward but is still the best place for this.
     return $new_id;
   }
 
+  /**
+   * Write two rows to the index table for each transaction.
+   *
+   * @param int $new_id
+   */
+  private function writeIndex(int $new_id) {
+    global $cc_config;
+    $query = "INSERT INTO transaction_index (id, uuid, uid1, uid2, type, state, income, expenditure, diff, volume, written, is_primary) VALUES ";
+    foreach ($this->entries as $e) {
+      $isPrimary = (int)$e->isPrimary;
+      $rows[] = "($new_id, '$this->uuid', '$e->payer', '$e->payee', '$this->type', '$this->state', -$e->quant, $e->quant, -$e->quant, $e->quant, '$this->written', $isPrimary)";
+      $rows[] = "($new_id, '$this->uuid', '$e->payee', '$e->payer', '$this->type', '$this->state', +$e->quant, -$e->quant, $e->quant, $e->quant, '$this->written', $isPrimary)";
+    }
+    Db::query($query . implode(', ', $rows));
+  }
+
+
+  /**
+   * @param string $acc_id
+   */
   function deleteValidatedByUser(string $acc_id) {
     $result = Db::query("SELECT id FROM transactions where state = 'validated' and scribe = '$acc_id' AND uuid <> '$this->uuid'")->fetch_object();
     if ($result) {
@@ -102,7 +123,7 @@ trait StorageTrait {
   }
 
   /**
-   * suitable for calling by cron.
+   * Suitable for calling by cron.
    */
   static function cleanValidated() {
     global $cc_config;
@@ -118,25 +139,24 @@ trait StorageTrait {
   }
 
   /**
-   *
+   * Write hashes for the remote payer and/or payee.
    * @param int $id
    */
   protected function writeHashes(int $id) {
-    $payee_hash = $payer_hash = '';
     $payee = $this->entries[0]->payee;
     $payer = $this->entries[0]->payer;
     if ($payee instanceOf Remote) {
-      $payee_hash = $this->getHash($payee);
+      $payee_hash = $this->makeHash($payee);
+      Db::query("INSERT INTO hash_history (txid, acc_id, hash) VALUES ($id, '$payee->id', '$payee_hash')");
     }
     if ($payer instanceOf Remote) {
-      $payer_hash = $this->getHash($payer);
+      $payer_hash = $this->makeHash($payer);
+      Db::query("INSERT INTO hash_history (txid, acc_id, hash) VALUES ($id, '$payer->id', '$payer_hash')");
     }
-    $query = "UPDATE transactions SET payee_hash = '$payee_hash', payer_hash = '$payer_hash' WHERE id = $id";
-    Db::query($query);
   }
 
   /**
-   *
+   * Update the entries table for subsequent versions of a transaction
    * @param int $new_txid
    * @return void
    */
@@ -154,7 +174,7 @@ trait StorageTrait {
   }
 
   /**
-   * Save an entry to the entries table.
+   * Save an entry to the entries table for the first time.
    * @param int $txid
    * @param Entry $entry
    * @return int
@@ -165,26 +185,25 @@ trait StorageTrait {
     global $cc_config;
     // Calculate metadata for local storage
     foreach (['payee', 'payer'] as $role) {
-      $$role = $entry->{$role}->id;
+      $$role = $name = $entry->{$role}->id;
       if ($entry->{$role} instanceof Remote) {
-        $entry->metadata->{$role} = $entry->{$role}->relPath;
+        $entry->metadata->{$name} = $entry->{$role}->relPath;
       }
     }
     $metadata = serialize($entry->metadata);
     $desc = Db::connect()->real_escape_string($entry->description);
     $primary = $entry->primary??0;
     $trunkward_quant = 0;
-    $multiplier = pow(10, $cc_config->decimalPlaces);
     if ($entry->payer instanceOf Trunkward or $entry->payee instanceof Trunkward) {
       $trunkward_quant = $entry->trunkwardQuant;
     }
     $q = "INSERT INTO entries (txid, payee, payer, quant, trunkward_quant, description, author, metadata, is_primary) "
-      . "VALUES ($txid, '$payee', '$payer', $entry->quant * $multiplier, $trunkward_quant * $multiplier, '$desc', '$entry->author', '$metadata', '$primary')";
+      . "VALUES ($txid, '$payee', '$payer', $entry->quant, $trunkward_quant, '$desc', '$entry->author', '$metadata', '$primary')";
     return $this->id = Db::query($q);
   }
 
   /**
-   * {@inheritdoc}
+   * {@inheritDoc}
    */
   function delete() {
     Db::query("DELETE FROM transactions WHERE uuid = '$this->uuid'");
@@ -192,8 +211,8 @@ trait StorageTrait {
   }
 
   /**
-   * @return string[]
-   *   A list of transaction uuids
+   * @return []
+   *   0: A list of transaction uuids, 1: total number of results.
    */
   static function filter(array $params) : array {
     $results = [];
@@ -202,18 +221,19 @@ trait StorageTrait {
     $limit = $params['limit'];
     $offset = $params['offset'];
     unset($params['sort'], $params['dir'], $params['limit'], $params['offset']);
-    // Get only the latest version of each row in the transactions table.
-    $query = "SELECT t.uuid FROM transactions t "
-      . "INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver "
-      . "RIGHT JOIN entries e ON t.id = e.txid "
+
+    $query = "SELECT t.uuid "
+      . "FROM entries e "
+      . "JOIN transactions t ON e.txid = t.id "
+      . "INNER JOIN (SELECT MAX(id) as id, MAX(version) as version, uuid FROM transactions GROUP BY uuid) v on v.uuid = t.uuid "
       . static::filterConditions(...$params)
       . " GROUP BY t.uuid ";
     $result = Db::query($query);
     $count = mysqli_num_rows($result);
     if ($count) {
-      $query .= " ORDER BY $sort ". strtoUpper($dir).", "
-      . "  MAX(e.id) ".strtoUpper($dir)
-      . " LIMIT $offset, $limit";
+      $query .= " ORDER BY max($sort) ". strtoUpper($dir).", ";
+      $query .= " MAX(e.id) ".strtoUpper($dir);
+      $query .= " LIMIT $offset, $limit";
       $query_result = Db::query($query);
       while ($row = $query_result->fetch_object()) {
         $results[] = $row->uuid;
@@ -225,6 +245,12 @@ trait StorageTrait {
     return [$results, $count];
   }
 
+  /**
+   *
+   * @param array $params
+   * @return array
+   *   0 is a list of uuid and 1 is the total number of results.
+   */
   static function filterEntries(array $params) : array {
     $results = [];
     $sort = $params['sort'];
@@ -233,12 +259,14 @@ trait StorageTrait {
     $offset = $params['offset'];
     unset($params['sort'], $params['dir'], $params['limit'], $params['offset']);
     // Get only the latest version of each row in the transactions table.
-    $query = "SELECT e.id, t.uuid FROM transactions t "
-      . " INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver "
-      . " LEFT JOIN entries e ON t.id = e.txid "
+    $query = "SELECT e.id, t.uuid
+      FROM entries e
+      LEFT JOIN transactions t on t.id = e.txid
+      INNER JOIN (SELECT MAX(version) as version, MAX(id) as id, uuid FROM transactions GROUP BY uuid) t1 ON t.id = t1.id "
       . static::filterConditions(...$params);
-
-    $count = Db::query(str_replace('e.id, t.uuid', 'COUNT(t.uuid) as count', $query))->fetch_object()->count;
+    // count the results first, if there are any, run the query again with the pager.
+    $count_query = str_replace('e.id, t.uuid', 'COUNT(t.uuid) as count', $query);
+    $count = Db::query($count_query)->fetch_object()->count;
     if ($count) {
       $query .= " ORDER BY $sort ". strtoUpper($dir).", "
         . "  e.id ".strtoUpper($dir).", "
@@ -286,7 +314,7 @@ trait StorageTrait {
           continue;
         }
         elseif (preg_match(static::REGEX_DATE, $$time)) {
-          $$time .= ' 00:00:00';
+          't.'.$$time .= ' 00:00:00';
           continue;
         }
         throw new InvalidFieldsViolation(type: 'transactionFilter', fields: [$time]);
@@ -301,37 +329,37 @@ trait StorageTrait {
     $conditions = [];
     if (isset($payer)) {
       if ($col = strpos($payer, '/')) {
-        $conditions[] = "metadata LIKE '%$payer%'";
+        $conditions[] = "e.metadata LIKE '%$payer%'";
       }
       else {
         // At the moment metadata only stores the real address of remote parties.
-        $conditions[]  = "payer = '$payer'";
+        $conditions[]  = "e.payer = '$payer'";
       }
     }
     if (isset($payee)) {
       if ($col = strpos($payee, '/')) {
-        $conditions[] = "metadata LIKE '%$payee%'";
+        $conditions[] = "e.metadata LIKE '%$payee%'";
       }
       else {
         // At the moment metadata only stores the real address of remote parties.
-        $conditions[]  = "payee = '$payee'";
+        $conditions[]  = "e.payee = '$payee'";
       }
     }
     if (isset($scribe)) {
-      $conditions[]  = "scribe = '$scribe'";
+      $conditions[]  = "t.scribe = '$scribe'";
     }
     if (isset($involving)) {
       if ($col = strpos($involving, '/')) {
-        $conditions[] = "( metadata LIKE '%$payer%'";
+        $conditions[] = "( e.metadata LIKE '%$payer%'";
       }
       elseif (strpos($involving, ',')) {
         $items = explode(',', $involving);
         $as_string = implode("','", explode(',', $involving));
         // At the moment metadata only stores the real address of remote parties.
-        $conditions[]  = "(payee IN ('$as_string') OR payer IN ('$as_string'))";
+        $conditions[]  = "(e.payee IN ('$as_string') OR e.payer IN ('$as_string'))";
       }
       else {
-        $conditions[]  = "(payee = '$involving' OR payer = '$involving')";
+        $conditions[]  = "(e.payee = '$involving' OR e.payer = '$involving')";
       }
     }
     if (isset($description)) {
@@ -341,11 +369,11 @@ trait StorageTrait {
     // to use the created date would require joining the current query to transactions where version =1
     if (isset($until)) {
       $date = date(self::$timeFormat, strtotime($until));
-      $conditions[]  = "written < '$date'";
+      $conditions[]  = "t.written < '$date'";
     }
     if (isset($since)) {
       $date = date(self::$timeFormat, strtotime($since));
-      $conditions[]  = "written > '$date'";
+      $conditions[]  = "t.written > '$date'";
     }
     if (isset($states)) {
       if (is_string($states)) {
@@ -353,22 +381,22 @@ trait StorageTrait {
       }
       if (in_array('validated', $states)) {
         // only the author can see transactions in the validated state.
-        $conditions[]  = "(state = 'validated' AND author = '$cc_user->id')";
+        $conditions[]  = "(t.state = 'validated' AND e.author = '$cc_user->id')";
       }
       else {
         // transactions with version 0 are validated but not confirmed by their creator.
         // They don't really exist and could be deleted, and can only be seen by their creator.
         $conditions[] = 't.version > 0';
       }
-      $conditions[] = self::manyCondition('state', $states);
+      $conditions[] = self::manyCondition('t.state', $states);
     }
     else {
-      $conditions[] = "state <> 'erased'";
-      $conditions[] = "(state <> 'validated' OR (state = 'validated' AND author = '$cc_user->id'))";
+      $conditions[] = "t.state <> 'erased'";
+      $conditions[] = "(t.state <> 'validated' OR (t.state = 'validated' AND e.author = '$cc_user->id'))";
     }
     $conditions[] ="(t.version > 0 OR e.author = '$cc_user->id')";
     if (isset($types)) {
-      $conditions[] = self::manyCondition('type', $types);
+      $conditions[] = self::manyCondition('t.type', $types);
     }
     if (isset($uuid)) {
       $conditions[]  = "t.uuid = '$uuid'";
@@ -401,9 +429,8 @@ trait StorageTrait {
    */
   static function accountHistory($acc_id) : \mysqli_result {
     global $cc_config;
-    $multiplier = pow(10, $cc_config->decimalPlaces);
     Db::query("SET @csum := 0");
-    $query = "SELECT written, (@csum := @csum + diff / $multiplier) as balance "
+    $query = "SELECT written, (@csum := @csum + diff) as balance "
       . "FROM transaction_index "
       . "WHERE uid1 = '$acc_id' "
       . "ORDER BY written ASC";
@@ -412,8 +439,7 @@ trait StorageTrait {
 
   static function accountSummary($acc_id) : \mysqli_result {
     global $cc_config;
-    $multiplier = pow(10, $cc_config->decimalPlaces);
-    $query = "SELECT uid2 as partner, income / $multiplier as income, expenditure / $multiplier as expenditure, diff / $multiplier as diff, volume / $multiplier as volume, state, is_primary as isPrimary "
+    $query = "SELECT uid2 as partner, income as income, expenditure as expenditure, diff as diff, volume as volume, state, is_primary as isPrimary "
       . "FROM transaction_index "
       . "WHERE uid1 = '$acc_id' and state in ('completed', 'pending')";
     return Db::query($query);
@@ -426,10 +452,8 @@ trait StorageTrait {
    */
   static function getAccountSummaries($include_virgin_wallets = FALSE) : array {
     global $cc_config;
-    $multiplier = pow(10, $cc_config->decimalPlaces);
     $results = $balances = [];
-        $balances = [];
-    $result = Db::query("SELECT uid1, uid2, diff / $multiplier as diff, state, is_primary "
+    $result = Db::query("SELECT uid1, uid2, diff as diff, state, is_primary "
       . "FROM transaction_index "
       . "WHERE income > 0");
     while ($row = $result->fetch_object()) {

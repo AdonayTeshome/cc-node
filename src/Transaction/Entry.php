@@ -1,16 +1,14 @@
 <?php
 namespace CCNode\Transaction;
 
-use CCNode\AddressResolver;
-use CCNode\Accounts\Remote;
-use CreditCommons\BaseEntry;
 use CreditCommons\Account;
 use CreditCommons\Exceptions\CCOtherViolation;
+use CreditCommons\Exceptions\SameAccountViolation;
 
 /**
  * Determine the account types for entries.
  */
-class Entry extends BaseEntry implements \JsonSerializable {
+class Entry extends \CreditCommons\Entry implements \JsonSerializable {
 
   function __construct(
     public Account $payee,
@@ -31,11 +29,17 @@ class Entry extends BaseEntry implements \JsonSerializable {
     public string $description = '',
   ) {
     global $cc_config;
-    // Could this be done earlier?
-    if (empty($quant) and !$cc_config->zeroPayments) {
-      throw new CCOtherViolation("Zero transactions not allowed on this node.");
+    if ($payee->id == $payer->id) {
+      throw new SameAccountViolation($payee->id);
+      // @note If this happens with the trunkwards account then it means the
+      // remote address does not exist, but this library has no way of knowing
+      // what is the trunkwards account.
     }
-    parent::__construct($payee, $payer, $quant, $author, $metadata, $description);
+    // Could this be done earlier?
+    if (empty($quant) and $this->isPrimary and !$cc_config->zeroPayments) {
+      throw new CCOtherViolation("Zero transactions not allowed on this node");
+    }
+    parent::__construct($payee, $payer, $quant, $metadata, $description);
   }
 
   /**
@@ -44,9 +48,9 @@ class Entry extends BaseEntry implements \JsonSerializable {
    * @param \stdClass $data
    *   From upstream, downstream NewTransaction or Blogic service. The payer and
    *   payee are already converted to Accounts
-   * @return \BaseEntry
+   * @return \CreditCommons\Entry
    */
-  static function create(\stdClass $data, Transaction $transaction = NULL) : BaseEntry {
+  static function create(\stdClass $data) : static {
     if (!isset($data->metadata)) {
       $data->metadata = new \stdClass();
     }
@@ -61,7 +65,7 @@ class Entry extends BaseEntry implements \JsonSerializable {
       $data->author,
       $data->metadata,
       $data->isAdditional,
-      $data->isPrimary = 0,
+      $data->isPrimary??FALSE,
       substr($data->description, 0, 255) // To comply with mysql tinytext field.
     );
     return $entry;
@@ -72,13 +76,15 @@ class Entry extends BaseEntry implements \JsonSerializable {
   }
 
   /**
-   * For sending the transaction back to the client.
+   * Serialise to send to client or blogic service.
+   * @return mixed
    */
   public function jsonSerialize() : mixed {
     // Handle according to whether the transaction is going trunkwards or leafwards
     $array = [
-      'payee' => $this->payee->id,
-      'payer' => $this->payer->id,
+      // Trunkward path is best if we don't have context.
+      'payee' => (string)$this->payee,
+      'payer' => (string)$this->payer,
       'quant' => $this->quant,
       'description' => $this->description,
       'metadata' => $this->metadata

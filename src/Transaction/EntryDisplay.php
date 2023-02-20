@@ -8,7 +8,7 @@ use CreditCommons\Exceptions\CCFailure;
 /**
  * Transaction entry in a flat format.
  */
-class StandaloneEntry extends \CreditCommons\StandaloneEntry {
+class EntryDisplay extends \CreditCommons\EntryDisplay {
 
   /**
    * @param string $uuid
@@ -17,17 +17,17 @@ class StandaloneEntry extends \CreditCommons\StandaloneEntry {
   static function loadByUuid(string $uuid) : array {
     global $cc_user;
     $ids = [];
-    $query = "SELECT e.id FROM transactions t "
-      . "INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver "
-      . "LEFT JOIN entries e ON t.id = e.txid "
-      . "WHERE t.uuid = '$uuid' ORDER BY e.id ASC";
+    $query = "SELECT distinct (e.id) as id, e.is_primary FROM entries e
+      INNER JOIN transactions t ON t.id = e.txid
+      INNER JOIN (SELECT MAX(version) as version, uuid FROM transactions group by uuid) t1 ON t1.version = t.version
+      WHERE t.uuid = '$uuid'
+      ORDER BY e.is_primary DESC, e.id ASC;";
     $result = Db::query($query);
     $entries = [];
     while ($row = $result->fetch_object()){
       $ids[] = $row->id;
     }
     if (empty($ids)) {
-      die('1');
       throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
     }
     $entries = static::load($ids);
@@ -49,16 +49,15 @@ class StandaloneEntry extends \CreditCommons\StandaloneEntry {
     if (empty($entry_ids)) {
       throw new CCFailure('No entry ids to load');
     }
-    $query = "SELECT * FROM transactions t "
-      . "INNER JOIN versions v ON t.uuid = v.uuid AND t.version = v.ver "
-      . "LEFT JOIN entries e ON t.id = e.txid "
-      . "WHERE e.id IN (".implode(',', $entry_ids).")";
+    $query = "SELECT e.id as eid, e.*, t.* FROM entries e
+      JOIN transactions t ON t.id = e.txid
+      WHERE e.id IN (".implode(',', $entry_ids).")";
     $entries = [];
     foreach (Db::query($query)->fetch_all(MYSQLI_ASSOC) as $row) {
       $data = (object)$row;
       // @todo Get the full paths from the metadata
       $data->metadata = unserialize($data->metadata);
-      $entries[$data->id] = new static(
+      $entries[] = new static(
         $data->uuid,
         $data->payer,
         $data->payee,
@@ -71,10 +70,8 @@ class StandaloneEntry extends \CreditCommons\StandaloneEntry {
         $data->metadata
       );
     }
-    foreach($entry_ids as $id) {
-      $sorted[$id] = $entries[$id];
-    }
-    return $sorted;
+    array_multisort($entry_ids, $entries);
+    return $entries;
   }
 
 }

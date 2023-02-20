@@ -14,8 +14,6 @@ class ConfigFromIni implements ConfigInterface {
     $this->devMode = $ini_file['dev_mode']??false;
 
     $this->workflowsFile = $ini_file['workflows_filepath'];
-    $this->currSymbol = $ini_file['currency_symbol'];
-    $this->decimalPlaces = $ini_file['decimal_places'];
 
     // The rest are only used when there are remote accounts.
     $this->absPath = $ini_file['abs_path']??'mynode';
@@ -32,7 +30,6 @@ class ConfigFromIni implements ConfigInterface {
       $this->trunkwardAcc = '';
       $this->conversionRate = 1;
     }
-    #$this->displayFormat = $ini_file['display_format']; //Not implemented.
-    $this->spoofs = $ini_file['spoof_acc_names'];
+    $this->displayFormat = $ini_file['display_format'];
   }
 }

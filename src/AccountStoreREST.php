@@ -208,10 +208,7 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
     if (!empty($data->url)) {
       $upS = $cc_user ? ($data->id == $cc_user->id) : TRUE;
       $trunkward = $data->id == $cc_config->trunkwardAcc;
-      if (in_array($data->id, $cc_config->spoofs)) {
-        $class = 'Spoof';
-      }
-      elseif ($trunkward and $upS) {
+      if ($trunkward and $upS) {
         $class = 'UpstreamTrunkward';
       }
       elseif ($trunkward and !$upS) {

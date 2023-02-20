@@ -3,9 +3,7 @@ namespace CCNode\Transaction;
 use CCNode\Transaction\EntryTransversal;
 use CCNode\Transaction\Entry;
 use CCNode\Transaction\Transaction;
-use CCNode\Accounts\Trunkward;
 use CCNode\Accounts\Remote;
-use CreditCommons\TransactionInterface;
 use CreditCommons\TransversalTransactionTrait;
 use function \CCNode\API_calls;
 
@@ -24,13 +22,12 @@ class TransversalTransaction extends Transaction {
 
   public function __construct(
     public string $uuid,
-    public string $written,
     public string $type,
     public string $state,
     /** @var Entry[] $entries */
     public array $entries,
-    public int $version,
-    public string $scribe
+    public string $written,
+    public int $version
   ) {
     global $cc_user, $cc_config;
     $this->addTransactionToEntries();
@@ -65,18 +62,6 @@ class TransversalTransaction extends Transaction {
     $entries[0]->isPrimary = TRUE;
   }
 
-  public static function createFromUpstream(\stdClass $data) : TransactionInterface {
-    global $cc_user, $cc_config;
-    if ($cc_user->id == $cc_config->trunkwardAcc){
-      Trunkward::convertIncomingEntries($data->entries, $cc_user->id, $cc_config->conversionRate);
-    }
-    $data->scribe = $cc_user->id;
-    $data->state = TransactionInterface::STATE_INITIATED;
-
-    $transaction_class = static::upcastEntries($data->entries);
-    return $transaction_class::create($data);
-  }
-
   /**
    * Ensure all transversal entries have the transaction property.
    * This is hideous and needs refactoring.
@@ -98,8 +83,7 @@ class TransversalTransaction extends Transaction {
     $new_rows = parent::buildvalidate();
     $this->addTransactionToEntries();
     if ($this->downstreamAccount) {
-      $additional_remote_rows = $this->downstreamAccount
-        ->buildValidateRelayTransaction($this);
+      $additional_remote_rows = $this->downstreamAccount->relayTransaction($this);
       static::upcastEntries($additional_remote_rows, TRUE);
       $this->entries = array_merge($this->entries, $additional_remote_rows);
     }
@@ -161,12 +145,8 @@ class TransversalTransaction extends Transaction {
     if ($adjacentNode = $this->responseMode ? $this->upstreamAccount : $this->downstreamAccount) {
       $array['entries'] = $this->filterFor($adjacentNode);
     }
-    // Relaying downstream
-    if ($this->downstreamAccount && !$this->responseMode) {
-      // Forward the whole transaction minus a few properties.
-      unset($array['status'], $array['workflow'], $array['payeeHash'], $array['payerHash']);
-    }
-    unset($array['status'], $array['workflow'], $array['payeeHash'], $array['payerHash']);
+
+    unset($array['status'], $array['workflow'], $array['created'], $array['version'], $array['state']);
     return $array;
   }
 
@@ -180,7 +160,6 @@ class TransversalTransaction extends Transaction {
       // Remote accounts can ONLY be created by their authors, and only signed
       // by participants, not admins. However this contradicts
       // Workflow::getTransitions which allows admin to do anything.
-      $workflow->creation->by = ['author'];
       foreach ($workflow->states as &$state) {
         foreach ($state as $target_state => $info) {
           if (empty($info->signatories)) {

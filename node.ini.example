@@ -14,8 +14,8 @@ db[pass] = ""
 abs_path = "trunkward_node/my_cc_node"
 ;Conversion rate with the parent
 conversion_rate = 1.000
-currency_symbol = <strong>C$</strong>
-decimal_places = 3
+;How to convert base units to a string for the user. See the README for more details.
+display_format = <strong>C$</strong>0.59
 
 ;filesystem path to json representation of workflows array @todo this should be relative, ideally
 workflows_filepath = /home/credcom/html/workflows.json
@@ -35,8 +35,6 @@ timeout = ""
 validated_window = 300
 
 [transactions]
-;How to convert base units to a string for the user. See the README for more details.
-#display_format = ''
 ;Whether payments of zero are valid
 zero_payments = 0
 ;Validate transactions against pending balances.

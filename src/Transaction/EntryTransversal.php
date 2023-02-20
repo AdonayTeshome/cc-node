@@ -2,9 +2,6 @@
 
 namespace CCNode\Transaction;
 
-use CCNode\Transaction\Transaction;
-use CCNode\Transaction\Entry;
-use CreditCommons\BaseEntry;
 
 /**
  * Transversal entries have different classes (and hence methods) according to
@@ -18,7 +15,7 @@ class EntryTransversal extends Entry {
    */
   public $transaction;
 
-  static function create(\stdClass $data) : BaseEntry {
+  static function create(\stdClass $data) : static {
     global $cc_config;
     $entry = parent::create($data);
     if (isset($data->trunkwardQuant)) {

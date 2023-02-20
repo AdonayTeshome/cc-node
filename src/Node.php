@@ -8,7 +8,7 @@ use CCNode\Accounts\Remote;
 use CCNode\Accounts\RemoteAccountInterface;
 use CCNode\Accounts\Trunkward;
 use CCNode\Transaction\Transaction;
-use CCNode\Transaction\StandaloneEntry;
+use CCNode\Transaction\EntryDisplay;
 use CreditCommons\TransactionInterface;
 use CreditCommons\CreditCommonsInterface;
 use CreditCommons\Exceptions\HashMismatchFailure;
@@ -103,7 +103,7 @@ class Node implements CreditCommonsInterface {
     $results = [];
     [$uuids, $count] = Transaction::filterEntries($params);
     if ($uuids) {
-      $results = StandaloneEntry::load(array_keys($uuids));
+      $results = EntryDisplay::load(array_keys($uuids));
     }
     // All entries are returned
     return [$count, $results];
@@ -122,7 +122,7 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function getTransactionEntries(string $uuid): array {
-    return StandaloneEntry::loadByUuid($uuid);
+    return EntryDisplay::loadByUuid($uuid);
   }
 
 
@@ -244,8 +244,7 @@ class Node implements CreditCommonsInterface {
     $request = $this
       ->setMethod('post')
       ->setBody($new_transaction);
-    $code = empty($new_transaction->state) ? 200 : 201;
-    $result = $request->request($code, 'transaction');
+    $result = $request->request('transaction');
     return [$result->data, $result->meta->transitions];
   }
 
@@ -262,19 +261,19 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function transactionChangeState(string $uuid, string $target_state) : void {
-    Transaction::loadByUuid($uuid)
-      ->changeState($target_state);
+    $transaction = Transaction::loadByUuid($uuid);
+    $transaction->changeState($target_state);
   }
 
   /**
    * {@inheritDoc}
    * @note Conversion is always done by the leafward node.
    */
-  public function convertPrice($node_path) : \stdClass {
+  public function about($node_path) : \stdClass {
     global $cc_config, $cc_user;
     $account = AddressResolver::create()->getLocalAccount($node_path);
     if ($account instanceof RemoteAccountInterface) {
-      $obj = $account->getConversationRate();
+      $obj = $account->getConversionRate();
       if ($account instanceof Trunkward) {
         $obj->rate *= $cc_config->conversionRate;
       }
@@ -283,7 +282,7 @@ class Node implements CreditCommonsInterface {
       }
     }
     else {
-      $obj = (object)['symbol' => $cc_config->currSymbol];
+      $obj = (object)['format' => $cc_config->displayFormat];
       if ($cc_user instanceof Trunkward) {
         $obj->rate = 1/$cc_config->conversionRate;
       }

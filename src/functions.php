@@ -3,6 +3,7 @@
 namespace CCNode;
 
 use CCNode\Accounts\Remote;
+use CCNode\AddressResolver;
 use CreditCommons\AccountStoreInterface;
 use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\DoesNotExistViolation;
@@ -109,7 +110,7 @@ function debug($val, $whatis = '') {
 function permitted_operations() : array {
   global $cc_user;
   $permitted[] = 'permittedEndpoints';
-  $permitted[] = 'convertPrice';
+  $permitted[] = 'about';
   if ($cc_user->id <> '-anon-') {
     $permitted[] = 'handshake';
     $permitted[] = 'workflows';
@@ -171,12 +172,12 @@ function pager(string $endpoint, array $params, int $total_items) : array {
 
   /**
    * @param \stdClass &$row
-   * @return string
-   *   The entry classname. (Transversal if any account in any entry is remote)
+   * @return bool
+   *   TRUE if payer or payee are remote accounts
    */
-function upcastAccounts(\stdClass $row) : string {
+function upcastAccounts(\stdClass $row) : bool {
   $addressResolver = AddressResolver::create();
-  $class = 'Entry';
+  $remote = FALSE;
   // metadata contains the non-local parts of the address
   foreach (['payee', 'payer'] as $role) {
     $acc_path = $row->{$role};
@@ -185,8 +186,8 @@ function upcastAccounts(\stdClass $row) : string {
     }
     $row->{$role} = $addressResolver->localOrRemoteAcc($acc_path);
     if ($row->{$role} instanceOf Remote) {
-      $class = 'EntryTransversal';
+      $remote = TRUE;
     }
   }
-  return '\\CCNode\\Transaction\\'.$class;
+  return $remote;
 }

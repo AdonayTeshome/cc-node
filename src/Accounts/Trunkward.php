@@ -29,8 +29,8 @@ class Trunkward extends Remote {
   /**
    * {@inheritdoc}
    */
-  public function buildValidateRelayTransaction(Transaction $transaction) : array {
-    $rows = parent::buildValidateRelayTransaction($transaction);
+  public function relayTransaction(Transaction $transaction) : array {
+    $rows = parent::relayTransaction($transaction);
     $this->convertIncomingEntries($rows, $this->id, $this->trunkwardConversionRate);
     return $rows;
   }
@@ -42,11 +42,10 @@ class Trunkward extends Remote {
    *   array of stdClass or Entries.
    */
   public static function convertIncomingEntries(array &$entries, string $author, float $rate) : void {
-    global $cc_config;
     foreach ($entries as &$e) {
       $e->trunkwardQuant = $e->quant;
       if ($rate <> 1) {
-        $e->quant = round($e->quant / $rate, $cc_config->decimalPlaces);
+        $e->quant = round($e->quant / $rate);
       }
       $e->author = $author;
     }

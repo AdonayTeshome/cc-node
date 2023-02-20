@@ -20,6 +20,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
    * @var string
    */
   public string $relPath = '';
+  private string $lastHash;
 
   function __construct(
     string $id,
@@ -42,37 +43,37 @@ abstract class Remote extends User implements RemoteAccountInterface {
   }
 
   /**
-   * {@inheritdoc}
+   * {@inheritDoc}
    */
   public function isNode() : bool {
     return empty($this->relPath) or substr($this->relPath, -1) == '/';
   }
 
   /**
-   * {@inheritdoc}
+   * {@inheritDoc}
    */
   function getLastHash() : string {
-    $query = "SELECT hash "
-      . "FROM hash_history "
-      . "WHERE acc = '$this->id' "
-      . "ORDER BY id DESC LIMIT 0, 1";
-    if ($row = Db::query($query)->fetch_object()) {
-      return (string)$row->hash;
+    if (!isset($this->lastHash)) {
+      $this->lastHash = '';
+      $query = "SELECT hash FROM hash_history WHERE acc_id = '$this->id' ORDER BY txid DESC LIMIT 0, 1";
+      /** @var \mysqli_result $result */
+      $result = Db::query($query);
+      if ($result->num_rows) {
+        $this->lastHash = $result->fetch_object()->hash;
+      }
     }
-    else { //No hash because this account has never traded to. Security problem?
-      return '';
-    }
+    return $this->lastHash;
   }
 
   /**
-   * {@inheritdoc}
+   * {@inheritDoc}
    */
-  public function buildValidateRelayTransaction(Transaction $transaction) : array {
+  public function relayTransaction(Transaction $transaction) : array {
     return $this->API()->buildValidateRelayTransaction($transaction);
   }
 
   /**
-   * {@inheritdoc}
+   * {@inheritDoc}
    */
   public function handshake() : string {
     try {
@@ -85,15 +86,14 @@ abstract class Remote extends User implements RemoteAccountInterface {
   }
 
   /**
-   * {@inheritdoc}
+   * {@inheritDoc}
    */
   function autocomplete() : array {
-    return $this->api()->accountNameFilter($this->relPath);
+    return $this->API()->accountNameFilter($this->relPath);
   }
 
-
   /**
-   * {@inheritdoc}
+   * {@inheritDoc}
    */
   function getSummary($force_local = FALSE) : \stdClass {
     if ($force_local) {
@@ -108,7 +108,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
   }
 
   /**
-   * {@inheritdoc}
+   * {@inheritDoc}
    */
   function getAllSummaries() : array {
     // the relPath should have a slash at the end of it.
@@ -116,7 +116,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
   }
 
   /**
-   * {@inheritdoc}
+   * {@inheritDoc}
    */
   function getLimits($force_local = FALSE) : \stdClass {
     if ($this->relPath) {
@@ -136,7 +136,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
   }
 
   /**
-   * {@inheritdoc}
+   * {@inheritDoc}
    */
   function getHistory(int $samples = -1) : array {
     if ($path = $this->relPath) {
@@ -153,7 +153,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
 
 
   /**
-   * {@inheritdoc}
+   * {@inheritDoc}
    */
   protected function API() : NodeRequester {
     global $cc_config;
@@ -161,24 +161,14 @@ abstract class Remote extends User implements RemoteAccountInterface {
   }
 
   /**
-   * {@inheritdoc}
+   * {@inheritDoc}
    */
-  function authenticate(string $hash) {
-    if (empty($hash)) {// If there is no history...
-      // this might not be super secure...
-      $query = "SELECT TRUE FROM hash_history "
-        . "WHERE acc = '$this->id'"
-        . "LIMIT 0, 1";
-      $result = Db::query($query)->fetch_object();
-      if ($result == FALSE) return;
+  function authenticate(string $remote_hash) {
+    $local_hash = $this->getLastHash();
+    if ($remote_hash == $local_hash) {
+      return;
     }
-    else {
-      // Remote nodes connect with a hash of the connected account, which needs to be compared.
-      $query = "SELECT TRUE FROM hash_history WHERE acc = '$this->id' AND hash = '$hash' ORDER BY id DESC LIMIT 0, 1";
-      $result = Db::query($query)->fetch_object();
-      if ($result) return;
-    }
-    throw new HashMismatchFailure($this->id, $hash);
+    throw new HashMismatchFailure($this->id, $local_hash, $remote_hash);
   }
 
   function __toString() {
@@ -187,10 +177,10 @@ abstract class Remote extends User implements RemoteAccountInterface {
 
 
   /**
-   * {@inheritdoc}
+   * {@inheritDoc}
    */
-  function getConversationRate() : \stdClass {
-    return $this->api()->convertPrice($this->relPath);
+  function getConversionRate() : \stdClass {
+    return $this->api()->about($this->relPath);
   }
 
 }

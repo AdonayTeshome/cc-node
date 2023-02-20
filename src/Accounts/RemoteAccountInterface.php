@@ -16,7 +16,7 @@ interface RemoteAccountInterface extends AccountRemoteInterface {
    * @param Transaction $transaction
    * @return Any entries added by downstream nodes, with converted quants, but not upcast.
    */
-  function buildValidateRelayTransaction(Transaction $transaction) : array;
+  function relayTransaction(Transaction $transaction) : array;
 
   /**
    * Autocomplete fragment using account names on a remote node;
@@ -39,7 +39,7 @@ interface RemoteAccountInterface extends AccountRemoteInterface {
   function getAllLimits() : array;
 
 
-  function getConversationRate() : \stdClass;
+  function getConversionRate() : \stdClass;
 
 }
 

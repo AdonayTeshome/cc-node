@@ -33,7 +33,7 @@ class Db {
    * @param string $query The query string
    * @return mixed The result of the mysqli::query() function
    */
-  public static function query(string $query) : \mysqli_result|bool {
+  public static function query(string $query) {
     $connection = static::connect();
     $result = $connection->query($query);
     if ($error = static::error()) {
@@ -51,19 +51,18 @@ class Db {
    * @return string Database error message
    */
   public static function error() {
-    $connection = static::connect();
-    return $connection->error;
+    return static::connect()->error;
   }
 
-  public function lastId() : int {
-    $connection = $this->connect();
-    $result = $connection->insert_id;
-    return $result;
+  public static function lastId() : int {
+    return static::connect()->insert_id;
   }
 
   public static function printAll() {
     global $cc_config;
-    $html = static::printTable($cc_config->nodeName, 'users').static::printTable($cc_config->nodeName, 'temp').static::printTable($config['node_name'], 'ledger');
+    $html = static::printTable($cc_config->nodeName, 'users').
+      static::printTable($cc_config->nodeName, 'temp').
+      static::printTable($config['node_name'], 'ledger');
     return $html ? : "the database is empty";
   }
 

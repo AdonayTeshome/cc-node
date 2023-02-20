@@ -36,7 +36,7 @@ class BlogicRequester extends Requester implements BlogicInterface {
       ->setBody($main_entry)
       ->setMethod('post')
       ->addField
-      ->request(200, '?'. http_build_query($query)); // use func_get_args?
+      ->request('?'. http_build_query($query)); // use func_get_args?
     return $rows;
   }
 
