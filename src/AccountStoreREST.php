@@ -31,13 +31,12 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
    */
   private $cached = [];
 
-  private $trunkwardAcc = NULL;
-
-  function __construct() {
+  function __construct(
+    public string $trunkwardAccName
+  ) {
     global $cc_config;
     parent::__construct($cc_config->accountStore);
     $this->options[RequestOptions::HEADERS]['Accept'] = 'application/json';
-    $this->trunkwardAcc = $cc_config->trunkwardAcc;
   }
 
   /**
@@ -188,43 +187,32 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
    * @return Account
    */
   private function upcast(\stdclass $data, string $rel_path = '') : Account {
+    global $cc_user;
     if (!isset($this->cached[$data->id][$rel_path])) {
-      $class = self::determineAccountClass($data, $rel_path);
+      if (!empty($data->url)) {
+        $upS = $cc_user ? ($data->id == $cc_user->id) : TRUE;
+        $trunkward = $data->id == $this->trunkwardAccName;
+        if ($trunkward and $upS) {
+          $class = 'UpstreamTrunkward';
+        }
+        elseif ($trunkward and !$upS) {
+          $class = 'DownstreamTrunkward';
+        }
+        elseif ($upS) {
+          $class = 'UpstreamBranch';
+        }
+        else {
+          $class = 'DownstreamBranch';
+        }
+      }
+      else {
+        $class = $data->admin ? 'Admin' : 'User';
+      }
+      $class =  'CCNode\Accounts\\'. $class;
       $acc = $class::create($data, $rel_path);
       $this->cached[$data->id][$rel_path] = $acc;
     }
     return $this->cached[$data->id][$rel_path];
-  }
-
-  /**
-   * Determine the class of the given Account, considering this node's position
-   * in the ledger tree.
-   *
-   * @param \stdClass $data
-   * @return string
-   */
-  private static function determineAccountClass(\stdClass $data, string $rel_path = '') : string {
-    global $cc_user, $cc_config;
-    if (!empty($data->url)) {
-      $upS = $cc_user ? ($data->id == $cc_user->id) : TRUE;
-      $trunkward = $data->id == $cc_config->trunkwardAcc;
-      if ($trunkward and $upS) {
-        $class = 'UpstreamTrunkward';
-      }
-      elseif ($trunkward and !$upS) {
-        $class = 'DownstreamTrunkward';
-      }
-      elseif ($upS) {
-        $class = 'UpstreamBranch';
-      }
-      else {
-        $class = 'DownstreamBranch';
-      }
-    }
-    else {
-      $class = $data->admin ? 'Admin' : 'User';
-    }
-    return 'CCNode\Accounts\\'. $class;
   }
 
 }

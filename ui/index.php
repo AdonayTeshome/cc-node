@@ -8,7 +8,6 @@ foreach ($accounts as $acc_name => $info) {
   sort($data);
 }
 
-die('fff');
 ?>
     <div id = "balance_map" style="width:70%"></div>
     <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>

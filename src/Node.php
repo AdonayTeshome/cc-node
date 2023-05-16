@@ -25,7 +25,7 @@ class Node implements CreditCommonsInterface {
   function __construct(array $ini_array) {
     global $cc_workflows, $cc_config;
     $cc_config = new ConfigFromIni($ini_array);
-    $wfs = json_decode(file_get_contents($cc_config->workflowsFile));
+    $wfs = json_decode(file_get_contents('workflows.json'));
     if (empty($wfs)) {
       throw new \CreditCommons\Exceptions\CCFailure('Bad json workflows file: '.$cc_config->workflowsFile);
     }
@@ -86,17 +86,17 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function filterTransactions(array $params = []): array {
-    $results = $transitions = [];
+    $transactions = $transitions = [];
     [$uuids, $count] = Transaction::filter($params);
     if ($uuids) {
       foreach ($uuids as $uuid) {
         $t = Transaction::loadByUuid($uuid);
-        $results[] = $t;
+        $transactions[] = $t;
         $transitions[$uuid] = $t->transitions();
       }
     }
-    // All entries are returned
-    return [$count, $results, $transitions, $count];
+    // Transitions are returned seperately, because the leafTransaction doesn't knowo the workflow, and can't run actionlinks.
+    return [$count, $transactions, $transitions];
   }
 
   public function filterTransactionEntries(array $params = []): array {
@@ -114,7 +114,7 @@ class Node implements CreditCommonsInterface {
    */
   public function getTransaction(string $uuid): array {
     $transaction = Transaction::loadByUuid($uuid);
-    $transaction->responseMode = TRUE;// there's nowhere tidier to do this.
+    $transaction->responseMode = TRUE;// there's nowhere tidier to put this.
     return [$transaction, $transaction->transitions()];
   }
 
@@ -267,7 +267,7 @@ class Node implements CreditCommonsInterface {
 
   /**
    * {@inheritDoc}
-   * @note Conversion is always done by the leafward node.
+   * The requesting node is always valued as 1
    */
   public function about($node_path) : \stdClass {
     global $cc_config, $cc_user;
@@ -287,7 +287,7 @@ class Node implements CreditCommonsInterface {
         $obj->rate = 1/$cc_config->conversionRate;
       }
       else {
-        $obj->rate = $cc_config->conversionRate;
+        $obj->rate = 1;
       }
     }
     return $obj;

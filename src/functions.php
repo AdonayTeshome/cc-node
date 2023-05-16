@@ -24,7 +24,7 @@ use CreditCommons\CreditCommonsInterface;
  * @todo This doesn't seem like a good place to throw a violation.
  */
 function load_account(string $local_acc_id = NULL, string $rel_path = '') : Account {
-  if (strpos(needle: '/', haystack: $local_acc_id)) {
+  if (strpos($local_acc_id, '/')) {
     throw new CCFailure("Can't load unresolved account name: $local_acc_id");
   }
   if ($local_acc_id and accountStore()->has($local_acc_id)) {
@@ -60,13 +60,11 @@ function accountStore() : AccountStoreInterface {
   global $cc_config;
   $class = $cc_config->accountStore;
   if (filter_var($class, FILTER_VALIDATE_URL)) {
-    $store = new \CCNode\AccountStoreREST(trunkward_acc_name: $cc_config->trunkwardAcc);
+    $store = new \CCNode\AccountStoreREST(trunkwardAccName: $cc_config->trunkwardAcc);
   }
-  elseif (class_exists($cc_config->accountStore)) {
+  elseif (class_exists($class)) {
     // filepath is in the web root, but where are we?
-    $store = new $class(
-      trunkward_acc_name: $cc_config->trunkwardAcc
-    );
+    $store = new $class(trunkwardAccName: $cc_config->trunkwardAcc);
   }
   else {
     throw new CCFailure('Invalid accountStore setting: '.$cc_config->accountStore);

@@ -35,7 +35,7 @@ CREATE TABLE `hash_history` (
   txid int NOT NULL,
   acc_id varchar(32) NOT NULL,
   hash varchar(32) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ALTER TABLE `hash_history` ADD UNIQUE KEY `unique` (`acc_id`,`txid`);
 
 # This view of the ledger should be helpful for getting user-centric data.
@@ -59,7 +59,7 @@ CREATE TABLE log (
   id int(11) NOT NULL,
   timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   method tinytext NOT NULL,
-  path tinytext NOT NULL,
+  path text NOT NULL,
   request_headers text NOT NULL,
   request_body text NOT NULL,
   response_code int(3) DEFAULT NULL,

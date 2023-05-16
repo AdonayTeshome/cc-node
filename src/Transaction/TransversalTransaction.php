@@ -94,7 +94,7 @@ class TransversalTransaction extends Transaction {
     if ($cc_user instanceof Remote) {
       $new_rows = array_filter(
         $this->filterFor($cc_user),
-        function($e) {return $e->isAdditional();}
+        function($e) {return !$e->isPrimary;}
       );
     }
     return array_values($new_rows);
@@ -103,8 +103,8 @@ class TransversalTransaction extends Transaction {
   /**
    * {@inheritDoc}
    */
-  protected function callBlogic() : array {
-    $rows = parent::callBlogic();
+  protected function callBlogic(string $bLogicMod) : array {
+    $rows = parent::callBlogic($bLogicMod);
     $this->addTransactionToEntries();
     return $rows;
   }

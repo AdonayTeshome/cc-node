@@ -119,9 +119,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     }
     // Add fees, etc by calling on the blogic module, either internally or via REST API
     // @todo make the same function name for both.
-    if ($cc_config->blogicMod) {
-      $rows = $this->callBlogic();
-    }
+    $rows = $cc_config->blogicMod ? $this->callBlogic($cc_config->blogicMod) : [];
     $this->checkLimits();
     return $rows;
   }
@@ -160,8 +158,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
   /**
    * Call whatever Blogic class and upcast and append any resulting rows.
    */
-  protected function callBlogic() : array {
-    global $cc_config;
+  protected function callBlogic(string $bLogicMod) : array {
     // this is rather cumbersome because blogic wants the first entry with
     // flattened payee and payee and the transaction->type.
     $first = $this->entries[0];
@@ -173,14 +170,13 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
       'metadata' => $first->metadata,
       'type' => $this->type
     ];
-    if (class_exists($cc_config->blogicMod)) {
-      $class = $cc_config->blogicMod;
-      $blogic_mod = new $class();
-      $rows = $blogic_mod->addRows(...$blogic_entry);
+    if (class_exists($bLogicMod)) {
+      $blogic_service = new $bLogicMod();
+      $rows = $blogic_service->addRows(...$blogic_entry);
     }
-    elseif($cc_config->blogicMod) {// Should really test that it is a url.
+    else {// It must be a url
       // The Blogic service will know itself which account to put fees in.
-      $rows = (new BlogicRequester())->addRows(...$blogic_entry);
+      $rows = (new BlogicRequester($bLogicMod))->addRows(...$blogic_entry);
     }
     // The Blogic returns entries with upcast account objects
     static::upcastEntries($rows, TRUE);
@@ -294,7 +290,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
   /**
    * Make entry objects from json entries with users already upcast.
    * - upcast the accounts
-   * - add 'author' and 'isAdditional'
+   * - add 'author' and isPrimary fields
    * - determine which class each entry is.
    *
    * @param stdClass[] $rows
@@ -310,7 +306,11 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     $transversal_transaction = FALSE;
     foreach ($rows as &$row) {
       $transversal_row = \CCNode\upcastAccounts($row);
-      $row->isAdditional = $is_additional;
+      // sometimes this is called with entries from the db including isPrimary
+      // other times it is called with additional entries from json
+      if (!isset($row->isPrimary)) {
+        $row->isPrimary = !$is_additional;
+      }
       if (empty($row->author)) {
         $row->author = $cc_user->id;
       }

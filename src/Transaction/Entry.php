@@ -16,7 +16,6 @@ class Entry extends \CreditCommons\Entry implements \JsonSerializable {
     public float $quant,
     public string $author, // The author is always local and we don't need to cast it into account
     public \stdClass $metadata, // Does not recognise field type: \stdClass
-    protected bool $isAdditional,
     /**
      * TRUE if this entry was authored by blogicService or downstream.
      * @var bool
@@ -59,20 +58,19 @@ class Entry extends \CreditCommons\Entry implements \JsonSerializable {
     }
     static::validateFields($data);
     $entry = new static (
-      $data->payee,
-      $data->payer,
-      $data->quant,
-      $data->author,
-      $data->metadata,
-      $data->isAdditional,
-      $data->isPrimary??FALSE,
-      substr($data->description, 0, 255) // To comply with mysql tinytext field.
+      payee: $data->payee,
+      payer: $data->payer,
+      quant: $data->quant,
+      author: $data->author,
+      metadata: $data->metadata,
+      isPrimary: $data->isPrimary??FALSE,
+      description: substr($data->description, 0, 255) // To comply with mysql tinytext field.
     );
     return $entry;
   }
 
   function isAdditional() : bool {
-    return $this->isAdditional;
+    return !$this->isPrimary;
   }
 
   /**

@@ -5,9 +5,10 @@ ksort($all_accounts);
 ?>
 <form method="GET">
   Show details: <select name="account">
+    <option value=""></option>
     <?php foreach (array_keys($all_accounts) as $id) : ?>
     <option value="<?php print $id; ?>"><?php print $id; ?></option>
-    <?php    endforeach; ?>
+    <?php endforeach; ?>
   </select>
   <input type="submit" />
 </form>

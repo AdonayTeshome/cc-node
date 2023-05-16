@@ -29,7 +29,7 @@ priv[transactions] = 1
 
 [connection]
 ;Max number of seconds to wait for a response from the downstream ledger.
-;This number would be higher, the further away this node is from the trunk.
+;This number would be higher, the further away this node is from the trunk. [not currently used]
 timeout = ""
 ;Min number of secs a transaction will remain validated before possibly being erased (not used)
 validated_window = 300

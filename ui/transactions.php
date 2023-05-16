@@ -5,9 +5,9 @@ sort($all_accounts);
 $_GET += ['limit' => 25, 'offset'=> 0, 'dir' => 'desc', 'sort' => 'written', 'author' => NULL, 'payee' => NULL, 'payer' => NULL, 'state' => NULL, 'type' => NULL];
 $params = array_filter($_GET);
 $params['limit']++; // request one m$paramsore than we want to display
-$transactions = $node->filterTransactions($params);
+[$count, $transactions, $transitions] = $node->filterTransactions($params);
 ?>
-<h3>Filter transactions</h3>
+<h3>Transactions</h3>
 <form method="GET">
   <p>
     Author: <select name="author">
@@ -75,8 +75,9 @@ $transactions = $node->filterTransactions($params);
     <th>Actions (todo)</th>
   </thead>
   <tbody>
-    <?php if (empty($transactions)) print '<tr>No transactions</tr>'; ?>
-    <?php for ($i=0;$i<$_GET['limit'];$i++) : $t = array_shift($transactions); if (empty($t)) break;?><tr>
+    <?php if (empty($transactions)) print '<tr>No transactions</tr>';?>
+    <?php /** @var CCNode\Transaction\Transaction $t */ ;
+    for ($i=0; $i<$_GET['limit']; $i++) : $t = $transactions[$i];?><tr>
         <td><?php print $t->written; ?></td>
         <td><a href="accounts.php?account=<?php print $t->entries[0]->payee->id; ?>"><?php print $t->entries[0]->metadata->{$t->entries[0]->payee->id}??$t->entries[0]->payee->id; ?></a></td>
         <td><a href="accounts.php?account=<?php print $t->entries[0]->payer->id; ?>"><?php print $t->entries[0]->metadata->{$t->entries[0]->payer->id}??$t->entries[0]->payer->id; ?></a></td>
@@ -87,7 +88,7 @@ $transactions = $node->filterTransactions($params);
         <td><?php print $t->type; ?></td>
         <td><?php print $t->version; ?></td>
         <td><?php print $t->uuid; ?></td>
-        <td><?php print $t->actionLinks(); ?></td>
+        <td><?php print $t->actionLinks($transitions[$t->uuid]); ?></td>
       <?php endfor; ?>
       </tr>
     </body>

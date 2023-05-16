@@ -57,6 +57,7 @@ trait StorageTrait {
       }
       $tx->entries[] = $row;
     }
+
     return Transaction::create($tx);
   }
 
@@ -182,6 +183,7 @@ trait StorageTrait {
    * @note No database errors are anticipated.
    */
   private function insertEntry(int $txid, Entry $entry) : int {
+
     global $cc_config;
     // Calculate metadata for local storage
     foreach (['payee', 'payer'] as $role) {
@@ -216,10 +218,10 @@ trait StorageTrait {
    */
   static function filter(array $params) : array {
     $results = [];
-    $sort = $params['sort'];
-    $dir = $params['dir'];
-    $limit = $params['limit'];
-    $offset = $params['offset'];
+    $sort = $params['sort']??'id';
+    $dir = $params['dir']??'desc';
+    $limit = $params['limit']??100;
+    $offset = $params['offset']??0;
     unset($params['sort'], $params['dir'], $params['limit'], $params['offset']);
 
     $query = "SELECT t.uuid "

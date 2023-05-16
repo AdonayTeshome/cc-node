@@ -151,7 +151,6 @@ abstract class Remote extends User implements RemoteAccountInterface {
     return $result;
   }
 
-
   /**
    * {@inheritDoc}
    */
