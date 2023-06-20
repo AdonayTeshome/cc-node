@@ -78,12 +78,12 @@ class Entry extends \CreditCommons\Entry implements \JsonSerializable {
    * @return mixed
    */
   public function jsonSerialize() : mixed {
-    // Handle according to whether the transaction is going trunkwards or leafwards
+    // This local Entry can only be serialized to return to the client.
     $array = [
       // Trunkward path is best if we don't have context.
       'payee' => (string)$this->payee,
       'payer' => (string)$this->payer,
-      'quant' => $this->quant,
+      'quant' => \CCNode\displayQuant($this->quant),
       'description' => $this->description,
       'metadata' => $this->metadata
     ];

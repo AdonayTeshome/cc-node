@@ -4,11 +4,12 @@ namespace CCNode;
 
 use CCNode\Accounts\Branch;
 use CCNode\AddressResolver;
+use CCNode\Orientation;
 use CCNode\Accounts\Remote;
 use CCNode\Accounts\RemoteAccountInterface;
 use CCNode\Accounts\Trunkward;
 use CCNode\Transaction\Transaction;
-use CCNode\Transaction\EntryDisplay;
+use CCNode\Transaction\EntryFull;
 use CreditCommons\TransactionInterface;
 use CreditCommons\CreditCommonsInterface;
 use CreditCommons\Exceptions\HashMismatchFailure;
@@ -86,6 +87,7 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function filterTransactions(array $params = []): array {
+    Orientation::createLocal();
     $transactions = $transitions = [];
     [$uuids, $count] = Transaction::filter($params);
     if ($uuids) {
@@ -99,11 +101,15 @@ class Node implements CreditCommonsInterface {
     return [$count, $transactions, $transitions];
   }
 
+  /**
+   * {@inheritDoc}
+   */
   public function filterTransactionEntries(array $params = []): array {
+    Orientation::createLocal();
     $results = [];
     [$uuids, $count] = Transaction::filterEntries($params);
     if ($uuids) {
-      $results = EntryDisplay::load(array_keys($uuids));
+      $results = Transaction::loadEntries(array_keys($uuids));
     }
     // All entries are returned
     return [$count, $results];
@@ -113,6 +119,7 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function getTransaction(string $uuid): array {
+    Orientation::createLocal();
     $transaction = Transaction::loadByUuid($uuid);
     $transaction->responseMode = TRUE;// there's nowhere tidier to put this.
     return [$transaction, $transaction->transitions()];
@@ -122,7 +129,15 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function getTransactionEntries(string $uuid): array {
-    return EntryDisplay::loadByUuid($uuid);
+    global $orientation;
+    Orientation::createLocal();
+    $entries = Transaction::loadEntriesByUuid($uuid);
+    if ($orientation->target == Orientation::CLIENT) {
+      foreach ($entries as $entry) {
+        $entry->quant = \CCNode\displayQuant($entry->quant);
+      }
+    }
+    return $entries;
   }
 
 

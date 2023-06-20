@@ -14,11 +14,13 @@ use CreditCommons\Exceptions\MinLimitViolation;
 use CreditCommons\Exceptions\WorkflowViolation;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 
-class Transaction extends \CreditCommons\Transaction implements \JsonSerializable {
-  use \CCNode\Transaction\StorageTrait;
 
+class Transaction extends \CreditCommons\Transaction implements \JsonSerializable {
+
+  const DECIMAL_PLACES = 6;
   const REGEX_DATE = '/[0-9]{4}-[0|1]?[0-9]-[0-3][0-9]/';
   const REGEX_TIME = '/[0-2][0-9]:[0-5][0-9]:[0-5][0-9]/';
+  use \CCNode\Transaction\StorageTrait;
 
   /**
    * The full workflow object.

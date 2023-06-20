@@ -12,6 +12,7 @@ use CreditCommons\Exceptions\InvalidFieldsViolation;
 use CCNode\Db;
 use function CCNode\accountStore;
 
+
 /**
  * Read and write transactions (and entries) from the database
  */
@@ -35,7 +36,8 @@ trait StorageTrait {
     if (!$tx) {
       throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
     }
-    $q = "SELECT payee, payer, description, quant as quant, trunkward_quant as trunkwardQuant, author, metadata, is_primary as isPrimary "
+    $divisor = pow(10, static::DECIMAL_PLACES);
+    $q = "SELECT payee, payer, description, quant/$divisor as quant, trunkward_quant as trunkwardQuant, author, metadata, is_primary as isPrimary "
       . "FROM entries "
       . "WHERE txid = $tx->txID "
       . "ORDER BY id ASC";
@@ -103,10 +105,12 @@ trait StorageTrait {
   private function writeIndex(int $new_id) {
     global $cc_config;
     $query = "INSERT INTO transaction_index (id, uuid, uid1, uid2, type, state, income, expenditure, diff, volume, written, is_primary) VALUES ";
+    $divisor = pow(10, static::DECIMAL_PLACES);
     foreach ($this->entries as $e) {
+      $quant = $e->quant * $divisor;
       $isPrimary = (int)$e->isPrimary;
-      $rows[] = "($new_id, '$this->uuid', '$e->payer', '$e->payee', '$this->type', '$this->state', -$e->quant, $e->quant, -$e->quant, $e->quant, '$this->written', $isPrimary)";
-      $rows[] = "($new_id, '$this->uuid', '$e->payee', '$e->payer', '$this->type', '$this->state', +$e->quant, -$e->quant, $e->quant, $e->quant, '$this->written', $isPrimary)";
+      $rows[] = "($new_id, '$this->uuid', '$e->payer', '$e->payee', '$this->type', '$this->state', -$quant, $quant, -$quant, $quant, '$this->written', $isPrimary)";
+      $rows[] = "($new_id, '$this->uuid', '$e->payee', '$e->payer', '$this->type', '$this->state', +$quant, -$quant, $quant, $quant, '$this->written', $isPrimary)";
     }
     Db::query($query . implode(', ', $rows));
   }
@@ -183,7 +187,6 @@ trait StorageTrait {
    * @note No database errors are anticipated.
    */
   private function insertEntry(int $txid, Entry $entry) : int {
-
     global $cc_config;
     // Calculate metadata for local storage
     foreach (['payee', 'payer'] as $role) {
@@ -199,8 +202,9 @@ trait StorageTrait {
     if ($entry->payer instanceOf Trunkward or $entry->payee instanceof Trunkward) {
       $trunkward_quant = $entry->trunkwardQuant;
     }
+    $quant = $entry->quant * pow(10, static::DECIMAL_PLACES);
     $q = "INSERT INTO entries (txid, payee, payer, quant, trunkward_quant, description, author, metadata, is_primary) "
-      . "VALUES ($txid, '$payee', '$payer', $entry->quant, $trunkward_quant, '$desc', '$entry->author', '$metadata', '$primary')";
+      . "VALUES ($txid, '$payee', '$payer', $quant, $trunkward_quant, '$desc', '$entry->author', '$metadata', '$primary')";
     return $this->id = Db::query($q);
   }
 
@@ -223,7 +227,6 @@ trait StorageTrait {
     $limit = $params['limit']??100;
     $offset = $params['offset']??0;
     unset($params['sort'], $params['dir'], $params['limit'], $params['offset']);
-
     $query = "SELECT t.uuid "
       . "FROM entries e "
       . "JOIN transactions t ON e.txid = t.id "
@@ -424,15 +427,16 @@ trait StorageTrait {
     return '';
   }
 
-
   /*
    * @todo decide whether to use transaction creation or written dates.
    * Written is easier with the current architecture.
    */
   static function accountHistory($acc_id) : \mysqli_result {
     global $cc_config;
+    $divisor = pow(10, static::DECIMAL_PLACES);
     Db::query("SET @csum := 0");
-    $query = "SELECT written, (@csum := @csum + diff) as balance "
+    // Not very efficient!
+    $query = "SELECT written, (@csum := @csum/$divisor + diff/$divisor) as balance "
       . "FROM transaction_index "
       . "WHERE uid1 = '$acc_id' "
       . "ORDER BY written ASC";
@@ -441,7 +445,8 @@ trait StorageTrait {
 
   static function accountSummary($acc_id) : \mysqli_result {
     global $cc_config;
-    $query = "SELECT uid2 as partner, income as income, expenditure as expenditure, diff as diff, volume as volume, state, is_primary as isPrimary "
+    $divisor = pow(10, static::DECIMAL_PLACES);
+    $query = "SELECT uid2 as partner, income/$divisor as income, expenditure/$divisor as expenditure, diff/$divisor as diff, volume/$divisor as volume, state, is_primary as isPrimary "
       . "FROM transaction_index "
       . "WHERE uid1 = '$acc_id' and state in ('completed', 'pending')";
     return Db::query($query);
@@ -455,7 +460,8 @@ trait StorageTrait {
   static function getAccountSummaries($include_virgin_wallets = FALSE) : array {
     global $cc_config;
     $results = $balances = [];
-    $result = Db::query("SELECT uid1, uid2, diff as diff, state, is_primary "
+    $divisor = pow(10, static::DECIMAL_PLACES);
+    $result = Db::query("SELECT uid1, uid2, diff/$divisor as diff, state, is_primary "
       . "FROM transaction_index "
       . "WHERE income > 0");
     while ($row = $result->fetch_object()) {
@@ -488,4 +494,63 @@ trait StorageTrait {
     return $balances;
   }
 
+
+  /**
+   * @param string $uuid
+   * @return static[]
+   */
+  static function loadEntriesByUuid(string $uuid) : array {
+    global $cc_user;
+    $ids = [];
+    $query = "SELECT distinct (e.id) as id, e.is_primary
+      FROM entries e
+      INNER JOIN transactions t ON t.id = e.txid
+      INNER JOIN (SELECT MAX(version) as version, uuid FROM transactions group by uuid) t1 ON t1.version = t.version
+      WHERE t.uuid = '$uuid'
+      ORDER BY e.is_primary DESC, e.id ASC;";
+    $result = Db::query($query);
+    $entries = [];
+    while ($row = $result->fetch_object()){
+      $ids[] = $row->id;
+    }
+    if (empty($ids)) {
+      throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
+    }
+    $entries = static::loadEntries($ids);
+    // We just check the first (primary) entry
+    if (reset($entries)->state == 'validated' and reset($entries)->author <> $cc_user->id and !$cc_user->admin) {
+      // deny the transaction exists to all but its author and admins
+      throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
+    }
+    return $entries;
+  }
+
+
+
+  /**
+   * Load a flat entry from the database, returning items in the order given.
+   *
+   * @param array $entry_ids
+   * @return \static[]
+   */
+  static function loadEntries(array $entry_ids) : array {
+    $divisor = pow(10, static::DECIMAL_PLACES);
+    if (empty($entry_ids)) {
+      throw new CCFailure('No entry ids to load');
+    }
+    $query = "SELECT e.id as eid, e.*, t.* FROM entries e
+      JOIN transactions t ON t.id = e.txid
+      WHERE e.id IN (".implode(',', $entry_ids).")";
+    $entries = [];
+    foreach (Db::query($query)->fetch_all(MYSQLI_ASSOC) as $row) {
+      $data = (object)$row;
+      // @todo Get the full paths from the metadata
+      $data->metadata = unserialize($data->metadata);
+      $data->quant /= $divisor;
+      $entries[] = EntryFull::create($data);
+    }
+    // Return the entries in the same order they were asked for.
+    array_multisort($entry_ids, $entries);
+    return $entries;
+  }
 }

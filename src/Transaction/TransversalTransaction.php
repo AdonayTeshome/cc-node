@@ -1,9 +1,10 @@
 <?php
 namespace CCNode\Transaction;
-use CCNode\Transaction\EntryTransversal;
+
 use CCNode\Transaction\Entry;
 use CCNode\Transaction\Transaction;
 use CCNode\Accounts\Remote;
+use CCNode\Orientation;
 use CreditCommons\TransversalTransactionTrait;
 use function \CCNode\API_calls;
 
@@ -15,11 +16,6 @@ class TransversalTransaction extends Transaction {
 
   use TransversalTransactionTrait;
 
-  public $downstreamAccount;
-  public $upstreamAccount;
-  // Only load the trunkward account if needed
-  public $trunkwardAccount = NULL;
-
   public function __construct(
     public string $uuid,
     public string $type,
@@ -30,83 +26,32 @@ class TransversalTransaction extends Transaction {
     public int $version
   ) {
     global $cc_user, $cc_config;
-    $this->addTransactionToEntries();
-    $this->upstreamAccount = $cc_user instanceof Remote ? $cc_user : NULL;
-    $payer = $entries[0]->payer;
-    $payee = $entries[0]->payee;
-    // Find the downstream account
-    // if there's an upstream account, then the other one, if remote is downstream
-    if ($this->upstreamAccount) {
-      if ($this->upstreamAccount->id == $payee->id and $payer instanceOf Remote) {
-        $this->downstreamAccount = $payer; // going towards a payer branch
-      }
-      elseif ($this->upstreamAccount->id == $payer->id and $payee instanceOf Remote) {
-        $this->downstreamAccount = $payee;// going towards a payee branch
-      }
-    }// with no upstream account, then any remote account is downstream
-    else {
-      if ($payee instanceOf Remote) {
-        $this->downstreamAccount = $payee;
-      }
-      elseif ($payer instanceOf Remote) {
-        $this->downstreamAccount = $payer;
-      }
-    }
-    /// Set the trunkward account only if it is used.
-    if ($this->upstreamAccount and $this->upstreamAccount->id == $cc_config->trunkwardAcc) {
-      $this->trunkwardAccount = $this->upstreamAccount;
-    }
-    elseif ($this->downstreamAccount and $this->downstreamAccount->id == $cc_config->trunkwardAcc) {
-      $this->trunkwardAccount = $this->downstreamAccount;
-    }
+    Orientation::CreateTransversal($entries[0]->payee, $entries[0]->payer);
     $entries[0]->isPrimary = TRUE;
-  }
-
-  /**
-   * Ensure all transversal entries have the transaction property.
-   * This is hideous and needs refactoring.
-   */
-  private function addTransactionToEntries() {
-    // Think of a more elegant way to add the $transaction to Transversal entries only.
-    foreach ($this->entries as &$entry) {
-      if ($entry instanceof EntryTransversal) {
-        $entry->transaction = $this;
-      }
-    }
   }
 
   /**
    * {@inheritDoc}
    */
   function buildValidate() : array {
-    global $cc_user;
-    $new_rows = parent::buildvalidate();
-    $this->addTransactionToEntries();
-    if ($this->downstreamAccount) {
-      $additional_remote_rows = $this->downstreamAccount->relayTransaction($this);
-      static::upcastEntries($additional_remote_rows, TRUE);
-      $this->entries = array_merge($this->entries, $additional_remote_rows);
+    global $cc_user, $orientation;
+    $new_local_rows = parent::buildvalidate();
+    if ($orientation->downstreamAccount) {
+      $new_remote_rows = $orientation->downstreamAccount->relayTransaction($this);
+      static::upcastEntries($new_remote_rows, TRUE);
+      $this->entries = array_merge($this->entries, $new_remote_rows);
     }
-    $this->addTransactionToEntries();
-    $this->responseMode = TRUE;
-    // Return the local and remote additional entries which concern the upstream node.
-    // @todo should this go in the parent function?
+    $orientation->responseMode();
+    // Entries have been added to the transaction, but now return the local and
+    // remote additional entries which concern the upstream node.
+    // @todo this should go somewhere a bit closer to the response generation.
     if ($cc_user instanceof Remote) {
-      $new_rows = array_filter(
+      $new_local_rows = array_filter(
         $this->filterFor($cc_user),
         function($e) {return !$e->isPrimary;}
       );
     }
-    return array_values($new_rows);
-  }
-
-  /**
-   * {@inheritDoc}
-   */
-  protected function callBlogic(string $bLogicMod) : array {
-    $rows = parent::callBlogic($bLogicMod);
-    $this->addTransactionToEntries();
-    return $rows;
+    return array_values($new_local_rows);
   }
 
   /**
@@ -114,6 +59,7 @@ class TransversalTransaction extends Transaction {
    */
   public function saveNewVersion() : int {
     $id = parent::saveNewVersion();
+
     if ($this->version > 0) {
       $this->writeHashes($id);
     }
@@ -141,11 +87,13 @@ class TransversalTransaction extends Transaction {
    * @return stdClass
    */
   public function jsonSerialize() : mixed {
-    $array = parent::jsonSerialize();
-    if ($adjacentNode = $this->responseMode ? $this->upstreamAccount : $this->downstreamAccount) {
-      $array['entries'] = $this->filterFor($adjacentNode);
+    global $orientation;
+    $orig_entries = $this->entries;
+    if ($adjacentNode = $orientation->targetNode()) {
+      $this->entries = $this->filterFor($adjacentNode);
     }
-
+    $array = parent::jsonSerialize();
+    $this->entries = $orig_entries;
     unset($array['status'], $array['workflow'], $array['created'], $array['version'], $array['state']);
     return $array;
   }
@@ -155,8 +103,9 @@ class TransversalTransaction extends Transaction {
    * the workflow as for a remote transaction.
    */
   public function getWorkflow() : \CreditCommons\Workflow {
+    global $orientation;
     $workflow = parent::getWorkflow();
-    if ($this->upstreamAccount instanceOf Remote) {
+    if ($orientation->upstreamAccount instanceOf Remote) {
       // Remote accounts can ONLY be created by their authors, and only signed
       // by participants, not admins. However this contradicts
       // Workflow::getTransitions which allows admin to do anything.
@@ -175,31 +124,13 @@ class TransversalTransaction extends Transaction {
    * {@inheritDoc}
    */
   function changeState(string $target_state) : bool {
-    if ($this->downstreamAccount) {
-      API_calls($this->downstreamAccount)->transactionChangeState($this->uuid, $target_state);
+    global $orientation;
+    if ($orientation->downstreamAccount) {
+      API_calls($orientation->downstreamAccount)->transactionChangeState($this->uuid, $target_state);
     }
     $saved = parent::changeState($target_state);
     $this->responseMode = TRUE;
     return $saved;
-  }
-
-  /**
-   * Return TRUE if we are generating a trunkwards request or a trunkwards response.
-   *
-   * @return bool
-   *
-   * @todo put in an interface
-   */
-  public function trunkwards() : bool {
-    if ($this->trunkwardAccount) {
-      if ($this->trunkwardAccount == $this->upstreamAccount and $this->responseMode == TRUE) {
-        return TRUE;
-      }
-      elseif ($this->trunkwardAccount == $this->downstreamAccount and $this->responseMode == FALSE) {
-        return TRUE;
-      }
-    }
-    return FALSE;
   }
 
   /**

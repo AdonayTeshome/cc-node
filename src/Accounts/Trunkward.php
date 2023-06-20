@@ -37,16 +37,20 @@ class Trunkward extends Remote {
 
 
   /**
-   * Convert the quantities if entries are coming from the trunk
+   * Convert to local quantities if entries are coming from the trunk
+   *
    * @param array $entries
    *   array of stdClass or Entries.
+   *
+   * @note Inverse operation is at EntryTransversal::create
    */
   public static function convertIncomingEntries(array &$entries, string $author, float $rate) : void {
     foreach ($entries as &$e) {
       $e->trunkwardQuant = $e->quant;
       if ($rate <> 1) {
-        $e->quant = round($e->quant / $rate);
+        $e->quant = $e->quant / $rate;
       }
+      $e->quant = round($e->quant, Transaction::DECIMAL_PLACES, PHP_ROUND_HALF_EVEN);
       $e->author = $author;
     }
   }
@@ -130,7 +134,6 @@ class Trunkward extends Remote {
   function leafwardPath() : string {
     return $this->id .'/'. $this->relPath;
   }
-
 
 }
 
