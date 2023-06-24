@@ -4,6 +4,7 @@ namespace CCNode\Transaction;
 use CreditCommons\Account;
 use CreditCommons\Exceptions\CCOtherViolation;
 use CreditCommons\Exceptions\SameAccountViolation;
+use function \CCNode\displayQuant;
 
 /**
  * Determine the account types for entries.
@@ -83,7 +84,7 @@ class Entry extends \CreditCommons\Entry implements \JsonSerializable {
       // Trunkward path is best if we don't have context.
       'payee' => (string)$this->payee,
       'payer' => (string)$this->payer,
-      'quant' => \CCNode\displayQuant($this->quant),
+      'quant' => displayQuant($this->quant),
       'description' => $this->description,
       'metadata' => $this->metadata
     ];

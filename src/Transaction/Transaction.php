@@ -80,7 +80,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
 
 
   static function create(\stdClass $data) : static {
-    global $cc_user;
+    global $cc_user, $orientation;
     static::upcastEntries($data->entries);
     $data->version = $data->version??-1;
     $data->written = $data->written??'';
@@ -89,9 +89,16 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     foreach ($data->entries as $e) {
       if ($e instanceOf EntryTransversal) {
         $transaction_class = '\CCNode\Transaction\TransversalTransaction';
+        if (!$orientation) {
+          Orientation::CreateTransversal($data->entries[0]->payee, $data->entries[0]->payer);
+        }
         break;
       }
     }
+    if (!$orientation) {
+      Orientation::CreateLocal($data->entries[0]->payee, $data->entries[0]->payer);
+    }
+
     $transaction = new $transaction_class($data->uuid, $data->type, $data->state, $data->entries, $data->written, $data->version);
     if (isset($data->txID)) {
       $transaction->txID = $data->txID;

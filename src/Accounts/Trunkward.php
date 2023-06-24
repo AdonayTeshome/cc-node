@@ -134,6 +134,10 @@ class Trunkward extends Remote {
   function leafwardPath() : string {
     return $this->id .'/'. $this->relPath;
   }
+  
+  function __toString() {
+    return $this->relPath;
+  }
 
 }
 

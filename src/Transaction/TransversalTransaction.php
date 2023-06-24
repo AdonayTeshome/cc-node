@@ -26,7 +26,6 @@ class TransversalTransaction extends Transaction {
     public int $version
   ) {
     global $cc_user, $cc_config;
-    Orientation::CreateTransversal($entries[0]->payee, $entries[0]->payer);
     $entries[0]->isPrimary = TRUE;
   }
 
