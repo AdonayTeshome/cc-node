@@ -78,11 +78,13 @@ class Orientation {
     elseif ($orientation->downstreamAccount and $orientation->downstreamAccount->id == $cc_config->trunkwardAcc) {
       $orientation->trunkwardAccount = $downstreamAccount;
     }
+    return $orientation;
   }
 
   static function createLocal() {
     global $orientation;
     $orientation = new static(self::CLIENT, self::RESPONSE);
+    return $orientation;
   }
 
   function responseMode() {

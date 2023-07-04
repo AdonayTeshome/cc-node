@@ -4,8 +4,8 @@
     "label": "Bill",
     "summary": "The author bills another account, who must confirm.",
     "active": true,
+    "direction": bill,
     "creation": {
-      "by" : "payee",
       "state": "pending",
       "label": "Create",
       "confirm": true
@@ -14,17 +14,17 @@
       "pending": {
         "completed": {
           "label": "Sign",
-          "signatories": ["payer"]
+          "actors": ["payer"]
         },
         "erased": {
           "label": "Erase",
-          "signatories": ["payee"]
+          "actors": ["payee"]
         }
       },
       "completed": {
         "erased": {
           "label": "Erase",
-          "signatories": []
+          "actors": []
         }
       }
     }
@@ -34,8 +34,8 @@
     "label": "Credit",
     "summary": "The author credits another account, who must confirm.",
     "active": true,
+    "direction": credit,
     "creation": {
-      "by" : "payer",
       "state": "pending",
       "label": "Create",
       "confirm": true
@@ -44,17 +44,17 @@
       "pending": {
         "completed": {
           "label": "Sign",
-          "signatories": ["payee"]
+          "actors": ["payee"]
         },
         "erased": {
           "label": "Erase",
-          "signatories": ["payer"]
+          "actors": ["payer"]
         }
       },
       "completed": {
         "erased": {
           "label": "Erase",
-          "signatories": []
+          "actors": []
         }
       }
     }
@@ -64,8 +64,8 @@
     "label": "Disabled",
     "summary": "This workflow is not available for new transactions. (Needed for testing.)",
     "active": true,
+    "direction": credit,
     "creation": {
-      "by" : "payer",
       "state": "pending",
       "label": "Create",
       "confirm": false
@@ -74,17 +74,17 @@
       "pending": {
         "completed": {
           "label": "Sign",
-          "signatories": ["payee"]
+          "actors": ["payee"]
         },
         "erased": {
           "label": "Erase",
-          "signatories": ["payer"]
+          "actors": ["payer"]
         }
       },
       "completed": {
         "erased": {
           "label": "Erase",
-          "signatories": []
+          "actors": []
         }
       }
     }
@@ -94,8 +94,8 @@
     "label": "3rd Party",
     "summary": "Admin creates instantly with no confirmation",
     "active": true,
+    "direction": 3rdparty,
     "creation": {
-      "by" : "admin",
       "state": "completed",
       "label": "Create",
       "confirm": false
@@ -104,7 +104,7 @@
       "completed": {
         "erased": {
           "label": "Erase",
-          "signatories": []
+          "actors": []
         }
       },
       "erased": {}

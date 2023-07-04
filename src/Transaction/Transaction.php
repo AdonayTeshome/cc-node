@@ -3,6 +3,7 @@
 namespace CCNode\Transaction;
 
 use CCNode\Transaction\EntryTransversal;
+use CCNode\Orientation;
 use CCNode\BlogicRequester;
 use CCNode\Accounts\Remote;
 use CCNode\Accounts\Trunkward;
@@ -81,6 +82,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
 
   static function create(\stdClass $data) : static {
     global $cc_user, $orientation;
+    if (isset($orientation))unset($orientation);
     static::upcastEntries($data->entries);
     $data->version = $data->version??-1;
     $data->written = $data->written??'';
@@ -89,14 +91,14 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     foreach ($data->entries as $e) {
       if ($e instanceOf EntryTransversal) {
         $transaction_class = '\CCNode\Transaction\TransversalTransaction';
-        if (!$orientation) {
-          Orientation::CreateTransversal($data->entries[0]->payee, $data->entries[0]->payer);
+        if (!isset($orientation)) {
+          $orientation = Orientation::CreateTransversal($data->entries[0]->payee, $data->entries[0]->payer);
         }
         break;
       }
     }
-    if (!$orientation) {
-      Orientation::CreateLocal($data->entries[0]->payee, $data->entries[0]->payer);
+    if (!isset($orientation)) {
+      $orientation = Orientation::CreateLocal($data->entries[0]->payee, $data->entries[0]->payer);
     }
 
     $transaction = new $transaction_class($data->uuid, $data->type, $data->state, $data->entries, $data->written, $data->version);
@@ -116,7 +118,6 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
    */
   function buildValidate() : array {
     global $cc_config, $cc_user;
-
     $workflow = $this->getWorkflow();
     if (!$workflow->active) {
       // not allowed to make new transactions with non-active workflows
@@ -124,7 +125,8 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     }
     $desired_state = $workflow->creation->state;
     if (!$cc_user->admin and !$workflow->canTransitionToState($cc_user->id, $this->state, $this->entries[0], $desired_state)) {
-      throw new WorkflowViolation(type: $this->type, from: $this->state, to: $desired_state);
+      $v = new WorkflowViolation(type: $this->type, from: $this->state, to: $desired_state);
+      throw $v;
     }
     // Add fees, etc by calling on the blogic module, either internally or via REST API
     // @todo make the same function name for both.

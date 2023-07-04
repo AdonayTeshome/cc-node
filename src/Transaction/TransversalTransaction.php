@@ -4,7 +4,6 @@ namespace CCNode\Transaction;
 use CCNode\Transaction\Entry;
 use CCNode\Transaction\Transaction;
 use CCNode\Accounts\Remote;
-use CCNode\Orientation;
 use CreditCommons\TransversalTransactionTrait;
 use function \CCNode\API_calls;
 
@@ -37,6 +36,7 @@ class TransversalTransaction extends Transaction {
     $new_local_rows = parent::buildvalidate();
     if ($orientation->downstreamAccount) {
       $new_remote_rows = $orientation->downstreamAccount->relayTransaction($this);
+
       static::upcastEntries($new_remote_rows, TRUE);
       $this->entries = array_merge($this->entries, $new_remote_rows);
     }
@@ -105,13 +105,14 @@ class TransversalTransaction extends Transaction {
     global $orientation;
     $workflow = parent::getWorkflow();
     if ($orientation->upstreamAccount instanceOf Remote) {
-      // Remote accounts can ONLY be created by their authors, and only signed
-      // by participants, not admins. However this contradicts
-      // Workflow::getTransitions which allows admin to do anything.
+      // Remote transactions can ONLY be created by their authors, and acted on
+      // only by participants, not admins. However Workflow::getTransitions
+      // assumes admin can do any valid transition.
+      // Prevent admin doing any transitions that payer or payee cant do
       foreach ($workflow->states as &$state) {
         foreach ($state as $target_state => $info) {
-          if (empty($info->signatories)) {
-            $info->signatories = ['payer', 'payee'];
+          if (empty($info->actors)) {
+            $info->actors = ['payer', 'payee'];
           }
         }
       }

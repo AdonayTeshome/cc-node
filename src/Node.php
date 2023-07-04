@@ -9,7 +9,6 @@ use CCNode\Accounts\Remote;
 use CCNode\Accounts\RemoteAccountInterface;
 use CCNode\Accounts\Trunkward;
 use CCNode\Transaction\Transaction;
-use CCNode\Transaction\EntryFull;
 use CreditCommons\TransactionInterface;
 use CreditCommons\CreditCommonsInterface;
 use CreditCommons\Exceptions\HashMismatchFailure;
