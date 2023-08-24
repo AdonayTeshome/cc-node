@@ -2,7 +2,7 @@
   {
     "id": "bill",
     "label": "Bill",
-    "summary": "The author bills another account, who must confirm.",
+    "summary": "The author bills another account, which must agree.",
     "active": true,
     "direction": bill,
     "creation": {
@@ -32,7 +32,7 @@
   {
     "id": "credit",
     "label": "Credit",
-    "summary": "The author credits another account, who must confirm.",
+    "summary": "The author credits another account, which must agree.",
     "active": true,
     "direction": credit,
     "creation": {

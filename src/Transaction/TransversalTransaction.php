@@ -129,7 +129,7 @@ class TransversalTransaction extends Transaction {
       API_calls($orientation->downstreamAccount)->transactionChangeState($this->uuid, $target_state);
     }
     $saved = parent::changeState($target_state);
-    $this->responseMode = TRUE;
+    $orientation->responseMode();
     return $saved;
   }
 

@@ -1,13 +1,18 @@
 <?php
+use CCNode\Node;
+use CCNode\accountStore;
+use function CCNode\load_account;
+
 session_start();
 require_once '../vendor/autoload.php';
-$node = new \CCNode\Node(parse_ini_file('../node.ini'));
+
+$node = new Node(parse_ini_file('../node.ini'));// makes globals
 if ($_POST and !empty($_POST["user_name"]) and !empty($_POST['password'])) {
   include_once('../vendor/credit-commons/cc-node/src/Node.php');
-  if (\CCNode\accountStore('../accountstore.json')->checkCredentials($_POST["user_name"], $_POST["password"])) {
-    $_SESSION["user"] = $user->id;
+  if (accountStore('../accountstore.json')->checkCredentials($_POST['user_name'], $_POST['password'])) {
+    $_SESSION['user'] = $_POST['user_name'];
   }
-  else $_SESSION["errorMessage"] = "Invalid Credentials";
+  else $_SESSION['errorMessage'] = "Invalid Credentials";
 }
 elseif(isset($_GET['logout'])) {
   unset($_SESSION["user"]);
@@ -30,9 +35,8 @@ elseif(isset($_GET['logout'])) {
       <?php if(isset($user)): ?><li><a href="index.php?logout">Log out (<?php print $user->id; ?>)</a></li><?php endif; ?>
     </ul><hr />
     <?php
-    if (isset($_SESSION["user"])) {
-      $node = new \CCNode\Node(parse_ini_file('../node.ini'));// makes globals
-      $cc_user = \CCNode\load_account($_SESSION["user"]);
+    if (isset($_SESSION['user'])) {
+      $cc_user = load_account($_SESSION["user"]);
       return;
     }
     ?>

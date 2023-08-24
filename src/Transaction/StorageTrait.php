@@ -109,8 +109,10 @@ trait StorageTrait {
     foreach ($this->entries as $e) {
       $quant = $e->quant * $divisor;
       $isPrimary = (int)$e->isPrimary;
-      $rows[] = "($new_id, '$this->uuid', '$e->payer', '$e->payee', '$this->type', '$this->state', -$quant, $quant, -$quant, $quant, '$this->written', $isPrimary)";
-      $rows[] = "($new_id, '$this->uuid', '$e->payee', '$e->payer', '$this->type', '$this->state', +$quant, -$quant, $quant, $quant, '$this->written', $isPrimary)";
+      $payee_id = $e->payee->id;
+      $payer_id = $e->payer->id;
+      $rows[] = "($new_id, '$this->uuid', '$payer_id', '$payee_id', '$this->type', '$this->state', -$quant, $quant, -$quant, $quant, '$this->written', $isPrimary)";
+      $rows[] = "($new_id, '$this->uuid', '$payee_id', '$payer_id', '$this->type', '$this->state', +$quant, -$quant, $quant, $quant, '$this->written', $isPrimary)";
     }
     Db::query($query . implode(', ', $rows));
   }

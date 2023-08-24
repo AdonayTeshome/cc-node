@@ -89,8 +89,8 @@ class Orientation {
 
   function responseMode() {
     $this->requestPhase = self::RESPONSE;
-    if ($this->upstreamAccount == self::CLIENT) {
-      $this->target == self::CLIENT;
+    if (!is_object($this->upstreamAccount) and $this->upstreamAccount == self::CLIENT) {
+      $this->target = self::CLIENT;
     }
     elseif ($this->upstreamAccount instanceOf Trunkward) {
       $this->target = self::TRUNKWARD;

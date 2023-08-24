@@ -36,12 +36,6 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
   protected int $txID = 0;
 
   /**
-   * FALSE for request, TRUE for response mode
-   * @var Bool
-   */
-  public bool $responseMode = FALSE;
-
-  /**
    * Name of the user who wrote the latest version
    * @var string
    */

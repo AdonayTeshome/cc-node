@@ -25,7 +25,13 @@ class Node implements CreditCommonsInterface {
   function __construct(array $ini_array) {
     global $cc_workflows, $cc_config;
     $cc_config = new ConfigFromIni($ini_array);
-    $wfs = json_decode(file_get_contents('workflows.json'));
+    if (isset($_SERVER['DOCUMENT_ROOT'])) {
+      $workflows_file = $_SERVER['DOCUMENT_ROOT'] . '/workflows.json';
+    }
+    else {
+      $workflows_file = 'workflows.json';
+    }
+    $wfs = json_decode(file_get_contents($workflows_file));
     if (empty($wfs)) {
       throw new \CreditCommons\Exceptions\CCFailure('Bad json workflows file: '.$cc_config->workflowsFile);
     }
@@ -118,9 +124,10 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function getTransaction(string $uuid): array {
-    Orientation::createLocal();
+    global $orientation;
     $transaction = Transaction::loadByUuid($uuid);
-    $transaction->responseMode = TRUE;// there's nowhere tidier to put this.
+    $orientation = Orientation::createLocal();
+    $orientation->responseMode = TRUE;// there's nowhere tidier to put this.
     return [$transaction, $transaction->transitions()];
   }
 
