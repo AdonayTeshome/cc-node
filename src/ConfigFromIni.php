@@ -30,6 +30,7 @@ class ConfigFromIni implements ConfigInterface {
       $this->trunkwardAcc = '';
       $this->conversionRate = 1;
     }
-    $this->displayFormat = $ini_file['display_format'];
+    // A format of '0' is no format at all.
+    $this->displayFormat = $ini_file['display_format'] ?? '';
   }
 }

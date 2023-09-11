@@ -200,13 +200,14 @@ function upcastAccounts(\stdClass $row) : bool {
 function displayQuant(float $raw_quant) : string {
   static $main_format, $subdivision_format, $format;
   if (!isset($main_format)) {
-    $formatted = getFormat();
+    $formatted = getCurrencyDisplayFormat();
   }
   if (abs($raw_quant) < 1) {
     $negligible = TRUE;
     $raw_quant = $raw_quant > 0  ? 1 : -1;
   }
-  $subdivision_format = $formatted['subdivision'];
+  $subdivision_format = $formatted['subdivision']??NULL;
+
   if ($subdivision_format === NULL) {// If there's no subdivisions
     $formatted['main'] = $raw_quant;
     if ($pos = strrpos($formatted['main'], '.')) {
@@ -258,34 +259,38 @@ function displayQuant(float $raw_quant) : string {
   return $formatted;
 }
 
-function getFormat() : array {
+function getCurrencyDisplayFormat() : array {
   global $cc_config;
   // Replace the parts back into the number format.
-  $format = $cc_config->displayFormat;
-  // Process in chunks because having a lot of trouble with long regexes
-  $regexes = [
-    'f1' => '[^0]*',
-    'main' => '[0]+(\.(9+))?', //int
-    'f2' => ' ?<.*>[^0-9]*|[^0-9]+', // Optional text, might include html tags like img or strong
-    'subdivision' => '[0-9]+(\/[0-9]+)?', // Optional
-    'f3' => '.*' // Optional
-  ];
-  $parts = [];
-  foreach ($regexes as $key => $pattern) {
-    $result = preg_match("/$pattern/", $format, $matches);
-    // if there is a substring and no match
-    if (is_null($matches[0]) and $key <> 'f1') {
-      print_r($matches);
-      throw new \Exception('Badly formatted: '.$format .'--'. $cc_config->displayFormat);//
+  if ($format = $cc_config->displayFormat) {
+    // Process in chunks because having a lot of trouble with long regexes
+    $regexes = [
+      'f1' => '^[^0]*',//everything before the first 0
+      'main' => '^[0]+(\.(9+))?', //zero, followed optionally by . and some 9s
+      'f2' => '^ ?<.*>[^0-9]*|[^0-9]+', // Optional text, might include html tags like img or strong
+      'subdivision' => '^[0-9]+(\/[0-9]+)?', // Optional
+      'f3' => '.*' // Optional
+    ];
+    $parts = [];
+    foreach ($regexes as $key => $pattern) {
+      $result = preg_match("/$pattern/", $format, $matches);
+      // If there is a substring and no match
+      if (is_null($matches[0]) and $key <> 'f1') {
+        throw new \Exception('Badly formatted: '.$format .'--'. $cc_config->displayFormat);//
+      }
+      $parts[$key] = $matches[0];
+      // Strip the front off the string before applying the next pattern.
+      $format = substr($format, strlen($matches[0]));
+      if (!strlen($format)) {
+        break; // we reached the end of the string.
+      }
     }
-    $parts[$key] = $matches[0];
-    if ($matches[0] == $format) {
-      break;
+    if (count($parts) == 1) {
+      throw new \Exception('Format must have text and numbers.');
     }
-    $format = substr($format, strlen($matches[0]));
   }
-  if (count($parts) == 1) {
-    throw new \Exception('Format must have text and numbers.');
+  else {
+    $parts = ['main' => 0];
   }
   return $parts;
 }
