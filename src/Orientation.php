@@ -87,7 +87,7 @@ class Orientation {
     return $orientation;
   }
 
-  function responseMode() {
+  function responseMode() : void {
     $this->requestPhase = self::RESPONSE;
     if (!is_object($this->upstreamAccount) and $this->upstreamAccount == self::CLIENT) {
       $this->target = self::CLIENT;

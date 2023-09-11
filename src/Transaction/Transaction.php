@@ -94,7 +94,6 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     if (!isset($orientation)) {
       $orientation = Orientation::CreateLocal($data->entries[0]->payee, $data->entries[0]->payer);
     }
-
     $transaction = new $transaction_class($data->uuid, $data->type, $data->state, $data->entries, $data->written, $data->version);
     if (isset($data->txID)) {
       $transaction->txID = $data->txID;

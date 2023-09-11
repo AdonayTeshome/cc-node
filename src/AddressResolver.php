@@ -30,7 +30,6 @@ class AddressResolver {
   private $cache = [];
 
   function __construct(AccountStoreInterface $accountStore, string $absolute_path) {
-    global $cc_user;
     $this->accountStore = $accountStore;
     $parts = explode('/', $absolute_path);
     $this->nodeName = array_pop($parts);

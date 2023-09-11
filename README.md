@@ -156,7 +156,7 @@ Use them to make an Entry
 User the entry to make a transaction
 Validate and save the transaction
 
-You need to convert your transaction into a \CCNode\Transaction object, and then pass it to the $creditcommons to save it to the db. The transaction object checks the types of all fields and throw informative errors to help. The fields are shown in [\CreditCommons\TransactionDisplay](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/TransactionDisplay.php)
+You need to convert your transaction into a \CCNode\Transaction object, and then pass it to the $creditcommons to save it to the db. The transaction object checks the types of all fields and throw informative errors to help. The fields are shown in [\CreditCommons\BaseTransaction](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/BaseTransaction.php)
 Note that $transaction->entries is an array. Each entry must be prepared as well. The entry properties are shown in [\CreditCommons\Entry](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/Entry.php)
 
 So prepare an stdClass with the transaction properties including an array of stdClass with the entry properties.

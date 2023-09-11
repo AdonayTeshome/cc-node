@@ -1,7 +1,7 @@
 <?php
 namespace CCNode\Transaction;
 
-use CreditCommons\Account;
+use CreditCommons\BaseAccount;
 use CreditCommons\Exceptions\CCOtherViolation;
 use CreditCommons\Exceptions\SameAccountViolation;
 use function \CCNode\displayQuant;
@@ -12,8 +12,8 @@ use function \CCNode\displayQuant;
 class Entry extends \CreditCommons\Entry implements \JsonSerializable {
 
   function __construct(
-    public Account $payee,
-    public Account $payer,
+    public BaseAccount $payee,
+    public BaseAccount $payer,
     public float $quant,
     public string $author, // The author is always local and we don't need to cast it into account
     public \stdClass $metadata, // Does not recognise field type: \stdClass

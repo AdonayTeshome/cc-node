@@ -9,7 +9,7 @@ use CCNode\Accounts\Remote;
 use CCNode\Accounts\RemoteAccountInterface;
 use CCNode\Accounts\Trunkward;
 use CCNode\Transaction\Transaction;
-use CreditCommons\TransactionInterface;
+use CreditCommons\BaseTransaction;
 use CreditCommons\CreditCommonsInterface;
 use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\UnavailableNodeFailure;
@@ -25,13 +25,14 @@ class Node implements CreditCommonsInterface {
   function __construct(array $ini_array) {
     global $cc_workflows, $cc_config;
     $cc_config = new ConfigFromIni($ini_array);
-    if (isset($_SERVER['DOCUMENT_ROOT'])) {
+    if (!empty($_SERVER['DOCUMENT_ROOT'])) {
       $workflows_file = $_SERVER['DOCUMENT_ROOT'] . '/workflows.json';
     }
     else {
       $workflows_file = 'workflows.json';
     }
-    $wfs = json_decode(file_get_contents($workflows_file));
+    $contents = file_get_contents(realpath($workflows_file));
+    $wfs = json_decode($contents);
     if (empty($wfs)) {
       throw new \CreditCommons\Exceptions\CCFailure('Bad json workflows file: '.$cc_config->workflowsFile);
     }
@@ -92,7 +93,7 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function filterTransactions(array $params = []): array {
-    Orientation::createLocal();
+    global $orientation;
     $transactions = $transitions = [];
     [$uuids, $count] = Transaction::filter($params);
     if ($uuids) {
@@ -101,6 +102,7 @@ class Node implements CreditCommonsInterface {
         $transactions[] = $t;
         $transitions[$uuid] = $t->transitions();
       }
+      $orientation->responseMode();
     }
     // Transitions are returned seperately, because the leafTransaction doesn't knowo the workflow, and can't run actionlinks.
     return [$count, $transactions, $transitions];
@@ -110,12 +112,13 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function filterTransactionEntries(array $params = []): array {
-    Orientation::createLocal();
+    global $orientation;
     $results = [];
     [$uuids, $count] = Transaction::filterEntries($params);
     if ($uuids) {
       $results = Transaction::loadEntries(array_keys($uuids));
     }
+    $orientation->responseMode();
     // All entries are returned
     return [$count, $results];
   }
@@ -126,8 +129,7 @@ class Node implements CreditCommonsInterface {
   public function getTransaction(string $uuid): array {
     global $orientation;
     $transaction = Transaction::loadByUuid($uuid);
-    $orientation = Orientation::createLocal();
-    $orientation->responseMode = TRUE;// there's nowhere tidier to put this.
+    $orientation->responseMode();
     return [$transaction, $transaction->transitions()];
   }
 
@@ -136,16 +138,15 @@ class Node implements CreditCommonsInterface {
    */
   public function getTransactionEntries(string $uuid): array {
     global $orientation;
-    Orientation::createLocal();
     $entries = Transaction::loadEntriesByUuid($uuid);
     if ($orientation->target == Orientation::CLIENT) {
       foreach ($entries as $entry) {
         $entry->quant = \CCNode\displayQuant($entry->quant);
       }
     }
+    $orientation->responseMode();
     return $entries;
   }
-
 
   /**
    * {@inheritDoc}
@@ -272,7 +273,7 @@ class Node implements CreditCommonsInterface {
   /**
    * {@inheritDoc}
    */
-  public function buildValidateRelayTransaction(TransactionInterface $transaction) : array {
+  public function buildValidateRelayTransaction(BaseTransaction $transaction) : array {
     $new_rows = $transaction->buildValidate();
     $saved = $transaction->insert();
     return $new_rows;

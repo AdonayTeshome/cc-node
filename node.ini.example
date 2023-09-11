@@ -14,7 +14,7 @@ db[pass] = ""
 abs_path = "trunkward_node/my_cc_node"
 ;Conversion rate with the parent
 conversion_rate = 1.000
-;How to convert base units to a string for the user. See the README for more details.
+;How to convert base units to a string for the user. Blank or zero means display raw integer. See the README for more details.
 display_format = <strong>C$</strong>0.59
 
 ;filesystem path to json representation of workflows array @todo this should be relative, ideally

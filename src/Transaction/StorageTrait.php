@@ -10,6 +10,7 @@ use CreditCommons\Exceptions\PermissionViolation;
 use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\InvalidFieldsViolation;
 use CCNode\Db;
+use CCNode\TradeStats;
 use function CCNode\accountStore;
 
 
@@ -470,8 +471,8 @@ trait StorageTrait {
       foreach ([$row->uid1, $row->uid2] as $uid) {
         if (!isset($balances[$uid])) {
           $balances[$uid] = (object)[
-            'completed' => \CCNode\TradeStats::builder(),
-            'pending' => \CCNode\TradeStats::builder()
+            'completed' => TradeStats::builder(),
+            'pending' => TradeStats::builder()
           ];
         }
       }
@@ -488,8 +489,8 @@ trait StorageTrait {
       $missing = array_diff($all_account_names, array_keys($balances));
       foreach ($missing as $name) {
         $balances[$name] = (object)[
-          'completed' => \CCNode\TradeStats::builder(),
-          'pending' => \CCNode\TradeStats::builder()
+          'completed' => TradeStats::builder(),
+          'pending' => TradeStats::builder()
         ];
       }
     }
