@@ -4,7 +4,7 @@
     "label": "Bill",
     "summary": "The author bills another account, which must agree.",
     "active": true,
-    "direction": bill,
+    "direction": "bill",
     "creation": {
       "state": "pending",
       "label": "Create",
@@ -34,7 +34,7 @@
     "label": "Credit",
     "summary": "The author credits another account, which must agree.",
     "active": true,
-    "direction": credit,
+    "direction": "credit",
     "creation": {
       "state": "pending",
       "label": "Create",
@@ -64,7 +64,7 @@
     "label": "Disabled",
     "summary": "This workflow is not available for new transactions. (Needed for testing.)",
     "active": true,
-    "direction": credit,
+    "direction": "credit",
     "creation": {
       "state": "pending",
       "label": "Create",
@@ -94,7 +94,7 @@
     "label": "3rd Party",
     "summary": "Admin creates instantly with no confirmation",
     "active": true,
-    "direction": 3rdparty,
+    "direction": "3rdparty",
     "creation": {
       "state": "completed",
       "label": "Create",
