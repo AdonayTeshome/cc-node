@@ -242,8 +242,7 @@ class Node implements CreditCommonsInterface {
           continue;
         }
         try {
-          $acc->handshake();
-          $results[$acc->id] = 'ok';
+          $results[$acc->id] = $acc->handshake();
         }
         catch (UnavailableNodeFailure $e) {
           $results[$acc->id] = 'UnavailableNodeFailure';

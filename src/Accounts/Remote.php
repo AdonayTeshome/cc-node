@@ -76,13 +76,8 @@ abstract class Remote extends User implements RemoteAccountInterface {
    * {@inheritDoc}
    */
   public function handshake() : string {
-    try {
-      $this->API()->handshake();
-      return 'ok'; // @todo shouldn't this return nothing or fail?
-    }
-    catch (CCFailure $e) {// fails to catch.
-      return get_class($e);
-    }
+    $this->API()->handshake();
+    return 'ok'; // @todo shouldn't this return nothing or fail?
   }
 
   /**

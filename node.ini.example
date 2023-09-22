@@ -43,5 +43,4 @@ validate_pending = 1
 ;Stop on all notices and warnings.
 ;WARNING if dev_mode is on, then tests will erase the database!!!
 dev_mode=0
-;Allow remote accounts to connect without hash authentication
-spoof_acc_names[] = ''
+
