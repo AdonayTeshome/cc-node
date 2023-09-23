@@ -235,7 +235,7 @@ class Node implements CreditCommonsInterface {
       // filter excludes the trunkwards account
       $remote_accounts = AccountStore()->filter(local: FALSE);
       if($trunkw = $cc_config->trunkwardAcc) {
-        $remote_accounts[] = AccountStore()->fetch($trunkw);
+        $remote_accounts[$trunkw] = AccountStore()->fetch($trunkw);
       }
       foreach ($remote_accounts as $acc) {
         if ($acc->id == $cc_user->id) {
