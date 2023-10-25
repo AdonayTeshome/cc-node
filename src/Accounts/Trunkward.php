@@ -30,10 +30,18 @@ class Trunkward extends Remote {
    * {@inheritdoc}
    */
   public function relayTransaction(Transaction $transaction) : array {
-    $rows = parent::relayTransaction($transaction);
+    global $cc_config;
+    try {
+      $rows = parent::relayTransaction($transaction);
+    }
+    catch (TransactionLimitViolation $v) {
+      $v->diff *= $cc_config->conversionRate;
+      throw $v;
+    }
     $this->convertIncomingEntries($rows, $this->id, $this->trunkwardConversionRate);
     return $rows;
   }
+
 
 
   /**
@@ -134,7 +142,7 @@ class Trunkward extends Remote {
   function leafwardPath() : string {
     return $this->id .'/'. $this->relPath;
   }
-  
+
   function __toString() {
     return $this->relPath;
   }

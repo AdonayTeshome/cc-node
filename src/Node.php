@@ -55,7 +55,7 @@ class Node implements CreditCommonsInterface {
       $acc_ids = $remote_node->autocomplete();
       if ($remote_node instanceOf Branch and !$trunkward_acc_id) {
         foreach ($acc_ids as &$acc_id) {
-          $acc_id = $node_name .'/'.$acc_id;
+          $acc_id = $remote_node->id .'/'.$acc_id;
         }
       }
     }

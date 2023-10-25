@@ -6,7 +6,6 @@ use CCNode\Accounts\User;
 use CCNode\Transaction\Transaction;
 use CCNode\Db;
 use CreditCommons\NodeRequester;
-use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\HashMismatchFailure;
 
 

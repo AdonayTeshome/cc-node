@@ -133,27 +133,35 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
    *
    * @throws MaxLimitViolation
    * @throws MinLimitViolation
+   *
+   * @note if the request was from a trunkward node, the $diff in the violation needs to be multiplied up.
    */
   protected function checkLimits() {
-    global $cc_config;
+    global $cc_config, $orientation;
     $payee = $this->entries[0]->payee;
-    if ($payee->max or $payee->min) {
+    if ($payee->max) {
       $acc_summary = $payee->getSummary(TRUE);
       $stats = $cc_config->validatePending ? $acc_summary->pending : $acc_summary->completed;
       $payee_diff = $this->sum($payee->id);
       $projected = $stats->balance + $payee_diff;
       if ($payee_diff > 0 and $projected > $payee->max) {
-        throw new MaxLimitViolation(limit: $payee->max, projected: $projected, accId: $payee->id);
+        throw new MaxLimitViolation(
+          diff: $payee_diff *= ($orientation->upstreamAccount instanceOf Trunkward ? $cc_config->conversionRate : 1),
+          accId: $payee->id == $cc_config->trunkwardAcc ? '*' : $payee->id
+        );
       }
     }
     $payer = $this->entries[0]->payer;
-    if ($payer->max or $payer->min) {
+    if ($payer->min) {
       $acc_summary = $payer->getSummary(TRUE);
       $stats = $cc_config->validatePending ? $acc_summary->pending : $acc_summary->completed;
       $payer_diff = $this->sum($payer->id);
       $projected = $stats->balance + $payer_diff;
       if ($payer_diff < 0 and $projected < $payer->min) {
-        throw new MinLimitViolation(limit: $payer->max, projected: $projected, accId: $payer->id);
+        throw new MinLimitViolation(
+          diff: $payer_diff *= ($orientation->upstreamAccount instanceOf Trunkward ? $cc_config->conversionRate : 1),
+          accId: $payer->id == $cc_config->trunkwardAcc ? '*' : $payer->id
+        );
       }
     }
     $this->state = TransactionInterface::STATE_VALIDATED;

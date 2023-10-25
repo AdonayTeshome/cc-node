@@ -8,7 +8,8 @@ use CCNode\Accounts\Remote;
 use CreditCommons\Account;
 
 /**
- * class to track where we are in the request/response cycles
+ * Class to track where we are in the request/response cycles, and especially
+ * to determine whether to translate data for or from the trunkward node.
  */
 class Orientation {
 
@@ -26,7 +27,7 @@ class Orientation {
   public $trunkwardAccount = NULL;
 
   function __construct(
-    /**
+   /**
     * trunkward, leafward, client.
     * @var bool
     */
@@ -39,7 +40,14 @@ class Orientation {
   ) {
   }
 
-  static function createTransversal(Account $payee, Account $payer) {
+  /**
+   * Instantiate a new Orientation object.
+   *
+   * @param Account $payee
+   * @param Account $payer
+   * @return static
+   */
+  static function createTransversal(Account $payee, Account $payer) : static {
     global $cc_user, $orientation, $cc_config;
     // Find the up and downstream accounts
     $upstreamAccount = ($cc_user instanceof Remote) ? $cc_user : self::CLIENT;
@@ -87,6 +95,12 @@ class Orientation {
     return $orientation;
   }
 
+  /**
+   * Flip the orientation from request to response mode.
+   *
+   * @return void
+   * @throws CCFailure
+   */
   function responseMode() : void {
     $this->requestPhase = self::RESPONSE;
     if (!is_object($this->upstreamAccount) and $this->upstreamAccount == self::CLIENT) {
@@ -101,7 +115,11 @@ class Orientation {
     else throw new CCFailure('Failed to switch to Orientation::responseMode(): '.print_r($this->upstreamAccount, 1));
   }
 
-  // get the account where we are likely sending to, either as request or response.
+  /**
+   * Get the account where we are likely sending to, either as request or response.
+   *
+   * @return Account|NULL
+   */
   function targetNode() : Account|NULL {
     if ($this->requestPhase) return $this->downstreamAccount;
     else return $this->upstreamAccount;

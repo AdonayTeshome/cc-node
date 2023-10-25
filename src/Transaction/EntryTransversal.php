@@ -4,10 +4,10 @@ namespace CCNode\Transaction;
 
 use CCNode\Orientation;
 
-
 /**
  * Transversal entries have different classes (and hence methods) according to
  * which ledger it is shared with.
+ * 
  * @todo make a new interface for this and put some elements into cc-php-lib
  */
 class EntryTransversal extends Entry {
