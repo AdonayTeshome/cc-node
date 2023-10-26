@@ -133,18 +133,4 @@ class TransversalTransaction extends Transaction {
     return $saved;
   }
 
-  /**
-   * {@inheritDoc}
-   */
-  public function transitions() : array {
-    global $cc_user;
-    // Admin permission over a transaction can only be granted when payer or payee is local
-    if ($this->entries[0]->payer instanceof Remote and $this->entries[0]->payee instanceof Remote) {
-      $admin = FALSE;
-    }
-    else {
-      $admin = (bool)$cc_user->admin;
-    }
-    return $this->getWorkflow()->getTransitions($cc_user->id, $this, $admin);
-  }
 }

@@ -117,12 +117,14 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
       throw new DoesNotExistViolation(type: 'workflow', id: $this->type);
     }
     $desired_state = $workflow->creation->state;
-    if (!$cc_user->admin and !$workflow->canTransitionToState($cc_user->id, $this->state, $this->entries[0], $desired_state)) {
-      $v = new WorkflowViolation(type: $this->type, from: $this->state, to: $desired_state);
-      throw $v;
+    // Check the user has the right role to create this transaction.
+    $right_direction = $this->workflow->direction == 'bill' && $cc_user->id == $this->entries[0]->payee
+      or $this->workflow->direction == 'credit' && $cc_user->id == $this->entries[0]->payer
+      or $this->workflow->direction == '3rdparty';
+    if (!$right_direction){
+      throw WorkflowViolation(type: $this->type, from: $this->state, to: $desired_state);
     }
-    // Add fees, etc by calling on the blogic module, either internally or via REST API
-    // @todo make the same function name for both.
+    // Blogic both adds the new rows and returns them.
     $rows = $cc_config->blogicMod ? $this->callBlogic($cc_config->blogicMod) : [];
     $this->checkLimits();
     return $rows;
@@ -147,7 +149,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
       if ($payee_diff > 0 and $projected > $payee->max) {
         throw new MaxLimitViolation(
           diff: $payee_diff *= ($orientation->upstreamAccount instanceOf Trunkward ? $cc_config->conversionRate : 1),
-          accId: $payee->id == $cc_config->trunkwardAcc ? '*' : $payee->id
+          acc_id: $payee->id == $cc_config->trunkwardAcc ? '*' : $payee->id
         );
       }
     }
@@ -160,7 +162,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
       if ($payer_diff < 0 and $projected < $payer->min) {
         throw new MinLimitViolation(
           diff: $payer_diff *= ($orientation->upstreamAccount instanceOf Trunkward ? $cc_config->conversionRate : 1),
-          accId: $payer->id == $cc_config->trunkwardAcc ? '*' : $payer->id
+          acc_id: $payer->id == $cc_config->trunkwardAcc ? '*' : $payer->id
         );
       }
     }
@@ -227,6 +229,8 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
    * @return bool
    *   TRUE if a new version of the transaction was saved. FALSE if the transaction was deleted (transactions in validated state only)
    * @throws WorkflowViolation
+   *
+   * @note
    */
   function changeState(string $target_state) : bool {
     global $cc_user;
@@ -243,8 +247,10 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
       $this->delete();
       return FALSE;
     }
+    // Remote users who are involved in the transaction are treated as admins.
+    $skip_check = $cc_user->admin or $cc_user instanceOf Remote && Workflow::getAccRole($this, $cc_user->id);
 
-    if ($cc_user->admin or $this->getWorkflow()->canTransitionToState($cc_user->id, $this->state, $this->entries[0], $target_state)) {
+    if ($this->getWorkflow()->canTransitionToState($this, $cc_user->id, $target_state, $skip_check)) {
       $this->state = $target_state;
       $this->saveNewVersion();
       return TRUE;
@@ -283,7 +289,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
    */
   public function transitions() : array {
     global $cc_user;
-    return $this->getWorkflow()->getTransitions($cc_user->id, $this, $cc_user->admin);
+    return $this->getWorkflow()->getTransitions($cc_user->id, $this, (bool)$cc_user->admin);
   }
 
   /**

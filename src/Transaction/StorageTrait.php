@@ -38,7 +38,7 @@ trait StorageTrait {
       throw new DoesNotExistViolation(type: 'transaction', id: $uuid);
     }
     $divisor = pow(10, static::DECIMAL_PLACES);
-    $q = "SELECT payee, payer, description, quant/$divisor as quant, trunkward_quant as trunkwardQuant, author, metadata, is_primary as isPrimary "
+    $q = "SELECT id, payee, payer, description, quant/$divisor as quant, trunkward_quant as trunkwardQuant, author, metadata, is_primary as isPrimary "
       . "FROM entries "
       . "WHERE txid = $tx->txID "
       . "ORDER BY id ASC";
@@ -87,36 +87,85 @@ trait StorageTrait {
     . "VALUES ('$this->uuid', $this->version, '$this->type', '$this->state', '$cc_user->id', '$this->written')";
     $success = Db::query($query);
 
-    $new_id = Db::query("SELECT LAST_INSERT_ID() as id")->fetch_object()->id;
-    $this->writeEntries($new_id);
-
+    $new_txid = Db::query("SELECT LAST_INSERT_ID() as id")->fetch_object()->id;
+    if (empty($this->txID)) {
+      $this->writeEntries($new_txid);
+    }
+    else {
+      Db::query("UPDATE entries set txid = $new_txid WHERE txid = $this->txID");
+    }
+    $this->txID = $new_txid;
     Db::query("DELETE FROM transaction_index WHERE uuid = '$this->uuid'");
     if (in_array($this->state, static::COUNTED_STATES)) {
-      $this->writeIndex($new_id);
+      $this->writeIndex();
     }
-    $this->responseMode = TRUE; // Feels awkward but is still the best place for this.
-    return $new_id;
+    return $this->txID;
+  }
+
+
+  /**
+   * Update the entries table for subsequent versions of a transaction
+   * @param int $new_txid
+   * @return void
+   */
+  protected function writeEntries(int $new_txid) : void {
+    reset($this->entries)->primary = TRUE;
+    foreach ($this->entries as $delta => $entry) {
+      $this->entries[$delta]->id = $this->insertEntry($new_txid, $entry);
+    }
+  }
+
+  /**
+   * Save an entry to the entries table for the first time.
+   * @param int $txid
+   * @param Entry $entry
+   * @return int
+   *   The new entry id
+   * @note No database errors are anticipated.
+   */
+  private function insertEntry(int $txid, Entry $entry) : int {
+    // Calculate metadata for local storage
+    foreach (['payee', 'payer'] as $role) {
+      $$role = $name = $entry->{$role}->id;
+      if ($entry->{$role} instanceof Remote) {
+        $entry->metadata->{$name} = $entry->{$role}->relPath;
+      }
+    }
+    $metadata = serialize($entry->metadata);
+    $desc = Db::connect()->real_escape_string($entry->description);
+    $primary = $entry->primary??0;
+    $trunkward_quant = 0;
+    if ($entry->payer instanceOf Trunkward or $entry->payee instanceof Trunkward) {
+      $trunkward_quant = $entry->trunkwardQuant;
+    }
+    $quant = $entry->quant * pow(10, static::DECIMAL_PLACES);
+    $q = "INSERT INTO entries (txid, payee, payer, quant, trunkward_quant, description, author, metadata, is_primary) "
+      . "VALUES ($txid, '$payee', '$payer', $quant, $trunkward_quant, '$desc', '$entry->author', '$metadata', '$primary')";
+    return Db::query($q);
   }
 
   /**
    * Write two rows to the index table for each transaction.
-   *
-   * @param int $new_id
    */
-  private function writeIndex(int $new_id) {
+  private function writeIndex() {
     global $cc_config;
-    $query = "INSERT INTO transaction_index (id, uuid, uid1, uid2, type, state, income, expenditure, diff, volume, written, is_primary) VALUES ";
     $divisor = pow(10, static::DECIMAL_PLACES);
-    foreach ($this->entries as $e) {
-      $quant = $e->quant * $divisor;
-      $isPrimary = (int)$e->isPrimary;
-      $payee_id = $e->payee->id;
-      $payer_id = $e->payer->id;
-      $rows[] = "($new_id, '$this->uuid', '$payer_id', '$payee_id', '$this->type', '$this->state', -$quant, $quant, -$quant, $quant, '$this->written', $isPrimary)";
-      $rows[] = "($new_id, '$this->uuid', '$payee_id', '$payer_id', '$this->type', '$this->state', +$quant, -$quant, $quant, $quant, '$this->written', $isPrimary)";
-    }
-    Db::query($query . implode(', ', $rows));
+    $base = "INSERT INTO transaction_index (txid, eid, uuid, uid1, uid2, type, state, income, expenditure, diff, volume, written, is_primary) ";
+    $query1 = $base ."SELECT t.id, e.id, t.uuid, e.payer, e.payee, t.type, t.state, -e.quant * $divisor, e.quant * $divisor, -e.quant * $divisor, e.quant * $divisor, t.written, e.is_primary FROM transactions t LEFT JOIN entries e on t.id = e.txid WHERE t.id = $this->txId";
+    $query2 = $base ."SELECT t.id, e.id, t.uuid, e.payee, e.payer, t.type, t.state, e.quant * $divisor, -e.quant * $divisor, e.quant * $divisor, e.quant * $divisor, t.written, e.is_primary FROM transactions t LEFT JOIN entries e on t.id = e.txid WHERE t.id = $this->txId";
+    Db::query($query1);
+    Db::query($query2);
   }
+//    foreach ($this->entries as $e) {
+//      $quant = $e->quant * $divisor;
+//      $isPrimary = (int)$e->isPrimary;
+//      $payee_id = $e->payee->id;
+//      $payer_id = $e->payer->id;
+//      $rows[] = "($e->id, '$this->uuid', '$payer_id', '$payee_id', '$this->type', '$this->state', -$quant, $quant, -$quant, $quant, '$this->written', $isPrimary)";
+//      $rows[] = "($e->id, '$this->uuid', '$payee_id', '$payer_id', '$this->type', '$this->state', +$quant, -$quant, $quant, $quant, '$this->written', $isPrimary)";
+//    }
+//    Db::query($query . implode(', ', $rows));
+
 
 
   /**
@@ -161,54 +210,6 @@ trait StorageTrait {
       $payer_hash = $this->makeHash($payer);
       Db::query("INSERT INTO hash_history (txid, acc_id, hash) VALUES ($id, '$payer->id', '$payer_hash')");
     }
-  }
-
-  /**
-   * Update the entries table for subsequent versions of a transaction
-   * @param int $new_txid
-   * @return void
-   */
-  protected function writeEntries(int $new_txid) : void {
-    if ($this->txID) {// this transaction has already been written in an earlier state
-      $q = "UPDATE entries set txid = $new_txid WHERE txid = $this->txID";
-      Db::query($q);
-    }
-    else {// this is the first time the transaction is written properly
-      reset($this->entries)->primary = TRUE;
-      foreach ($this->entries as $entry) {
-        $this->insertEntry($new_txid, $entry);
-      }
-    }
-  }
-
-  /**
-   * Save an entry to the entries table for the first time.
-   * @param int $txid
-   * @param Entry $entry
-   * @return int
-   *   the new entry id
-   * @note No database errors are anticipated.
-   */
-  private function insertEntry(int $txid, Entry $entry) : int {
-    global $cc_config;
-    // Calculate metadata for local storage
-    foreach (['payee', 'payer'] as $role) {
-      $$role = $name = $entry->{$role}->id;
-      if ($entry->{$role} instanceof Remote) {
-        $entry->metadata->{$name} = $entry->{$role}->relPath;
-      }
-    }
-    $metadata = serialize($entry->metadata);
-    $desc = Db::connect()->real_escape_string($entry->description);
-    $primary = $entry->primary??0;
-    $trunkward_quant = 0;
-    if ($entry->payer instanceOf Trunkward or $entry->payee instanceof Trunkward) {
-      $trunkward_quant = $entry->trunkwardQuant;
-    }
-    $quant = $entry->quant * pow(10, static::DECIMAL_PLACES);
-    $q = "INSERT INTO entries (txid, payee, payer, quant, trunkward_quant, description, author, metadata, is_primary) "
-      . "VALUES ($txid, '$payee', '$payer', $quant, $trunkward_quant, '$desc', '$entry->author', '$metadata', '$primary')";
-    return $this->id = Db::query($q);
   }
 
   /**
