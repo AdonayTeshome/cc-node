@@ -21,20 +21,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
   public string $relPath = '';
   private string $lastHash;
 
-  function __construct(
-    string $id,
-    int $min,
-    int $max,
-    /**
-     * The url of the remote node
-     * @var string
-     */
-    public string $url
-  ) {
-    parent::__construct($id, $min, $max, FALSE);
-  }
-
-  static function create(\stdClass $data, string $rel_path = '') : User {
+  static function create(\stdClass $data, string $rel_path = '') : static {
     static::validateFields($data);
     $acc = new static($data->id, $data->min, $data->max, $data->url);
     $acc->relPath = $rel_path;
@@ -62,6 +49,17 @@ abstract class Remote extends User implements RemoteAccountInterface {
       }
     }
     return $this->lastHash;
+  }
+
+  /**
+   * {@inheritDoc}
+   * @param Transaction $transaction
+   *   We don't have a way of requiring it be a transversal transaction because
+   *   the object inheritance isn't flexible enough
+   */
+  function storeHash(\CreditCommons\Transaction $transaction) {
+    $hash = $transaction->makeHash($this);
+    Db::query("INSERT INTO hash_history (txid, acc_id, hash) VALUES ($transaction->txID, '$this->id', '$hash')");
   }
 
   /**

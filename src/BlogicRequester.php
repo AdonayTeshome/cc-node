@@ -18,7 +18,7 @@ class BlogicRequester extends Requester implements BlogicInterface {
    * @return \stdClass[]
    *   Simplified entries with names only for payee, payer, author.
    */
-  public function addRows(string $type, string $payee, string $payer, int $quant, string $description = '') : array {
+  public function addRows(string $type, string $payee, string $payer, $quant, string $description = '') : array {
     $query = [
       'payee' => $payee->id,
       'payer' => $payer->id,

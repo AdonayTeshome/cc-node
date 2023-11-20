@@ -14,21 +14,6 @@ use function CCNode\accountStore;
  */
 class User extends Account {
 
-  function __construct(
-    string $id,
-    int $min,
-    int $max,
-    public bool $admin
-  ) {
-    parent::__construct($id, $min, $max);
-  }
-
-  static function create(\stdClass $data, string $rel_path = '') : User {
-    $data->admin = $data->admin??FALSE;
-    static::validateFields($data);
-    return new static($data->id, $data->min, $data->max, $data->admin);
-  }
-
   /**
    * @param mixed $samples
    *   NULL means just return the raw points. 0 means show a true time record
@@ -127,10 +112,12 @@ class User extends Account {
    * {@inheritdoc}
    */
   function authenticate(string $auth_string) {
+    global $error_context;
     if (!accountStore()->compareAuthkey($this->id, $auth_string)) {
       //local user with the wrong password
       throw new PasswordViolation($auth_string);
     }
+    $error_context->user = $this->id;
   }
 
   function trunkwardPath() : string {

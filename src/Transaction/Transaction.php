@@ -8,7 +8,6 @@ use CCNode\BlogicRequester;
 use CCNode\Accounts\Remote;
 use CCNode\Accounts\Trunkward;
 use CreditCommons\Workflow;
-use CreditCommons\NewTransaction;
 use CreditCommons\TransactionInterface;
 use CreditCommons\Exceptions\MaxLimitViolation;
 use CreditCommons\Exceptions\MinLimitViolation;
@@ -24,45 +23,16 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
   use \CCNode\Transaction\StorageTrait;
 
   /**
-   * The full workflow object.
-   * @var Workflow
-   */
-  protected Workflow $workflow;
-
-  /**
-   * The database ID of the transaction, (for linking to the entries table)
+   * The database ID of the transaction
    * @var int
    */
-  protected int $txID = 0;
+  public int $txID = 0;
 
   /**
    * Name of the user who wrote the latest version
    * @var string
    */
   public string $scribe;
-
-  /**
-   * Create a new transaction from a few required fields defined upstream.
-   * @param NewTransaction $new
-   * @return TransactionInterface
-   */
-  public static function createFromNew(NewTransaction $new) : TransactionInterface {
-    $data = new \stdClass;
-    $data->uuid = $new->uuid;
-    $data->type = $new->type;
-    $data->state = TransactionInterface::STATE_INITIATED;
-    $data->version = -1; // Corresponds to state init, pre-validated.
-    $data->entries = [(object)[
-      'payee' => $new->payee,
-      'payer' => $new->payer,
-      'description' => $new->description,
-      'metadata' => $new->metadata,
-      'quant' => $new->quant,
-      'isPrimary' => TRUE
-    ]];
-    $transaction = Transaction::create($data);
-    return $transaction;
-  }
 
   public static function createFromUpstream(\stdClass $data) : TransactionInterface {
     global $cc_user, $cc_config;
@@ -111,22 +81,25 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
    */
   function buildValidate() : array {
     global $cc_config, $cc_user;
-    $workflow = $this->getWorkflow();
-    if (!$workflow->active) {
+
+    if (!$this->workflow->active) {
       // not allowed to make new transactions with non-active workflows
       throw new DoesNotExistViolation(type: 'workflow', id: $this->type);
     }
-    $desired_state = $workflow->creation->state;
+    $desired_state = $this->workflow->creation->state;
     // Check the user has the right role to create this transaction.
-    $right_direction = $this->workflow->direction == 'bill' && $cc_user->id == $this->entries[0]->payee
-      or $this->workflow->direction == 'credit' && $cc_user->id == $this->entries[0]->payer
-      or $this->workflow->direction == '3rdparty';
-    if (!$right_direction){
-      throw WorkflowViolation(type: $this->type, from: $this->state, to: $desired_state);
+    $direction = $this->workflow->direction;
+    if ($direction <> '3rdparty') {
+      $bill_payee = ($direction == 'bill' && $cc_user->id == $this->entries[0]->payee->id);
+      $credit_payer = ($direction == 'credit' && $cc_user->id == $this->entries[0]->payer->id);
+      if (!$bill_payee and !$credit_payer) {
+        throw new WorkflowViolation(type: $this->type, from: $this->state, to: $desired_state);
+      }
     }
     // Blogic both adds the new rows and returns them.
     $rows = $cc_config->blogicMod ? $this->callBlogic($cc_config->blogicMod) : [];
     $this->checkLimits();
+    $this->state = TransactionInterface::STATE_VALIDATED;
     return $rows;
   }
 
@@ -149,7 +122,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
       if ($payee_diff > 0 and $projected > $payee->max) {
         throw new MaxLimitViolation(
           diff: $payee_diff *= ($orientation->upstreamAccount instanceOf Trunkward ? $cc_config->conversionRate : 1),
-          acc_id: $payee->id == $cc_config->trunkwardAcc ? '*' : $payee->id
+          acc: $payee->id == $cc_config->trunkwardAcc ? '*' : $payee->id
         );
       }
     }
@@ -162,11 +135,10 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
       if ($payer_diff < 0 and $projected < $payer->min) {
         throw new MinLimitViolation(
           diff: $payer_diff *= ($orientation->upstreamAccount instanceOf Trunkward ? $cc_config->conversionRate : 1),
-          acc_id: $payer->id == $cc_config->trunkwardAcc ? '*' : $payer->id
+          acc: $payer->id == $cc_config->trunkwardAcc ? '*' : $payer->id
         );
       }
     }
-    $this->state = TransactionInterface::STATE_VALIDATED;
   }
 
   /**
@@ -200,27 +172,25 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
   }
 
   /**
-   * Insert the transaction for the first time
+   * Write the transaction metadata with a version number of 0.
+   *
    * @return bool
    *   FALSE if the transaction is in a temporary state
    */
   function insert() : bool {
-    // for first time transactions...
-    $workflow = $this->getWorkflow();
     // The transaction is in 'validated' state.
-    if ($workflow->creation->confirm) {
+    if ($this->workflow->creation->confirm) {
       $this->version = -1;
       $status_code = 200;
     }
     else {
       // Write the transaction immediately to its 'creation' state
-      $this->state = $workflow->creation->state;
+      $this->state = $this->workflow->creation->state;
       $this->version = 0;
       $status_code = 201;
     }
     // this adds +1 to the version.
     $this->saveNewVersion();
-
     return $status_code;
   }
 
@@ -237,11 +207,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     // If the logged in account is local, then at least one of the local accounts must be local.
     // No leaf account can manipulate transactions which only bridge this ledger.
     if ($this->entries[0]->payer instanceOf Remote and $this->entries[0]->payee instanceOf Remote and !$cc_user instanceOf Remote) {
-      throw new WorkflowViolation(
-        type: $this->type,
-        from: $this->state,
-        to: $args['dest_state'],
-      );
+      throw new WorkflowViolation(type: $this->type, from: $this->state, to: $target_state);
     }
     if ($target_state == 'null' and $this->state == 'validated') {
       $this->delete();
@@ -250,7 +216,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     // Remote users who are involved in the transaction are treated as admins.
     $skip_check = $cc_user->admin or $cc_user instanceOf Remote && Workflow::getAccRole($this, $cc_user->id);
 
-    if ($this->getWorkflow()->canTransitionToState($this, $cc_user->id, $target_state, $skip_check)) {
+    if ($this->workflow->canTransitionToState($this, $cc_user->id, $target_state, $skip_check)) {
       $this->state = $target_state;
       $this->saveNewVersion();
       return TRUE;
@@ -271,7 +237,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
    * @return int
    *   The total difference caused by this transaction to the account balance
    */
-  private function sum(string $acc_id) : int {
+  private function sum(string $acc_id) {
     $diff = 0;
     foreach ($this->entries as $entry) {
       if ($acc_id == $entry->payee->id) {
@@ -289,19 +255,36 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
    */
   public function transitions() : array {
     global $cc_user;
-    return $this->getWorkflow()->getTransitions($cc_user->id, $this, (bool)$cc_user->admin);
+    return $this->workflow->getTransitions($cc_user->id, $this, (bool)$cc_user->admin);
   }
 
   /**
-   * Load this transaction's workflow from the local json storage.
-   * @todo Sort out
+   * Retrieve this transaction's workflow from the global scope.
+   * To access the workflow normally use $this->workflow.
+   * @see __get()
    */
   public function getWorkflow() : Workflow {
     global $cc_workflows;
-    if (isset($cc_workflows[$this->type])) {
-      return $cc_workflows[$this->type];
+    foreach ($cc_workflows->tree as $node_name => $wfs) {
+      foreach ($wfs as $wf) {
+        if ($wf->id == $this->type) {
+          return $wf;
+        }
+      }
     }
     throw new DoesNotExistViolation(type: 'workflow', id: $this->type);
+  }
+
+  /**
+   *
+   * @param type $value
+   * @return type
+   */
+  public function __get($value) {
+    // Optional way to access the workflow as a property (not documented)
+    if ($value == 'workflow') {
+      return $this->getWorkflow();
+    }
   }
 
 

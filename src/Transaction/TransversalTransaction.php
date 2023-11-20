@@ -4,6 +4,7 @@ namespace CCNode\Transaction;
 use CCNode\Transaction\Entry;
 use CCNode\Transaction\Transaction;
 use CCNode\Accounts\Remote;
+use CCNode\Accounts\RemoteAccountInterface;
 use CreditCommons\TransversalTransactionTrait;
 use function \CCNode\API_calls;
 
@@ -12,7 +13,6 @@ use function \CCNode\API_calls;
  * @todo make a new interface for this.
  */
 class TransversalTransaction extends Transaction {
-
   use TransversalTransactionTrait;
 
   public function __construct(
@@ -46,7 +46,7 @@ class TransversalTransaction extends Transaction {
     // @todo this should go somewhere a bit closer to the response generation.
     if ($cc_user instanceof Remote) {
       $new_local_rows = array_filter(
-        $this->filterFor($cc_user),
+        $this->filterFor($cc_user->id),
         function($e) {return !$e->isPrimary;}
       );
     }
@@ -58,9 +58,13 @@ class TransversalTransaction extends Transaction {
    */
   public function saveNewVersion() : int {
     $id = parent::saveNewVersion();
-
     if ($this->version > 0) {
-      $this->writeHashes($id);
+      if ($this->entries[0]->payee instanceOf RemoteAccountInterface) {
+        $this->entries[0]->payee->storeHash($this);
+      }
+      if ($this->entries[0]->payer instanceOf RemoteAccountInterface) {
+        $this->entries[0]->payer->storeHash($this);
+      }
     }
     return $id;
   }
@@ -89,7 +93,8 @@ class TransversalTransaction extends Transaction {
     global $orientation;
     $orig_entries = $this->entries;
     if ($adjacentNode = $orientation->targetNode()) {
-      $this->entries = $this->filterFor($adjacentNode);
+      /** @var CreditCommons\Account $adjacentNode */
+      $this->entries = $this->filterFor($adjacentNode->id);
     }
     $array = parent::jsonSerialize();
     $this->entries = $orig_entries;
@@ -105,10 +110,14 @@ class TransversalTransaction extends Transaction {
     global $orientation;
     $workflow = parent::getWorkflow();
     if ($orientation->upstreamAccount instanceOf Remote) {
-      // Remote transactions can ONLY be created by their authors, and acted on
-      // only by participants, not admins. However Workflow::getTransitions
-      // assumes admin can do any valid transition.
-      // Prevent admin doing any transitions that payer or payee cant do
+      // Normally a payer or payee might not be allows to do a transition, but
+      // admin might be allowed.
+      // A transaction triggered by an upstream admin appears on a remote node as
+      // being triggered by a payer or payee.
+      // So we have to assume the transaction was triggered by an authorised user
+      // in that exchange.
+      // The local workflow then, must permit any existing state changes if the transition is coming from upstrea
+      // This seems to be the best place to put this logic.
       foreach ($workflow->states as &$state) {
         foreach ($state as $target_state => $info) {
           if (empty($info->actors)) {

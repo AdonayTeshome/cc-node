@@ -13,7 +13,6 @@ use CreditCommons\BaseTransaction;
 use CreditCommons\CreditCommonsInterface;
 use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\UnavailableNodeFailure;
-use CreditCommons\Workflow;
 
 /**
  * In order to implement the same CreditCommonsInterface for internal and
@@ -22,25 +21,13 @@ use CreditCommons\Workflow;
  */
 class Node implements CreditCommonsInterface {
 
+  /**
+   * Create the global variables $cc_workflows, $cc_config.
+   */
   function __construct(array $ini_array) {
     global $cc_workflows, $cc_config;
     $cc_config = new ConfigFromIni($ini_array);
-    if (!empty($_SERVER['DOCUMENT_ROOT'])) {
-      $workflows_file = $_SERVER['DOCUMENT_ROOT'] . '/workflows.json';
-    }
-    else {
-      $workflows_file = 'workflows.json';
-    }
-    $contents = file_get_contents(realpath($workflows_file));
-    $wfs = json_decode($contents);
-    if (empty($wfs)) {
-      throw new \CreditCommons\Exceptions\CCFailure('Bad json workflows file: '.$cc_config->workflowsFile);
-    }
-    // @todo This loads only from the local file, but we need to load everything
-    // from cached trunkward workflows as well.
-    foreach ($wfs as $wf) {
-      $cc_workflows[$wf->id] = new Workflow($wf);
-    }
+    $cc_workflows = new Workflows('workflows.json');
   }
 
   /**
@@ -219,6 +206,7 @@ class Node implements CreditCommonsInterface {
    */
   public function getWorkflows(): array {
     global $cc_workflows, $cc_config;
+    // if this is the case, this function might not be needed.
     return $cc_workflows;
     // bit confused about this right now...
     return [$cc_config->nodeName => $cc_workflows];

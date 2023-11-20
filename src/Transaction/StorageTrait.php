@@ -151,8 +151,8 @@ trait StorageTrait {
     global $cc_config;
     $divisor = pow(10, static::DECIMAL_PLACES);
     $base = "INSERT INTO transaction_index (txid, eid, uuid, uid1, uid2, type, state, income, expenditure, diff, volume, written, is_primary) ";
-    $query1 = $base ."SELECT t.id, e.id, t.uuid, e.payer, e.payee, t.type, t.state, -e.quant * $divisor, e.quant * $divisor, -e.quant * $divisor, e.quant * $divisor, t.written, e.is_primary FROM transactions t LEFT JOIN entries e on t.id = e.txid WHERE t.id = $this->txId";
-    $query2 = $base ."SELECT t.id, e.id, t.uuid, e.payee, e.payer, t.type, t.state, e.quant * $divisor, -e.quant * $divisor, e.quant * $divisor, e.quant * $divisor, t.written, e.is_primary FROM transactions t LEFT JOIN entries e on t.id = e.txid WHERE t.id = $this->txId";
+    $query1 = $base ."SELECT t.id, e.id, t.uuid, e.payer, e.payee, t.type, t.state, -e.quant, e.quant, -e.quant, e.quant, t.written, e.is_primary FROM transactions t LEFT JOIN entries e on t.id = e.txid WHERE t.id = $this->txID";
+    $query2 = $base ."SELECT t.id, e.id, t.uuid, e.payee, e.payer, t.type, t.state, e.quant, -e.quant, e.quant, e.quant, t.written, e.is_primary FROM transactions t LEFT JOIN entries e on t.id = e.txid WHERE t.id = $this->txID";
     Db::query($query1);
     Db::query($query2);
   }
@@ -193,23 +193,6 @@ trait StorageTrait {
     $in = '('.implode(',', $ids).')';
     Db::query("DELETE FROM transactions WHERE id IN $in");
     Db::query("DELETE FROM entries WHERE txid = $in");
-  }
-
-  /**
-   * Write hashes for the remote payer and/or payee.
-   * @param int $id
-   */
-  protected function writeHashes(int $id) {
-    $payee = $this->entries[0]->payee;
-    $payer = $this->entries[0]->payer;
-    if ($payee instanceOf Remote) {
-      $payee_hash = $this->makeHash($payee);
-      Db::query("INSERT INTO hash_history (txid, acc_id, hash) VALUES ($id, '$payee->id', '$payee_hash')");
-    }
-    if ($payer instanceOf Remote) {
-      $payer_hash = $this->makeHash($payer);
-      Db::query("INSERT INTO hash_history (txid, acc_id, hash) VALUES ($id, '$payer->id', '$payer_hash')");
-    }
   }
 
   /**

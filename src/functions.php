@@ -4,12 +4,15 @@ namespace CCNode;
 
 use CCNode\Accounts\Remote;
 use CCNode\AddressResolver;
+use CCNode\Transaction\Transaction;
+use CreditCommons\TransactionInterface;
 use CreditCommons\AccountStoreInterface;
 use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\NodeRequester;
 use CreditCommons\Account;
 use CreditCommons\CreditCommonsInterface;
+use CreditCommons\NewTransaction;
 
 /**
  * Load an account from the accountStore.
@@ -346,4 +349,26 @@ function decToFraction($float) {
     return $frac;
   }
 
+}
+
+/**
+ * Create a new transaction from a few required fields defined upstream.
+ * @param NewTransaction $new
+ * @return TransactionInterface
+ */
+function convertNewTransaction(NewTransaction $new) : Transaction {
+  $data = new \stdClass;
+  $data->uuid = $new->uuid;
+  $data->type = $new->type;
+  $data->state = TransactionInterface::STATE_INITIATED;
+  $data->version = -1; // Corresponds to state init, pre-validated.
+  $data->entries = [(object)[
+    'payee' => $new->payee,
+    'payer' => $new->payer,
+    'description' => $new->description,
+    'metadata' => $new->metadata,
+    'quant' => $new->quant,
+    'isPrimary' => TRUE
+  ]];
+  return Transaction::create($data);
 }

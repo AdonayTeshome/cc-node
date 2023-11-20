@@ -206,7 +206,7 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
         }
       }
       else {
-        $class = $data->admin ? 'Admin' : 'User';
+        $class = 'User';
       }
       $class =  'CCNode\Accounts\\'. $class;
       $acc = $class::create($data, $rel_path);

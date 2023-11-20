@@ -26,11 +26,11 @@ class TradeStats extends BaseStats {
 
   /**
    * Populate the object trade by trade
-   * @param int $diff
+   * @param $diff
    * @param string $partner
    * @param bool $isPrimary
    */
-  function logTrade(int $diff, string $partner, bool $isPrimary) : void {
+  function logTrade($diff, string $partner, bool $isPrimary) : void {
     $this->volume += (abs($diff));
     $this->balance += $diff;
     if ($diff > 0) {
