@@ -21,9 +21,9 @@
     }
   ],
   "require": {
-    "credit-commons/cc-php-lib": "^0.8",
+    "credit-commons/cc-php-lib": "^8.3",
     "ext-mysqli": "*",
-    "php": "~8.0"
+    "php": "^8"
   },
   "autoload": {
     "psr-4": {

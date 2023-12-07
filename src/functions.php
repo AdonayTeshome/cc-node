@@ -52,7 +52,7 @@ function API_calls(Remote $account = NULL) {
       return NULL;
     }
   }
-  return new NodeRequester($account->url, $cc_config->nodeName, $account->getLastHash());
+  return new NodeRequester($account, $cc_config->nodeName);
 }
 
 /**
@@ -60,6 +60,7 @@ function API_calls(Remote $account = NULL) {
  */
 function accountStore() : AccountStoreInterface {
   global $cc_config;
+if (!isset($cc_config)){print_r(debug_backtrace());exit;}
   $class = $cc_config->accountStore;
   if (filter_var($class, FILTER_VALIDATE_URL)) {
     $store = new \CCNode\AccountStoreREST(trunkwardAccName: $cc_config->trunkwardAcc);

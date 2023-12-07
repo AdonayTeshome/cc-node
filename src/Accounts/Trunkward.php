@@ -9,16 +9,7 @@ class Trunkward extends Remote {
 
   private float $trunkwardConversionRate = 1;
 
-  function __construct(
-    string $id,
-    int $min,
-    int $max,
-    /**
-     * The url of the remote node
-     * @var string
-     */
-    public string $url
-   ) {
+  function __construct($id, $min, $max, $url) {
     parent::__construct($id, $min, $max, $url);
     global $cc_config;
     if ($cc_config->conversionRate <> 1) {

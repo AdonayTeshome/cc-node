@@ -14,12 +14,20 @@ use CreditCommons\Exceptions\HashMismatchFailure;
  */
 abstract class Remote extends User implements RemoteAccountInterface {
 
-  /**
-   * The path from the node this account references, to a leaf account
-   * @var string
-   */
-  public string $relPath = '';
   private string $lastHash;
+
+  function __construct(
+    string $id,
+    int $min,
+    int $max,
+    /**
+     * The url of the remote node
+     * @var string
+     */
+    protected string $url
+   ) {
+    parent::__construct($id, $min, $max);
+  }
 
   static function create(\stdClass $data, string $rel_path = '') : static {
     static::validateFields($data);
@@ -148,7 +156,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
    */
   protected function API() : NodeRequester {
     global $cc_config;
-    return new NodeRequester($this->url, $cc_config->nodeName, $this->getLastHash());
+    return new NodeRequester($this, $cc_config->nodeName);
   }
 
   /**
@@ -166,12 +174,15 @@ abstract class Remote extends User implements RemoteAccountInterface {
     return $this->id . '/'.$this->relPath;
   }
 
-
   /**
    * {@inheritDoc}
    */
   function getConversionRate() : \stdClass {
     return $this->api()->about($this->relPath);
+  }
+
+  function getUrl() : string {
+    return $this->url;
   }
 
 }

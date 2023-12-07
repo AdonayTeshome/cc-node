@@ -113,7 +113,21 @@ The main task thing is to tell the node what accounts you have on your system. T
 
 Use the [AccountStoreTemplate](t.b.d) class to get started. Keep all the function definitions and return types the same.
 
-### Configuration
+### Initiation
+If you are not already using composer, put this in your code before any credit commons code is run:
+
+    require_once './vendor/autoload.php';
+
+Before doing any ledger operation, initiate the credit commons object like this:
+
+    $creditcommons = new \CCNode\Node($cc_config);
+
+The $creditcommons object is what reads and writes to the ledger.
+
+
+### Initiation
+Before creating the CCNode\Node object, some application level variables must be created.
+
 You need to initiate the Credit Commons node with a config class, which has all the right property names like in [ConfigFromIni](https://gitlab.com/credit-commons/cc-node/-/blob/master/src/ConfigFromIni.php)
 
 You can just declare a config class and set the values there. The class would look like:
@@ -138,17 +152,6 @@ Copy ```vendor/credit-commons/cc-node/node.ini.example``` to ```node.ini``` in y
     $cc_config = new MyConfigClass(parse_ini_file('node.ini'));
 
 You can find more about what the config values mean in node.ini.
-
-### Initiation
-If you are not already using composer, put this in your code before any credit commons code is run:
-
-    require_once './vendor/autoload.php';
-
-Before doing any ledger operation, initiate the credit commons object like this:
-
-    $creditcommons = new \CCNode\Node($cc_config);
-
-The $creditcommons object is what reads and writes to the ledger.
 
 ### Saving a transaction
 Retrieve the payee/payer users

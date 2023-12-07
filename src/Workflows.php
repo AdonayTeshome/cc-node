@@ -24,14 +24,8 @@ class Workflows extends \CreditCommons\Workflows {
    * @param string $file_path
    * @throws \CreditCommons\Exceptions\CCFailure
    */
-  function __construct(string $file_path) {
-    if (!file_exists($file_path)) {
-      throw new \CreditCommons\Exceptions\CCFailure('Missing $file_path file at '.getcwd());
-    }
-    $this->local = json_decode(file_get_contents($file_path));
-    if (empty($this->local)) {
-      throw new \CreditCommons\Exceptions\CCFailure('Bad json workflows file');
-    }
+  function __construct(array $raw_workflows) {
+    $this->local = $raw_workflows;
     parent::__construct(API_calls());
   }
 
@@ -46,8 +40,9 @@ class Workflows extends \CreditCommons\Workflows {
         $wf = new Workflow($wf_data);
         $local[$wf->gethash()] = $wf;
       }
+      // Get the trunkward workflows and merge them with the local ones.
       $tree = parent::loadAll();
-      // Now compare the hashes, and where similar, replace the trunkward one with the local translation.
+      // Replace trunkward workflows with local (translated) versions.
       foreach ($tree as $node_name => $wfs) {
         foreach ($wfs as $hash => $wf) {
           if (isset($local[$hash])) {
@@ -56,7 +51,7 @@ class Workflows extends \CreditCommons\Workflows {
           }
         }
       }
-      // any remaining local workflows are listed under this node.
+      // Only remaining local workflows are in fact local.
       if ($local) {
         $tree[$cc_config->nodeName] = $local;
       }

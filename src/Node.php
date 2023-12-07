@@ -24,10 +24,14 @@ class Node implements CreditCommonsInterface {
   /**
    * Create the global variables $cc_workflows, $cc_config.
    */
-  function __construct(array $ini_array) {
+  function __construct() {
     global $cc_workflows, $cc_config;
-    $cc_config = new ConfigFromIni($ini_array);
-    $cc_workflows = new Workflows('workflows.json');
+    if (!isset($cc_workflows) or !$cc_workflows instanceOf Workflows) {
+      throw new \Exception('Cannot initiate \CCNode\Node before creating global $cc_workflows');
+    }
+    if (!isset($cc_config) or !$cc_config instanceOf \CCNode\ConfigInterface) {
+      throw new \Exception('Cannot initiate \CCNode\Node before creating global $cc_config');
+    }
   }
 
   /**
@@ -199,17 +203,6 @@ class Node implements CreditCommonsInterface {
    */
   public function getOptions(): array {
     return permitted_operations();
-  }
-
-  /**
-   * {@inheritDoc}
-   */
-  public function getWorkflows(): array {
-    global $cc_workflows, $cc_config;
-    // if this is the case, this function might not be needed.
-    return $cc_workflows;
-    // bit confused about this right now...
-    return [$cc_config->nodeName => $cc_workflows];
   }
 
   /**

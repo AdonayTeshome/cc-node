@@ -15,6 +15,12 @@ use function CCNode\accountStore;
 class User extends Account {
 
   /**
+   * The path from the node this account references, to a leaf account
+   * @var string
+   */
+  public string $relPath;
+
+  /**
    * @param mixed $samples
    *   NULL means just return the raw points. 0 means show a true time record
    *   with a stepped appearance. otherwise return the number of points to smooth to
@@ -129,7 +135,6 @@ class User extends Account {
     global $cc_config;
     return  "$cc_config->nodeName/$this->id";
   }
-
 
 }
 
