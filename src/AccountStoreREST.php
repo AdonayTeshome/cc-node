@@ -176,7 +176,7 @@ class AccountStoreRest extends Requester implements AccountStoreInterface {
    * {@inheritdoc}
    */
   public function anonAccount() : Account {
-    $obj = ['id' => '-anon-', 'max' => 0, 'min' => 0, 'key' => ''];
+    $obj = ['id' => '-anon-', 'max' => 0, 'min' => 0, 'key' => '', 'admin' => FALSE];
     return User::create((object)$obj);
   }
 

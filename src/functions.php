@@ -244,8 +244,8 @@ function displayQuant(float $raw_quant) : string {
       $formatted['subdivision'] = str_pad($formatted['subdivision'], $pad_length, '0', STR_PAD_LEFT);
     }
   }
-  elseif ($pos = strpos($main_format, '.')) {
-    $dps = strlen($main_format) - ($pos+1);
+  elseif ($pos = strpos($formatted['main'], '.')) {
+    $dps = strlen($formatted['main']) - ($pos+1);
     $formatted['main'] = number_format((float)$formatted['main'], $dps, '.', '');
   }
   if ($raw_quant < 0) {

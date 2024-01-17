@@ -109,7 +109,7 @@ trait StorageTrait {
    * @return void
    */
   protected function writeEntries(int $new_txid) : void {
-    reset($this->entries)->primary = TRUE;
+    reset($this->entries)->isPrimary = TRUE;
     foreach ($this->entries as $delta => $entry) {
       $this->entries[$delta]->id = $this->insertEntry($new_txid, $entry);
     }
@@ -133,7 +133,7 @@ trait StorageTrait {
     }
     $metadata = serialize($entry->metadata);
     $desc = Db::connect()->real_escape_string($entry->description);
-    $primary = $entry->primary??0;
+    $primary = $entry->isPrimary??0;
     $trunkward_quant = 0;
     if ($entry->payer instanceOf Trunkward or $entry->payee instanceof Trunkward) {
       $trunkward_quant = $entry->trunkwardQuant;
