@@ -27,10 +27,11 @@ CREATE TABLE entries (
   trunkward_quant tinytext,
   author varchar(32) NOT NULL,
   is_primary tinyint NOT NULL DEFAULT 0 comment 'boolean',
-  metadata text(1024) COMMENT 'serialised stdClass'
+  metadata text(1024) COMMENT 'serialised stdClass',
+  primary key (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT = 'These are written once and theoretically never change';
 
-ALTER TABLE entries ADD PRIMARY KEY (id);
+# ALTER TABLE entries ADD PRIMARY KEY (id);
 
 DROP TABLE IF EXISTS hash_history;
 CREATE TABLE `hash_history` (
@@ -57,7 +58,7 @@ CREATE TABLE `transaction_index` (
   written datetime NOT NULL,
   is_primary int NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT = 'Pending and completed transactions';
-ALTER TABLE `credcom_twig1`.`transaction_index` ADD UNIQUE `unique` (`txid`, `eid`, `uid1`); 
+ALTER TABLE `transaction_index` ADD UNIQUE `unique` (`txid`, `eid`, `uid1`); 
 
 DROP TABLE IF EXISTS log;
 CREATE TABLE log (
