@@ -4,6 +4,7 @@ namespace CCNode\Transaction;
 
 use CCNode\Accounts\Trunkward;
 use CCNode\Transaction\Entry;
+use CCNode\Transaction\EntryFull;
 use CCNode\Accounts\Remote;
 use CreditCommons\Exceptions\DoesNotExistViolation;
 use CreditCommons\Exceptions\PermissionViolation;
@@ -156,17 +157,6 @@ trait StorageTrait {
     Db::query($query1);
     Db::query($query2);
   }
-//    foreach ($this->entries as $e) {
-//      $quant = $e->quant * $divisor;
-//      $isPrimary = (int)$e->isPrimary;
-//      $payee_id = $e->payee->id;
-//      $payer_id = $e->payer->id;
-//      $rows[] = "($e->id, '$this->uuid', '$payer_id', '$payee_id', '$this->type', '$this->state', -$quant, $quant, -$quant, $quant, '$this->written', $isPrimary)";
-//      $rows[] = "($e->id, '$this->uuid', '$payee_id', '$payer_id', '$this->type', '$this->state', +$quant, -$quant, $quant, $quant, '$this->written', $isPrimary)";
-//    }
-//    Db::query($query . implode(', ', $rows));
-
-
 
   /**
    * @param string $acc_id
@@ -238,7 +228,6 @@ trait StorageTrait {
   }
 
   /**
-   *
    * @param array $params
    * @return array
    *   0 is a list of uuid and 1 is the total number of results.

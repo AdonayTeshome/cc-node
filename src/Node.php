@@ -13,6 +13,7 @@ use CreditCommons\BaseTransaction;
 use CreditCommons\CreditCommonsInterface;
 use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\UnavailableNodeFailure;
+use function CreditCommons\displayQuant;
 
 /**
  * In order to implement the same CreditCommonsInterface for internal and
@@ -128,13 +129,8 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function getTransactionEntries(string $uuid): array {
-    global $orientation;
+    global $orientation, $cc_config;
     $entries = Transaction::loadEntriesByUuid($uuid);
-    if ($orientation->target == Orientation::CLIENT) {
-      foreach ($entries as $entry) {
-        $entry->quant = \CCNode\displayQuant($entry->quant);
-      }
-    }
     $orientation->responseMode();
     return $entries;
   }

@@ -4,7 +4,7 @@ namespace CCNode\Transaction;
 use CreditCommons\BaseAccount;
 use CreditCommons\Exceptions\CCOtherViolation;
 use CreditCommons\Exceptions\SameAccountViolation;
-use function \CCNode\displayQuant;
+use function CreditCommons\displayQuant;
 
 /**
  * Determine the account types for entries.
@@ -75,16 +75,17 @@ class Entry extends \CreditCommons\Entry implements \JsonSerializable {
   }
 
   /**
-   * Serialise to send to client or blogic service.
+   * Serialise to send to client (or blogic service).
    * @return mixed
    */
   public function jsonSerialize() : mixed {
-    // This local Entry can only be serialized to return to the client.
+    global $cc_config;
+    // Local entries are only ever serialized for sending to the client.
     $array = [
       // Trunkward path is best if we don't have context.
       'payee' => (string)$this->payee,
       'payer' => (string)$this->payer,
-      'quant' => displayQuant($this->quant),
+      'quant' => $this->quant,
       'description' => $this->description,
       'metadata' => $this->metadata
     ];

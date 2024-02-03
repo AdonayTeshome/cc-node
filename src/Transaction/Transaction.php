@@ -127,7 +127,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
       }
     }
     $payer = $this->entries[0]->payer;
-    if ($payer->min) {
+    if (!is_null($payer->min)) {
       $acc_summary = $payer->getSummary(TRUE);
       $stats = $cc_config->validatePending ? $acc_summary->pending : $acc_summary->completed;
       $payer_diff = $this->sum($payer->id);

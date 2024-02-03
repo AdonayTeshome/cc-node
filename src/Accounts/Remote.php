@@ -14,6 +14,10 @@ use CreditCommons\Exceptions\HashMismatchFailure;
  */
 abstract class Remote extends User implements RemoteAccountInterface {
 
+  /**
+   * Saves recalculating.
+   * @var string
+   */
   private string $lastHash;
 
   function __construct(
@@ -156,7 +160,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
    */
   protected function API() : NodeRequester {
     global $cc_config;
-    return new NodeRequester($this, $cc_config->nodeName);
+    return new NodeRequester($this, $cc_config->nodeName, $this->getLastHash());
   }
 
   /**
