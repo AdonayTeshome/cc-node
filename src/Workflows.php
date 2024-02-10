@@ -5,10 +5,10 @@ use CreditCommons\Workflow;
 use CCNode\API_calls;
 
 /**
- * incorporates locally stored workflows into the json tree.
+ * incorporates locally stored workflows
  *
- * @todo Write the aggregated workflows somewhere, somehow so the tree doesn't
- *   need to be build every request. But the app so far doesn't have write
+ * @todo Write the aggregated workflows somewhere, somehow it doesn't
+ *   need to be built every request. But the app so far doesn't have write
  *   permission for files, and there's no suitable database table.
  */
 class Workflows extends \CreditCommons\Workflows {
@@ -25,38 +25,38 @@ class Workflows extends \CreditCommons\Workflows {
    * @throws \CreditCommons\Exceptions\CCFailure
    */
   function __construct(array $raw_workflows) {
-    $this->local = $raw_workflows;
+    global $cc_config;
+    foreach ($raw_workflows as $id => $wf) {
+      $wf->home = $cc_config->nodeName;
+      $this->local[$id] = $wf;
+    }
     parent::__construct(API_calls());
   }
 
   /**
-   * Incorporate the local workflows into the tree, overriding any similar w
-   * workflows declared by more trunkward nodes.
+   * Incorporate the local workflows, overriding any similar workflows declared
+   * by more trunkward nodes.
    */
   function loadAll() : array {
-    global $cc_config;
     if ($this->local) {
       foreach ($this->local as $wf_data) {
         $wf = new Workflow($wf_data);
         $local[$wf->gethash()] = $wf;
       }
       // Get the trunkward workflows and merge them with the local ones.
-      $tree = parent::loadAll();
+      $all_wfs = parent::loadAll();
       // Replace trunkward workflows with local (translated) versions.
-      foreach ($tree as $node_name => $wfs) {
-        foreach ($wfs as $hash => $wf) {
-          if (isset($local[$hash])) {
-            $tree[$node_name][$hash] = $local[$hash];
-            unset($local[$hash]);
-          }
+      foreach ($all_wfs as $hash => $wf) {
+        if (isset($local[$hash])) {
+          $all_wfs[$hash] = $local[$hash];
+          $all_wfs[$hash]->home = $wf->home;
+          unset($local[$hash]);
         }
       }
       // Only remaining local workflows are in fact local.
-      if ($local) {
-        $tree[$cc_config->nodeName] = $local;
-      }
+      $all_wfs += $local;
     }
-    return $tree;
+    return $all_wfs;
   }
 
 }

@@ -5,14 +5,15 @@ namespace CCNode;
 use CCNode\Accounts\Remote;
 use CCNode\AddressResolver;
 use CCNode\Transaction\Transaction;
-use CreditCommons\TransactionInterface;
+use CreditCommons\Account;
+use CreditCommons\AccountRemoteInterface;
 use CreditCommons\AccountStoreInterface;
+use CreditCommons\TransactionInterface;
+use CreditCommons\NewTransaction;
+use CreditCommons\NodeRequester;
 use CreditCommons\Exceptions\CCFailure;
 use CreditCommons\Exceptions\DoesNotExistViolation;
-use CreditCommons\NodeRequester;
-use CreditCommons\Account;
 use CreditCommons\CreditCommonsInterface;
-use CreditCommons\NewTransaction;
 
 /**
  * Load an account from the accountStore.
@@ -43,7 +44,7 @@ function load_account(string $local_acc_id = NULL, string $rel_path = '') : Acco
  * @return NodeRequester|NULL
  */
 function API_calls(Remote $account = NULL) {
-  global $cc_config;
+  global $cc_config, $cc_user;
   if (!$account) {
     if ($bot = $cc_config->trunkwardAcc) {
       $account = load_account($bot);
@@ -52,7 +53,11 @@ function API_calls(Remote $account = NULL) {
       return NULL;
     }
   }
-  return new NodeRequester($account, $cc_config->nodeName);
+  $requester = new NodeRequester($account->getUrl(), $cc_config->nodeName, $account->getLastHash());
+  if (!($cc_user instanceOf AccountRemoteInterface)){
+    $requester->catch = TRUE;
+  }
+  return $requester;
 }
 
 /**

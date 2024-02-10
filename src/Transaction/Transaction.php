@@ -265,11 +265,9 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
    */
   public function getWorkflow() : Workflow {
     global $cc_workflows;
-    foreach ($cc_workflows->tree as $node_name => $wfs) {
-      foreach ($wfs as $wf) {
-        if ($wf->id == $this->type) {
-          return $wf;
-        }
+    foreach ($cc_workflows->all as $wf) {
+      if ($wf->id == $this->type) {
+        return $wf;
       }
     }
     throw new DoesNotExistViolation(type: 'workflow', id: $this->type);

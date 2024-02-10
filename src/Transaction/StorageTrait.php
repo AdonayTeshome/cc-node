@@ -134,7 +134,7 @@ trait StorageTrait {
     }
     $metadata = serialize($entry->metadata);
     $desc = Db::connect()->real_escape_string($entry->description);
-    $primary = $entry->isPrimary??0;
+    $primary = $entry->isPrimary? 1 : 0;
     $trunkward_quant = 0;
     if ($entry->payer instanceOf Trunkward or $entry->payee instanceof Trunkward) {
       $trunkward_quant = $entry->trunkwardQuant;
@@ -470,7 +470,6 @@ trait StorageTrait {
     return $balances;
   }
 
-
   /**
    * @param string $uuid
    * @return static[]
@@ -500,8 +499,6 @@ trait StorageTrait {
     }
     return $entries;
   }
-
-
 
   /**
    * Load a flat entry from the database, returning items in the order given.

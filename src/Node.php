@@ -4,16 +4,14 @@ namespace CCNode;
 
 use CCNode\Accounts\Branch;
 use CCNode\AddressResolver;
-use CCNode\Orientation;
 use CCNode\Accounts\Remote;
 use CCNode\Accounts\RemoteAccountInterface;
 use CCNode\Accounts\Trunkward;
 use CCNode\Transaction\Transaction;
-use CreditCommons\BaseTransaction;
+use CreditCommons\TransactionInterface;
 use CreditCommons\CreditCommonsInterface;
 use CreditCommons\Exceptions\HashMismatchFailure;
 use CreditCommons\Exceptions\UnavailableNodeFailure;
-use function CreditCommons\displayQuant;
 
 /**
  * In order to implement the same CreditCommonsInterface for internal and
@@ -68,7 +66,8 @@ class Node implements CreditCommonsInterface {
         if ($name == $cc_config->trunkwardAcc) continue;
         // Add a slash to the leafward accounts to indicate they are nodes not accounts
         if ($acc instanceOf RemoteAccountInterface) $name .= '/';
-        if ($cc_user instanceOf RemoteAccountInterface) {
+        // If this is the trunk node, don't prefix the trunk name.
+        if ($cc_config->trunkwardAcc and $cc_user instanceOf RemoteAccountInterface) {
           $local[] = $node_name."/$name";
         }
         else {
@@ -110,7 +109,8 @@ class Node implements CreditCommonsInterface {
     if ($uuids) {
       $results = Transaction::loadEntries(array_keys($uuids));
     }
-    $orientation->responseMode();
+    // Actually this hasnt been initiated
+    //$orientation->responseMode();
     // All entries are returned
     return [$count, $results];
   }
@@ -131,7 +131,7 @@ class Node implements CreditCommonsInterface {
   public function getTransactionEntries(string $uuid): array {
     global $orientation, $cc_config;
     $entries = Transaction::loadEntriesByUuid($uuid);
-    $orientation->responseMode();
+    //$orientation->responseMode();
     return $entries;
   }
 
@@ -204,11 +204,11 @@ class Node implements CreditCommonsInterface {
   /**
    * {@inheritDoc}
    */
-  public function handshake(): array {
+  public function handshake(bool $extended = FALSE): array {
     global $cc_user, $cc_config;
     $results = [];
     // This ensures the handshakes only go one level deep.
-    if ($cc_user instanceOf Accounts\User) {
+    if ($extended and $cc_user instanceOf Accounts\User) {
       // filter excludes the trunkwards account
       $remote_accounts = AccountStore()->filter(local: FALSE);
       if($trunkw = $cc_config->trunkwardAcc) {
@@ -249,7 +249,7 @@ class Node implements CreditCommonsInterface {
   /**
    * {@inheritDoc}
    */
-  public function buildValidateRelayTransaction(BaseTransaction $transaction) : array {
+  public function buildValidateRelayTransaction(TransactionInterface $transaction) : array {
     $new_rows = $transaction->buildValidate();
     $saved = $transaction->insert();
     return $new_rows;

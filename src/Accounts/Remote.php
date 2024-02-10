@@ -5,7 +5,7 @@ namespace CCNode\Accounts;
 use CCNode\Accounts\User;
 use CCNode\Transaction\Transaction;
 use CCNode\Db;
-use CreditCommons\NodeRequester;
+use function CCNode\API_calls;
 use CreditCommons\Exceptions\HashMismatchFailure;
 
 
@@ -78,14 +78,14 @@ abstract class Remote extends User implements RemoteAccountInterface {
    * {@inheritDoc}
    */
   public function relayTransaction(Transaction $transaction) : array {
-    return $this->API()->buildValidateRelayTransaction($transaction);
+    return API_calls($this)->buildValidateRelayTransaction($transaction);
   }
 
   /**
    * {@inheritDoc}
    */
   public function handshake() : string {
-    $this->API()->handshake();
+    API_calls($this)->handshake();
     return 'ok'; // @todo shouldn't this return nothing or fail?
   }
 
@@ -93,7 +93,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
    * {@inheritDoc}
    */
   function autocomplete() : array {
-    return $this->API()->accountNameFilter($this->relPath);
+    return API_calls($this)->accountNameFilter($this->relPath);
   }
 
   /**
@@ -105,7 +105,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
     }
     else {
       // An account on another (branchward) node
-      $result = $this->API()->getAccountSummary($this->relPath);
+      $result = API_calls($this)->getAccountSummary($this->relPath);
       $result = reset($result);
     }
     return $result;
@@ -116,7 +116,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
    */
   function getAllSummaries() : array {
     // the relPath should have a slash at the end of it.
-    return $this->API()->getAccountSummary($this->relPath);
+    return API_calls($this)->getAccountSummary($this->relPath);
   }
 
   /**
@@ -124,7 +124,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
    */
   function getLimits($force_local = FALSE) : \stdClass {
     if ($this->relPath) {
-      $result = $this->API()->getAccountLimits($this->relPath);
+      $result = API_calls($this)->getAccountLimits($this->relPath);
       // Always returns an array
       $result = reset($result);
     }
@@ -136,7 +136,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
 
   function getAllLimits() : array {
     // the relPath should always have a slash at the end of it.
-    return $this->API()->getAccountLimits($this->relPath);
+    return API_calls($this)->getAccountLimits($this->relPath);
   }
 
   /**
@@ -144,7 +144,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
    */
   function getHistory(int $samples = -1) : array {
     if ($path = $this->relPath) {
-      $result = (array)$this->api()->getAccountHistory($path, $samples);
+      $result = (array)API_calls($this)->getAccountHistory($path, $samples);
       if ($rate = $this->trunkwardConversionRate) {
         $result = array_map(function ($v) use ($rate) {return ceil($v/$rate);}, $result);
       }
@@ -153,14 +153,6 @@ abstract class Remote extends User implements RemoteAccountInterface {
       $result = (array)parent::getHistory($samples);
     }
     return $result;
-  }
-
-  /**
-   * {@inheritDoc}
-   */
-  protected function API() : NodeRequester {
-    global $cc_config;
-    return new NodeRequester($this, $cc_config->nodeName, $this->getLastHash());
   }
 
   /**
@@ -182,7 +174,7 @@ abstract class Remote extends User implements RemoteAccountInterface {
    * {@inheritDoc}
    */
   function getConversionRate() : \stdClass {
-    return $this->api()->about($this->relPath);
+    return API_calls($this)->about($this->relPath);
   }
 
   function getUrl() : string {
