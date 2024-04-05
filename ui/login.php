@@ -5,8 +5,19 @@ use function CCNode\load_account;
 
 session_start();
 require_once '../vendor/autoload.php';
+// Creates the required global $error_context.
+ErrorContext::Create(
+  node: $cc_config->nodeName,
+  path: '/ui',
+  method: 'get',
+  user: '- anon -'
+);
 
-$node = new Node(parse_ini_file('../node.ini'));// makes globals
+global $cc_config, $cc_worflows;
+$cc_config = CCNodeConfig::createFromIniArray(parse_ini_file('../node.ini'));
+$cc_workflows = new Workflows(json_decode(file_get_contents('../workflows.json')));
+
+$node = new Node();
 if ($_POST and !empty($_POST["user_name"]) and !empty($_POST['password'])) {
   include_once('../vendor/credit-commons/cc-node/src/Node.php');
   if (accountStore('../accountstore.json')->checkCredentials($_POST['user_name'], $_POST['password'])) {

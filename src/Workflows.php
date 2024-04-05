@@ -5,11 +5,10 @@ use CreditCommons\Workflow;
 use CCNode\API_calls;
 
 /**
- * incorporates locally stored workflows
+ * Incorporates locally stored workflows
  *
- * @todo Write the aggregated workflows somewhere, somehow it doesn't
- *   need to be built every request. But the app so far doesn't have write
- *   permission for files, and there's no suitable database table.
+ * @todo Store the aggregated workflows somewhere so they don't have to be
+ * assembled every request.
  */
 class Workflows extends \CreditCommons\Workflows {
 
@@ -21,7 +20,7 @@ class Workflows extends \CreditCommons\Workflows {
 
   /**
    *
-   * @param string $file_path
+   * @param array $raw_workflows
    * @throws \CreditCommons\Exceptions\CCFailure
    */
   function __construct(array $raw_workflows) {

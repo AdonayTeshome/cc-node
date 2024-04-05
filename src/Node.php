@@ -40,10 +40,17 @@ class Node implements CreditCommonsInterface {
     global $cc_user, $cc_config;
     $node_name = $cc_config->nodeName;
     $trunkward_acc_id = $cc_config->trunkwardAcc;
-    $remote_node = AddressResolver::create()->nodeAndFragment($rel_path);
-    if ($remote_node) {// Match names on a specific node.
-      $acc_ids = $remote_node->autocomplete();
+    // Find out if the request is for this node or whether to forward it.
+    try {
+      // Autocomplete on remote nodes is not supported for clearing central
+      $remote_node = AddressResolver::create()->nodeAndFragment($rel_path);
+    }
+    catch(DoesNotExistViolation $e) {
+      return [];
+    }
+    if (isset($remote_node)) {// Match names on a specific node.
       if ($remote_node instanceOf Branch and !$trunkward_acc_id) {
+        $acc_ids = $remote_node->autocomplete();
         foreach ($acc_ids as &$acc_id) {
           $acc_id = $remote_node->id .'/'.$acc_id;
         }
@@ -60,13 +67,13 @@ class Node implements CreditCommonsInterface {
       $local = [];
       foreach ($filtered as $acc) {
         $name = $acc->id;
-        // Exclude the logged in account
+        // Exclude the logged in account.
         if ($cc_user instanceOf RemoteAccountInterface and $name == $cc_user->id) continue;
-        // Exclude the trunkwards account'
+        // Exclude the trunkwards account.
         if ($name == $cc_config->trunkwardAcc) continue;
-        // Add a slash to the leafward accounts to indicate they are nodes not accounts
+        // Add a slash to the leafward accounts to indicate they are nodes not accounts.
         if ($acc instanceOf RemoteAccountInterface) $name .= '/';
-        // If this is the trunk node, don't prefix the trunk name.
+        // Prefix the trunk name unless this is the trunk.
         if ($cc_config->trunkwardAcc and $cc_user instanceOf RemoteAccountInterface) {
           $local[] = $node_name."/$name";
         }
@@ -159,17 +166,18 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function getAccountLimits(string $acc_id): array {
-    $account = AddressResolver::create()->getLocalAccount($acc_id);
-    if ($account instanceof Remote) {
-      if (!$account->isNode()) {// All the accounts on a remote node
+    if ($account = AddressResolver::create()->getLocalAccount($acc_id)) {
+      if ($account instanceof Remote) {
+        if (!$account->isNode()) {// All the accounts on a remote node
+          $results = [$account->id => $account->getLimits()];
+        }
+        else {
+          $results = $account->getAllLimits();
+        }
+      }
+      elseif ($account) {
         $results = [$account->id => $account->getLimits()];
       }
-      else {
-        $results = $account->getAllLimits();
-      }
-    }
-    elseif ($account) {
-      $results = [$account->id => $account->getLimits()];
     }
     else {// All accounts on the current node.
       $results = accountStore()->allLimits(TRUE);
@@ -181,12 +189,13 @@ class Node implements CreditCommonsInterface {
    * {@inheritDoc}
    */
   public function getAccountSummary(string $acc_id = ''): array {
-    $account = AddressResolver::create()->getLocalAccount($acc_id);
-    if ($account instanceOf Remote and $account->isNode()) {
-      $results = $account->getAllSummaries();
-    }
-    elseif ($account) {
-      $results = [$account->id => $account->getSummary()];
+    if ($account = AddressResolver::create()->getLocalAccount($acc_id)) {
+      if ($account instanceOf Remote and $account->isNode()) {
+        $results = $account->getAllSummaries();
+      }
+      elseif ($account) {
+        $results = [$account->id => $account->getSummary()];
+      }
     }
     else {// All accounts on the current node.
       $results = Transaction::getAccountSummaries(TRUE);
@@ -269,15 +278,17 @@ class Node implements CreditCommonsInterface {
    */
   public function about($node_path) : \stdClass {
     global $cc_config, $cc_user;
-    $account = AddressResolver::create()->getLocalAccount($node_path);
-    if ($account instanceof RemoteAccountInterface) {
-      $obj = $account->getConversionRate();
-      if ($account instanceof Trunkward) {
-        $obj->rate *= $cc_config->conversionRate;
+    if ($account = AddressResolver::create()->getLocalAccount($node_path)) {
+      if ($account instanceof RemoteAccountInterface) {
+        $obj = $account->getConversionRate();
+        if ($account instanceof Trunkward) {
+          $obj->rate *= $cc_config->conversionRate;
+        }
+        else {
+          $obj->rate /= $cc_config->conversionRate;
+        }
       }
-      else {
-        $obj->rate /= $cc_config->conversionRate;
-      }
+      // else should never happen.
     }
     else {
       $obj = (object)['format' => $cc_config->displayFormat];

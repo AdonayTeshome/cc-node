@@ -6,6 +6,7 @@ use CCNode\Accounts\Trunkward;
 use CCNode\Accounts\Branch;
 use CCNode\Accounts\Remote;
 use CreditCommons\Account;
+use CreditCommons\Exceptions\CCFailure;
 
 /**
  * Class to track where we are in the request/response cycles, and especially
@@ -57,6 +58,9 @@ class Orientation {
       }
       elseif ($upstreamAccount->id == $payer->id and $payee instanceOf Remote) {
         $downstreamAccount = $payee;// going towards a payee branch
+      }
+      else {
+        throw new CCFailure("Attempt to create a transversal transaction which the user $upstreamAccount->id is not a part of: $payee->id, $payer->id");
       }
     }// with no upstream account, then any remote account is downstream
     elseif ($payee instanceOf Remote) {

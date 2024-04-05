@@ -49,9 +49,6 @@ class AddressResolver {
    * @throws PathViolation
    */
   function localOrRemoteAcc(string &$rel_path) : User {
-    if (empty($rel_path)) {
-
-    }
     if (substr($rel_path, -1) == '/') {
       throw new PathViolation(relPath: $rel_path, context: 'localOrRemoteAcc');
     }
@@ -63,25 +60,29 @@ class AddressResolver {
   }
 
   /**
-   * Resolve string to node and fragment
    * @param string $rel_path
-   * @return User|NULL
+   * @return Remote|NULL
+   * @throws PathViolation
    */
-  function nodeAndFragment(string &$rel_path) : User|NULL {
-    $parts = explode('/', $rel_path);
-    if (count($parts) > 1) {
-      return $this->remoteNode($rel_path);
+  function remoteNode(string &$rel_path) : Remote|NULL {
+    $acc = $this->getLocalAccount($rel_path);
+    if (is_null($acc)) {
+      return NULL;
     }
-    return NULL;
+    elseif (!$acc instanceOf Remote) {
+      throw new PathViolation(relPath: $rel_path, context: 'remoteNode');
+    }
+    return $acc;
   }
 
   /**
-   * Don't worry about the end of the path, just find the local account
+   * Don't worry about the end of the path, just find the local account. NULL means the current exchange i.e. not an account.
    *
    * @global type $user
    * @param string $given_path
    * @return User|NULL
    * @throws PathViolation
+   * @todo try to work out if the reponse is null before now.
    */
   function getLocalAccount(string &$given_path) : User|NULL {
     global $cc_user;
@@ -93,6 +94,9 @@ class AddressResolver {
       }
       // the account name is now the first path part
       $acc_id = array_shift($path_parts);
+      if (is_null($acc_id)){
+        return NULL;
+      }
       if (count($path_parts) == 1 and empty($path_parts[0])) {
         $rel_path = '/';
       }
@@ -100,11 +104,7 @@ class AddressResolver {
         $rel_path = implode('/', $path_parts);
       }
 
-      if ($acc_id == '') {
-        // the current node
-        $this->cache[$given_path] = NULL;
-      }
-      elseif ($this->accountStore->has($acc_id) and $acc_id <> $this->trunkwardName) {
+      if ($this->accountStore->has($acc_id) and $acc_id <> $this->trunkwardName) {
         $this->cache[$given_path] = load_account($acc_id, $rel_path);
       }
       // Load the trunkward account always with the full given path.
@@ -122,20 +122,17 @@ class AddressResolver {
   }
 
   /**
+   * Resolve string to node to search on and the rest of the path.
    * @param string $rel_path
-   * @return Remote|NULL
-   * @throws PathViolation
+   * @return User|NULL
    */
-  function remoteNode(string &$rel_path) : Remote|NULL {
-    $acc = $this->getLocalAccount($rel_path);
-    if (is_null($acc)) {
-      return NULL;
+  function nodeAndFragment(string &$rel_path) : User|NULL {
+    $parts = explode('/', $rel_path);
+    if (count($parts) > 1) {
+      return $this->remoteNode($rel_path);
     }
-    elseif (!$acc instanceOf Remote) {
-      throw new PathViolation(relPath: $rel_path, context: 'remoteNode');
-    }
-    return $acc;
-
+    return NULL;
   }
+
 
 }

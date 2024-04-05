@@ -82,8 +82,8 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
   function buildValidate() : array {
     global $cc_config, $cc_user;
 
-    if (!$this->workflow->active) {
-      // not allowed to make new transactions with non-active workflows
+    if ($this->workflow->disabled) {
+      // not allowed to make new transactions with disabled workflows
       throw new DoesNotExistViolation(type: 'workflow', id: $this->type);
     }
     $desired_state = $this->workflow->creation->state;
