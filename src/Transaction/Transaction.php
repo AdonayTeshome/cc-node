@@ -46,7 +46,7 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
 
   static function create(\stdClass $data) : static {
     global $cc_user, $orientation;
-    if (isset($orientation))unset($orientation);
+    unset($orientation);
     static::upcastEntries($data->entries);
     $data->version = $data->version??-1;
     $data->written = $data->written??'';
@@ -86,6 +86,11 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
       // not allowed to make new transactions with disabled workflows
       throw new DoesNotExistViolation(type: 'workflow', id: $this->type);
     }
+    try {
+      static::loadByUuid($this->uuid);
+      throw new DuplicateUuidViolation($this->uuid);
+    }
+    catch(\DoesNotExistViolation $e) { }
     $desired_state = $this->workflow->creation->state;
     // Check the user has the right role to create this transaction.
     $direction = $this->workflow->direction;
@@ -304,7 +309,12 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
     global $cc_user;
     $transversal_transaction = FALSE;
     foreach ($rows as &$row) {
-      $transversal_row = \CCNode\upcastAccounts($row);
+      if (\CCNode\upcastAccounts($row)) {
+        $entry_class = 'CCNode\Transaction\EntryTransversal';
+      }
+      else {
+        $entry_class = 'CCNode\Transaction\Entry';
+      }
       // sometimes this is called with entries from the db including isPrimary
       // other times it is called with additional entries from json
       if (!isset($row->isPrimary)) {
@@ -313,15 +323,12 @@ class Transaction extends \CreditCommons\Transaction implements \JsonSerializabl
       if (empty($row->author)) {
         $row->author = $cc_user->id;
       }
-      $entry_class = 'CCNode\Transaction\Entry';
-      if ($transversal_row) {
-        $entry_class .= 'Transversal';
-        $transversal_transaction = TRUE;
-      }
-      // Transversal entries require the transaction as a parameter.
-      $row = [$entry_class, 'create']($row);
+      $row = $entry_class::create($row);
     }
-    return $transversal_transaction;
+    $transversal_rows = array_filter($rows, function($row) {
+      return $row instanceof \CCNode\Transaction\EntryTransversal;
+    });
+    return !empty($transversal_rows);
   }
 
   public function jsonSerialize(): mixed {

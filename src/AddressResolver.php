@@ -34,6 +34,7 @@ class AddressResolver {
     $parts = explode('/', $absolute_path);
     $this->nodeName = array_pop($parts);
     $this->trunkwardName = array_pop($parts);
+
   }
 
   static function create() {
@@ -103,7 +104,6 @@ class AddressResolver {
       else {
         $rel_path = implode('/', $path_parts);
       }
-
       if ($this->accountStore->has($acc_id) and $acc_id <> $this->trunkwardName) {
         $this->cache[$given_path] = load_account($acc_id, $rel_path);
       }

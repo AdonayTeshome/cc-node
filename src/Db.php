@@ -11,7 +11,8 @@ class Db {
   protected static $connection;
 
   /**
-   * Connect to the database
+   * Connect to the database.
+   * NB this is super simple and surely could be bettered.
    *
    * @return bool false on failure / mysqli MySQLi object instance on success.
    */
@@ -22,7 +23,9 @@ class Db {
       $db_user = $user?:$cc_config->dbCreds['user'];
       $db_pass = isset($pass)?$pass:$cc_config->dbCreds  ['pass'];
       $db_server = $server?:$cc_config->dbCreds['server'];
-      static::$connection = new \mysqli($db_server, $db_user, $db_pass, $db);
+      $conn = new \mysqli($db_server, $db_user, $db_pass, $db);
+      $conn->set_charset("utf8mb4");
+      static::$connection = $conn;
     }
     return static::$connection;
   }

@@ -60,7 +60,7 @@ class Orientation {
         $downstreamAccount = $payee;// going towards a payee branch
       }
       else {
-        throw new CCFailure("Attempt to create a transversal transaction which the user $upstreamAccount->id is not a part of: $payee->id, $payer->id");
+        throw new CCFailure("Attempt to create a transversal transaction which the authenticated user $upstreamAccount->id is not a part of: $payee->id, $payer->id");
       }
     }// with no upstream account, then any remote account is downstream
     elseif ($payee instanceOf Remote) {

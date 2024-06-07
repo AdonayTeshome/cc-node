@@ -14,7 +14,6 @@ use CCNode\Db;
 use CCNode\TradeStats;
 use function CCNode\accountStore;
 
-
 /**
  * Read and write transactions (and entries) from the database
  */

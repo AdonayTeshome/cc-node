@@ -85,33 +85,8 @@ Composer will download some respositories into vendor/credit-commons.
 See node.ini for configuration.
 See more in 'integration', below.
 
-## Integration considerations
-
-Some things to consider as you start integrating the node into your application.
-
-The Credit Commons requires that all currency values are expressed as integers. This is to make conversion a bit easier. So if you want values like 9.99, it should be stored as 999 and then divided by 100 when you want to display it. A display format is planned.
-
-Transactions consist of some metadata and then one or more 'Entry's. This complicates the data structure, but enable fees to be added to transactions.
-
-The Credit Commons is only interested in account names or wallet names, which is the value entered into a transaction form and the same value which is written in the ledger.
-
-Support for migrating existing transactions will be forthcoming.
-
-This guide does not (yet) cover the business logic module, which adds payments to every transaction. This module is optional, so leave the config value blank for now.
-
 ##Integration
 
-### Setting/refreshing the database TODO
-Basically run the sql in install.sql
-This can be done via the command line. search "run sql queries from text file."
-
-    mysqldump -uUSER -pPASS install.sql > DBNAME
-
-### Account store.
-
-The main task thing is to tell the node what accounts you have on your system. That means writing a class which implements the [AccountstoreInterface](https://gitlab.com/credit-commons/cc-php-lib/-/blob/master/src/AccountStoreInterface.php).
-
-Use the [AccountStoreTemplate](t.b.d) class to get started. Keep all the function definitions and return types the same.
 
 ### Initiation
 If you are not already using composer, put this in your code before any credit commons code is run:

@@ -8,7 +8,6 @@ use CreditCommons\Exceptions\PasswordViolation;
 use CreditCommons\Account;
 use function CCNode\accountStore;
 
-
 /**
  * Class representing a member of the ledger
  */

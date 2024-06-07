@@ -31,7 +31,9 @@ function load_account(string $local_acc_id = NULL, string $rel_path = '') : Acco
     throw new CCFailure("Can't load unresolved account name: $local_acc_id");
   }
   if ($local_acc_id and accountStore()->has($local_acc_id)) {
-    return accountStore()->fetch($local_acc_id, $rel_path);
+    $account = accountStore()->fetch($local_acc_id);
+    $account->relPath = $rel_path;
+    return $account;
   }
   throw new DoesNotExistViolation(type: 'account', id: $local_acc_id);
 }
@@ -65,7 +67,6 @@ function API_calls(Remote $account = NULL) {
  */
 function accountStore() : AccountStoreInterface {
   global $cc_config;
-if (!isset($cc_config)){print_r(debug_backtrace());exit;}
   $class = $cc_config->accountStore;
   if (filter_var($class, FILTER_VALIDATE_URL)) {
     $store = new \CCNode\AccountStoreREST(trunkwardAccName: $cc_config->trunkwardAcc);
